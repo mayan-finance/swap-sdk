@@ -128,29 +128,28 @@ export async function swapFromSolana(
 		)
 	);
 
-	const feeReturn =quote.toChain === 'solana' ?
-		getAmountOfFractionalAmount(quote.redeemRelayerFee, quote.toToken.decimals) :
-		getAmountOfFractionalAmount(quote.redeemRelayerFee,
-			Math.min(quote.toToken.decimals, 8));
-	const minAmountOut =quote.toChain === 'solana' ?
-		getAmountOfFractionalAmount(quote.minAmountOut, quote.toToken.decimals) :
-		getAmountOfFractionalAmount(quote.minAmountOut,
-			Math.min(quote.toToken.decimals, 8));
+	const amount = getAmountOfFractionalAmount(
+		quote.effectiveAmountIn, quote.mintDecimals.from);
+	const minAmountOut = getAmountOfFractionalAmount(
+		quote.minAmountOut, quote.mintDecimals.to);
+	const feeSwap = getAmountOfFractionalAmount(
+		quote.swapRelayerFee, quote.mintDecimals.from);
+	const feeReturn = getAmountOfFractionalAmount(
+		quote.redeemRelayerFee, quote.mintDecimals.to);
+	const feeCancel = getAmountOfFractionalAmount(
+		quote.refundRelayerFee, quote.mintDecimals.from)
 
 	const swapData = Buffer.alloc(SwapLayout.span);
 	const swapFields = {
 		instruction: 101,
 		mainNonce,
 		stateNonce,
-		amount: getAmountOfFractionalAmount(quote.effectiveAmountIn,
-			quote.fromToken.decimals),
+		amount,
 		minAmountOut,
 		deadline: solanaTime + timeout,
-		feeSwap: getAmountOfFractionalAmount(quote.swapRelayerFee,
-			quote.fromToken.decimals),
+		feeSwap,
 		feeReturn,
-		feeCancel: getAmountOfFractionalAmount(quote.refundRelayerFee,
-			quote.fromToken.decimals),
+		feeCancel,
 		destinationChain: destinationChainId,
 		destinationAddress: destAddress,
 	}

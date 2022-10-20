@@ -44,10 +44,14 @@ export type Quote = {
 	swapRelayerFee: number,
 	redeemRelayerFee: number,
 	refundRelayerFee: number,
-	fromToken: Token
-	toToken: Token
-	fromChain: string
-	toChain: string
+	fromToken: Token,
+	toToken: Token,
+	fromChain: string,
+	toChain: string,
+	mintDecimals: {
+		from: number,
+		to: number,
+	}
 };
 
 export type SolanaTransactionSigner = (trx: Transaction) => Promise<Transaction>;
