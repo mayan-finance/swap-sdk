@@ -104,17 +104,38 @@ export async function swapFromSolana(
 		{pubkey: fromMint, isWritable: false, isSigner: false},
 		{pubkey: toMint, isWritable: false, isSigner: false},
 		{pubkey: SYSVAR_CLOCK_PUBKEY, isWritable: false, isSigner: false},
+		{pubkey: SYSVAR_RENT_PUBKEY, isWritable: false, isSigner: false},
 		{pubkey: tokenProgram, isWritable: false, isSigner: false},
 		{pubkey: SystemProgram.programId, isWritable: false, isSigner: false},
 	];
 
 	const solanaTime = await getCurrentSolanaTime(connection);
 	const destinationChainId = getWormholeChainIdByName(quote.toChain);
+
+	if (destinationChainId === 1) { //destination address safety check!
+		const destinationAccount =
+			await connection.getAccountInfo(new PublicKey(destinationAddress));
+		if (destinationAccount.owner.equals(tokenProgram)) {
+			throw new Error(
+				'Destination address is not about token account.' +
+				' It should be a owner address'
+			);
+		}
+	}
 	const destAddress = Buffer.from(
 		hexToUint8Array(
 			nativeAddressToHexString(destinationAddress, destinationChainId)
 		)
 	);
+
+	const feeReturn =quote.toChain === 'solana' ?
+		getAmountOfFractionalAmount(quote.redeemRelayerFee, quote.toToken.decimals) :
+		getAmountOfFractionalAmount(quote.redeemRelayerFee,
+			Math.min(quote.toToken.decimals, 8));
+	const minAmountOut =quote.toChain === 'solana' ?
+		getAmountOfFractionalAmount(quote.minAmountOut, quote.toToken.decimals) :
+		getAmountOfFractionalAmount(quote.minAmountOut,
+			Math.min(quote.toToken.decimals, 8));
 
 	const swapData = Buffer.alloc(SwapLayout.span);
 	const swapFields = {
@@ -123,13 +144,11 @@ export async function swapFromSolana(
 		stateNonce,
 		amount: getAmountOfFractionalAmount(quote.effectiveAmountIn,
 			quote.fromToken.decimals),
-		minAmountOut: getAmountOfFractionalAmount(quote.minAmountOut,
-			quote.toToken.decimals),
+		minAmountOut,
 		deadline: solanaTime + timeout,
 		feeSwap: getAmountOfFractionalAmount(quote.swapRelayerFee,
 			quote.fromToken.decimals),
-		feeReturn: getAmountOfFractionalAmount(quote.redeemRelayerFee,
-			quote.toToken.decimals),
+		feeReturn,
 		feeCancel: getAmountOfFractionalAmount(quote.refundRelayerFee,
 			quote.fromToken.decimals),
 		destinationChain: destinationChainId,

@@ -23,7 +23,7 @@ export async function fetchTokenList(chain: ChainName): Promise<Token[]> {
 
 export async function fetchQuote(params: QuoteParams): Promise<Quote> {
 	const normalizedSlippage = params.slippage / 100;
-	const baseUrl = `${process.env.REACT_APP_MAYAN_PRICE_URL}/quote?`;
+	const baseUrl = `${addresses.PRICE_URL}/quote?`;
 	const basicQueries = `amountIn=${params.amount}&fromToken=${params.fromToken}&fromChain=${params.fromChain}&toToken=${params.toToken}&toChain=${params.toChain}`;
 	const criteriaQueries = `&slippage=${normalizedSlippage}`;
 	const url = baseUrl + basicQueries + criteriaQueries;
