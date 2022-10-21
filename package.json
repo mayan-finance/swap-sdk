@@ -1,7 +1,7 @@
 {
   "name": "@mayanfinance/swap-sdk",
   "description": "A SDK to swap with Mayan",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "source": "src/main.ts",
   "main": "dist/main.umd.js",
   "module": "dist/main.modern.module.js",
@@ -42,6 +42,6 @@
     "@solana/buffer-layout": "^4.0.0",
     "@solana/web3.js": "^1.66.0",
     "cross-fetch": "^3.1.5",
-		"ethers": "^5.6.1"
-	}
+    "ethers": "^5.6.1"
+  }
 }
