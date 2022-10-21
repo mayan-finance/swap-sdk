@@ -1,7 +1,6 @@
 import fetch from 'cross-fetch';
 import { Token, ChainName, QuoteParams, Quote, QuoteError } from './types';
-
-const addresses = require('./addresses.json');
+import addresses from './addresses';
 
 export async function fetchAllTokenList(): Promise<{[index: string]: Token[]}> {
 	const res = await fetch(`${addresses.EXPLORER_URL}/tokens`);
@@ -22,10 +21,15 @@ export async function fetchTokenList(chain: ChainName): Promise<Token[]> {
 }
 
 export async function fetchQuote(params: QuoteParams): Promise<Quote> {
+	const { customRelayerFees: relayerFees } = params;
 	const normalizedSlippage = params.slippage / 100;
 	const baseUrl = `${addresses.PRICE_URL}/quote?`;
 	const basicQueries = `amountIn=${params.amount}&fromToken=${params.fromToken}&fromChain=${params.fromChain}&toToken=${params.toToken}&toChain=${params.toChain}`;
-	const criteriaQueries = `&slippage=${normalizedSlippage}`;
+	const criteriaQueries = `&slippage=${normalizedSlippage}` + (
+		relayerFees ?
+		`&swapRelayerFee=${relayerFees.swapRelayerFee}&redeemRelayerFee=${relayerFees.redeemRelayerFee}&refundRelayerFee=${relayerFees.refundRelayerFee}` :
+		''
+	);
 	const url = baseUrl + basicQueries + criteriaQueries;
 	const res = await fetch(url);
 	const result = await res.json();

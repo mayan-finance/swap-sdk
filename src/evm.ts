@@ -11,8 +11,8 @@ import {
 	getAmountOfFractionalAmount, getWormholeChainIdByName,
 	getWormholeChainIdById,
 } from './utils';
-const MayanSwapArtifact = require('./MayanSwapArtifact.json');
-const addresses = require('./addresses.json');
+import MayanSwapArtifact from './MayanSwapArtifact';
+import addresses  from './addresses';
 
 
 
@@ -37,9 +37,9 @@ export type Recipient = {
 
 export async function swapFromEvm(
 	quote: Quote, destinationAddress: string,
-	timeout: number,provider: ethers.providers.Provider,
+	timeout: number,provider: ethers.providers.BaseProvider,
 	signer: Signer, overrides?: Overrides): Promise<TransactionResponse> {
-	const mayanProgram = new PublicKey(addresses.mayan_program_id);
+	const mayanProgram = new PublicKey(addresses.MAYAN_PROGRAM_ID);
 	const [mayanMainAccount] = await PublicKey.findProgramAddress(
 		[Buffer.from('MAIN')], mayanProgram);
 	const recipient = getAssociatedTokenAddress(

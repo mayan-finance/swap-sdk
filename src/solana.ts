@@ -1,19 +1,29 @@
 import {
-	PublicKey, clusterApiUrl, Connection, Transaction,
-	TransactionInstruction, SystemProgram, SYSVAR_RENT_PUBKEY, AccountMeta,
-	SYSVAR_CLOCK_PUBKEY
+	AccountMeta,
+	clusterApiUrl,
+	Connection,
+	PublicKey,
+	Keypair,
+	SystemProgram,
+	SYSVAR_CLOCK_PUBKEY,
+	SYSVAR_RENT_PUBKEY,
+	Transaction,
+	TransactionInstruction,
 } from '@solana/web3.js';
-import {blob, struct, u8, nu64, u16} from "@solana/buffer-layout";
+import { blob, nu64, struct, u16, u8 } from '@solana/buffer-layout';
 import { Quote, SolanaTransactionSigner } from './types';
 import {
 	getAmountOfFractionalAmount,
 	getAssociatedTokenAddress,
 	getCurrentSolanaTime,
-	getWormholeChainIdByName, hexToUint8Array, nativeAddressToHexString
+	getWormholeChainIdByName,
+	hexToUint8Array,
+	nativeAddressToHexString
 } from './utils';
 import { Buffer } from 'buffer';
+import addresses  from './addresses'
+import { ethers } from 'ethers';
 
-const addresses = require('./addresses.json');
 
 function createAssociatedTokenAccountInstruction(
 	payer: PublicKey,
@@ -40,6 +50,21 @@ function createAssociatedTokenAccountInstruction(
 	});
 }
 
+const SyncNativeInstructionData = struct<any>([u8('instruction')]);
+function createSyncNativeInstruction(
+	account: PublicKey): TransactionInstruction {
+	const keys = [{ pubkey: account, isSigner: false, isWritable: true }];
+
+	const data = Buffer.alloc(SyncNativeInstructionData.span);
+	SyncNativeInstructionData.encode({ instruction: 17 }, data);
+
+	return new TransactionInstruction({
+		keys,
+		programId: new PublicKey(addresses.TOKEN_PROGRAM_ID),
+		data
+	});
+}
+
 const SwapLayout = struct<any>([
 	u8('instruction'),
 	u8('mainNonce'),
@@ -62,15 +87,14 @@ export async function swapFromSolana(
 	const mayanProgram = new PublicKey(addresses.MAYAN_PROGRAM_ID);
 	const tokenProgram = new PublicKey(addresses.TOKEN_PROGRAM_ID);
 	const swapper = new PublicKey(swapperWalletAddress);
-	const fromMint = new PublicKey(quote.fromToken.mint);
-	const toMint = new PublicKey(quote.toToken.mint);
+
 
 	const [main, mainNonce] = PublicKey.findProgramAddressSync(
 		[Buffer.from('MAIN')],
 		mayanProgram,
 	);
-	const msg1 = PublicKey.unique();
-	const msg2 = PublicKey.unique();
+	const msg1 = Keypair.generate().publicKey;
+	const msg2 = Keypair.generate().publicKey;
 	const [state, stateNonce] = PublicKey.findProgramAddressSync(
 		[
 			Buffer.from('V2STATE'),
@@ -79,20 +103,38 @@ export async function swapFromSolana(
 		],
 		mayanProgram,
 	);
+	const fromMint = new PublicKey(quote.fromToken.mint);
+	const toMint = new PublicKey(quote.toToken.mint);
 	const fromAccount = getAssociatedTokenAddress(fromMint, swapper);
-	const toAccount = getAssociatedTokenAddress(toMint, main, true);
+	const toAccount = getAssociatedTokenAddress(fromMint, main, true);
 
 	const trx = new Transaction({
 		feePayer: swapper,
 	});
 
+	const fromAccountData = await connection.getAccountInfo(fromAccount, 'finalized');
+	if (!fromAccountData || fromAccountData.data.length === 0) {
+		trx.add(createAssociatedTokenAccountInstruction(
+			swapper, fromAccount, swapper, fromMint
+		));
+	}
+
 	const toAccountData = await connection.getAccountInfo(toAccount, 'finalized');
-	if (toAccountData.data.length === 0) {
+	if (!toAccountData || toAccountData.data.length === 0) {
 		trx.add(createAssociatedTokenAccountInstruction(
 			swapper, toAccount, main, fromMint
 		));
 	}
 
+	if (quote.fromToken.contract === ethers.constants.AddressZero) {
+		trx.add(SystemProgram.transfer({
+			fromPubkey: swapper,
+			toPubkey: fromAccount,
+			lamports: getAmountOfFractionalAmount(
+				quote.effectiveAmountIn, 9).toBigInt(),
+		}));
+		trx.add(createSyncNativeInstruction(fromAccount));
+	}
 	const swapKeys: Array<AccountMeta> = [
 		{pubkey: swapper, isWritable: false, isSigner: true},
 		{pubkey: main, isWritable: false, isSigner: false},
@@ -163,7 +205,5 @@ export async function swapFromSolana(
 	const { blockhash } = await connection.getLatestBlockhash();
 	trx.recentBlockhash = blockhash;
 	const signedTrx = await signTransaction(trx);
-	const signature = await connection.sendRawTransaction(signedTrx.serialize());
-	await connection.confirmTransaction(signature, 'finalized');
-	return signature;
+	return await connection.sendRawTransaction(signedTrx.serialize(), { skipPreflight: true });
 }

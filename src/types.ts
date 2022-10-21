@@ -23,6 +23,11 @@ export type QuoteParams = {
 	toToken: string,
 	toChain: ChainName,
 	slippage: number,
+	customRelayerFees?: {
+		swapRelayerFee: number,
+		redeemRelayerFee: number,
+		refundRelayerFee: number,
+	}
 }
 
 export type QuoteError = {

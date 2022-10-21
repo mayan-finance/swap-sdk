@@ -1,4 +1,4 @@
-{
+export default {
   "contractName": "MayanSwap",
   "abi": [
     {

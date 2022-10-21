@@ -2,8 +2,7 @@ import { zeroPad } from '@ethersproject/bytes';
 import { ethers } from 'ethers';
 import { PublicKey, Connection, SYSVAR_CLOCK_PUBKEY } from '@solana/web3.js';
 import { Buffer } from 'buffer';
-
-const addresses = require('./addresses.json');
+import addresses  from './addresses'
 
 export function nativeAddressToHexString(
 	address: string, wChainId: number) : string {
@@ -30,7 +29,7 @@ export function hexToUint8Array(input): Uint8Array {
 }
 
 export async function getCurrentEvmTime(
-	provider: ethers.providers.Provider
+	provider: ethers.providers.BaseProvider
 ) : Promise<number> {
 	const latestBlock = await provider.getBlock('latest');
 	return latestBlock.timestamp;
@@ -101,5 +100,5 @@ const evmChainIdMap: { [index: string]: number }  = {
 	[43114]: 6,
 };
 export function getWormholeChainIdById(chainId: number) : number | null {
-	return chains[chainId];
+	return evmChainIdMap[chainId];
 }
