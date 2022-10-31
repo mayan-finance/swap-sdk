@@ -2,14 +2,21 @@ import { zeroPad } from '@ethersproject/bytes';
 import { ethers } from 'ethers';
 import { PublicKey, Connection, SYSVAR_CLOCK_PUBKEY } from '@solana/web3.js';
 import { Buffer } from 'buffer';
-import addresses  from './addresses'
+import { sha3_256 } from 'js-sha3';
+import addresses  from './addresses';
+
+export const isValidAptosType = (str: string): boolean =>
+	/^(0x)?[0-9a-fA-F]+::\w+::\w+$/.test(str);
 
 export function nativeAddressToHexString(
 	address: string, wChainId: number) : string {
 	let padded: Uint8Array;
 	if (wChainId === 1) {
 		padded = zeroPad(new PublicKey(address).toBytes(), 32);
-	} else if (wChainId === 2 || wChainId === 4 || wChainId === 5 || wChainId === 6) {
+	} else if (wChainId === 2 || wChainId === 4 || wChainId === 5 || wChainId === 6 || wChainId === 22) {
+		if (wChainId === 22 && isValidAptosType(address)) {
+			return `0x${sha3_256(address)}`
+		}
 		let hex = (<string>address).substring(2);
 		const result = [];
 		for (let i = 0; i < hex.length; i += 2) {
@@ -17,7 +24,6 @@ export function nativeAddressToHexString(
 		}
 		padded = zeroPad(new Uint8Array(result), 32);
 	} else {
-		console.log(wChainId)
 		throw new Error('Unsupported token chain');
 	}
 	const hex = Buffer.from(padded).toString("hex");
@@ -87,6 +93,7 @@ const chains: { [index: string]: number }  = {
 	bsc: 4,
 	polygon: 5,
 	avalanche: 6,
+	aptos: 22,
 };
 
 export function getWormholeChainIdByName(chain: string) : number | null {

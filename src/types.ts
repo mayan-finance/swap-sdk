@@ -1,6 +1,7 @@
 import { Transaction } from '@solana/web3.js';
 
-export type ChainName = 'solana' | 'ethereum' | 'bsc' | 'polygon' | 'avalanche';
+export type ChainName = 'solana'
+	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'aptos';
 
 export type Token = {
 	name: string,
