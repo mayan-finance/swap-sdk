@@ -83,7 +83,7 @@ export async function swapFromSolana(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
 	timeout: number, signTransaction: SolanaTransactionSigner,
 ) : Promise<string> {
-	const connection = new Connection(clusterApiUrl('mainnet-beta'));
+	const connection = new Connection('https://solana-api.projectserum.com');
 	const mayanProgram = new PublicKey(addresses.MAYAN_PROGRAM_ID);
 	const tokenProgram = new PublicKey(addresses.TOKEN_PROGRAM_ID);
 	const swapper = new PublicKey(swapperWalletAddress);

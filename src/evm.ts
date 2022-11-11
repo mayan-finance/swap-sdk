@@ -65,7 +65,7 @@ export async function swapFromEvm(
 		destChainId: destinationChainId,
 	};
 
-	const connection = new Connection(clusterApiUrl('mainnet-beta'));
+	const connection = new Connection('https://solana-api.projectserum.com');
 	// Times are in seconds
 	const currentEvmTime = await getCurrentEvmTime(provider);
 	const currentSolanaTime = await getCurrentSolanaTime(connection);
