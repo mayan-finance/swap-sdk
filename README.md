@@ -18,6 +18,7 @@ import { fetchQuote, swapFromEvm, swapFromSolana, Quote } from '@mayanfinance/sw
 
 Then we will need to get a quote:
 
+### Getting Quote:
 ```bash
 const quote = await getQuote({
   amountIn: 250,
@@ -37,11 +38,15 @@ After we get the quote we can send the swap transaction:
 
 ### Swap from Solana:
 
-`swapTrx = await swapFromSolana(quote, originWalletAddress, destinationWalletAddress, deadlineInSeconds, signSolanaTransaction)`
+```bash
+swapTrx = await swapFromSolana(quote, originWalletAddress, destinationWalletAddress, deadlineInSeconds, signSolanaTransaction)
+```
 
 ### Swap from EVM:
 
-`swapTrx = await swapFromEvm(quote, destinationWalletAddress, deadlineInSeconds, provider, signer);`
+```bash
+swapTrx = await swapFromEvm(quote, destinationWalletAddress, deadlineInSeconds, provider, signer)
+```
 
-
+### Tracking:
 To track the progress of a swap, we can use [Mayan Explorer API](https://explorer-api.mayan.finance/swagger/)
