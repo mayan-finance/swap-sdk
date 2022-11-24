@@ -1,25 +1,23 @@
 import { ethers, Overrides, Signer, BigNumber } from 'ethers';
-import { Connection, PublicKey, clusterApiUrl } from '@solana/web3.js';
+import { PublicKey } from '@solana/web3.js';
 
 import { TransactionResponse } from '@ethersproject/abstract-provider';
 import type { Quote } from './types';
 import {
-	getCurrentSolanaTime,
 	getCurrentEvmTime,
 	getAssociatedTokenAddress,
 	nativeAddressToHexString,
 	getAmountOfFractionalAmount, getWormholeChainIdByName,
 	getWormholeChainIdById,
 } from './utils';
+import { getCurrentSolanaTime } from './api';
 import MayanSwapArtifact from './MayanSwapArtifact';
 import addresses  from './addresses';
 
-
-
 export type ContractRelayerFees = {
-	fee1: ethers.BigNumber,
-	fee2: ethers.BigNumber,
-	fee3: ethers.BigNumber,
+	swapFee: ethers.BigNumber,
+	redeemFee: ethers.BigNumber,
+	refundFee: ethers.BigNumber,
 }
 
 export type Criteria = {
@@ -30,8 +28,9 @@ export type Criteria = {
 }
 
 export type Recipient = {
-	mayan: string,
+	mayanAddr: string,
 	destAddr: string,
+	mayanChainId: number,
 	destChainId: number,
 };
 
@@ -50,7 +49,6 @@ export async function swapFromEvm(
 	const amountIn = getAmountOfFractionalAmount(
 		quote.effectiveAmountIn, quote.fromToken.decimals);
 	const recipientHex = nativeAddressToHexString(recipient.toString(), 1);
-
 	const signerChainId = await signer.getChainId();
 	const signerWormholeChainId = getWormholeChainIdById(signerChainId);
 	const fromChainId = getWormholeChainIdByName(quote.fromChain);
@@ -58,18 +56,15 @@ export async function swapFromEvm(
 	if (fromChainId !== signerWormholeChainId) {
 		throw new Error('Signer chain id and quote from chain are not same!');
 	}
-
 	const recipientStruct : Recipient = {
-		mayan: recipientHex,
+		mayanAddr: recipientHex,
+		mayanChainId: 1,
 		destAddr: nativeAddressToHexString(destinationAddress, destinationChainId),
 		destChainId: destinationChainId,
 	};
-
-	const connection = new Connection('https://solana-api.projectserum.com');
 	// Times are in seconds
 	const currentEvmTime = await getCurrentEvmTime(provider);
-	const currentSolanaTime = await getCurrentSolanaTime(connection);
-
+	const currentSolanaTime = await getCurrentSolanaTime();
 	const criteria: Criteria = {
 		transferDeadline: ethers.BigNumber.from(currentEvmTime + timeout),
 		swapDeadline: ethers.BigNumber.from(currentSolanaTime + timeout),
@@ -79,11 +74,11 @@ export async function swapFromEvm(
 		nonce: createNonce().readUInt32LE(0),
 	};
 	const contractRelayerFees: ContractRelayerFees = {
-		fee1: getAmountOfFractionalAmount(quote.swapRelayerFee,
+		swapFee: getAmountOfFractionalAmount(quote.swapRelayerFee,
 			Math.min(8, quote.fromToken.decimals)),
-		fee2: getAmountOfFractionalAmount(quote.redeemRelayerFee,
+		redeemFee: getAmountOfFractionalAmount(quote.redeemRelayerFee,
 			Math.min(8, quote.toToken.decimals)),
-		fee3: getAmountOfFractionalAmount(quote.refundRelayerFee,
+		refundFee: getAmountOfFractionalAmount(quote.refundRelayerFee,
 			Math.min(8, quote.fromToken.decimals)),
 	}
 	const tokenOut = nativeAddressToHexString(
@@ -92,12 +87,12 @@ export async function swapFromEvm(
 	if(quote.fromToken.contract === ethers.constants.AddressZero) {
 		return wrapAndSwapETH(
 			addresses.MAYAN_EVM_CONTRACT, contractRelayerFees, recipientStruct,
-			tokenOut, quote.toToken.realOriginChainId, criteria, amountIn, signer);
+			tokenOut, quote.toToken.realOriginChainId, criteria, amountIn, signer, overrides);
 	} else {
 		return swap(
 			addresses.MAYAN_EVM_CONTRACT, contractRelayerFees, recipientStruct,
 			tokenOut, quote.toToken.realOriginChainId, criteria,
-			quote.fromToken.contract, amountIn, signer);
+			quote.fromToken.contract, amountIn, signer, overrides);
 	}
 }
 
@@ -111,9 +106,11 @@ async function swap(
 	tokenIn: string,
 	amountIn: BigNumber,
 	signer: ethers.Signer,
+	overrides?: Overrides
 ): Promise<TransactionResponse> {
 	const mayanSwap = new ethers.Contract(contractAddress, MayanSwapArtifact.abi, signer);
-	return  mayanSwap.swap(relayerFees, recipient, tokenOut, tokenOutWChainId, criteria, tokenIn, amountIn);
+	return  mayanSwap.swap(relayerFees, recipient, tokenOut, tokenOutWChainId,
+		criteria, tokenIn, amountIn, overrides);
 }
 
 
@@ -126,9 +123,12 @@ async function wrapAndSwapETH(
 	criteria: Criteria,
 	amountIn: BigNumber,
 	signer: ethers.Signer,
+	overrides?: Overrides,
 ): Promise<TransactionResponse> {
 	const mayanSwap = new ethers.Contract(contractAddress, MayanSwapArtifact.abi, signer);
-	return  mayanSwap.wrapAndSwapETH(relayerFees, recipient, tokenOut, tokenOutWChainId, criteria, { value: amountIn });
+	return  mayanSwap.wrapAndSwapETH(
+		relayerFees, recipient, tokenOut, tokenOutWChainId, criteria,
+		overrides ? { value: amountIn, ...overrides } :  { value: amountIn });
 }
 
 function createNonce() {

@@ -3,7 +3,7 @@ import { Token, ChainName, QuoteParams, Quote, QuoteError } from './types';
 import addresses from './addresses';
 
 export async function fetchAllTokenList(): Promise<{[index: string]: Token[]}> {
-	const res = await fetch(`${addresses.EXPLORER_URL}/tokens`);
+	const res = await fetch(`${addresses.PRICE_URL}/tokens`);
 	if (res.status === 200) {
 		const result = await res.json();
 		return result as { [index: string]: Token[] };
@@ -12,7 +12,7 @@ export async function fetchAllTokenList(): Promise<{[index: string]: Token[]}> {
 }
 
 export async function fetchTokenList(chain: ChainName): Promise<Token[]> {
-	const res = await fetch(`${addresses.EXPLORER_URL}/tokens?chain=${chain}`);
+	const res = await fetch(`${addresses.PRICE_URL}/tokens?chain=${chain}`);
 	if (res.status === 200) {
 		const result = await res.json();
 		return result[chain] as Token[];
@@ -40,4 +40,13 @@ export async function fetchQuote(params: QuoteParams): Promise<Quote> {
 		} as QuoteError
 	}
 	return result;
+}
+
+export async function getCurrentSolanaTime(): Promise<number> {
+	const res = await fetch(`${addresses.PRICE_URL}/clock/solana`);
+	const result = await res.json();
+	if (res.status !== 200) {
+		throw result;
+	}
+	return result.clock;
 }

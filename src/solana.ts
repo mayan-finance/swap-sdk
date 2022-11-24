@@ -15,7 +15,6 @@ import { Quote, SolanaTransactionSigner } from './types';
 import {
 	getAmountOfFractionalAmount,
 	getAssociatedTokenAddress,
-	getCurrentSolanaTime,
 	getWormholeChainIdByName,
 	hexToUint8Array,
 	nativeAddressToHexString
@@ -23,7 +22,7 @@ import {
 import { Buffer } from 'buffer';
 import addresses  from './addresses'
 import { ethers } from 'ethers';
-
+import { getCurrentSolanaTime } from './api';
 
 function createAssociatedTokenAccountInstruction(
 	payer: PublicKey,
@@ -81,9 +80,9 @@ const SwapLayout = struct<any>([
 ]);
 export async function swapFromSolana(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
-	timeout: number, signTransaction: SolanaTransactionSigner,
+	timeout: number, signTransaction: SolanaTransactionSigner, connection?: Connection
 ) : Promise<string> {
-	const connection = new Connection('https://solana-api.projectserum.com');
+	const solanaConnection = connection ?? new Connection('https://rpc.ankr.com/solana');
 	const mayanProgram = new PublicKey(addresses.MAYAN_PROGRAM_ID);
 	const tokenProgram = new PublicKey(addresses.TOKEN_PROGRAM_ID);
 	const swapper = new PublicKey(swapperWalletAddress);
@@ -112,14 +111,14 @@ export async function swapFromSolana(
 		feePayer: swapper,
 	});
 
-	const fromAccountData = await connection.getAccountInfo(fromAccount, 'finalized');
+	const fromAccountData = await solanaConnection.getAccountInfo(fromAccount, 'finalized');
 	if (!fromAccountData || fromAccountData.data.length === 0) {
 		trx.add(createAssociatedTokenAccountInstruction(
 			swapper, fromAccount, swapper, fromMint
 		));
 	}
 
-	const toAccountData = await connection.getAccountInfo(toAccount, 'finalized');
+	const toAccountData = await solanaConnection.getAccountInfo(toAccount, 'finalized');
 	if (!toAccountData || toAccountData.data.length === 0) {
 		trx.add(createAssociatedTokenAccountInstruction(
 			swapper, toAccount, main, fromMint
@@ -151,12 +150,12 @@ export async function swapFromSolana(
 		{pubkey: SystemProgram.programId, isWritable: false, isSigner: false},
 	];
 
-	const solanaTime = await getCurrentSolanaTime(connection);
+	const solanaTime = await getCurrentSolanaTime();
 	const destinationChainId = getWormholeChainIdByName(quote.toChain);
 
 	if (destinationChainId === 1) { //destination address safety check!
 		const destinationAccount =
-			await connection.getAccountInfo(new PublicKey(destinationAddress));
+			await solanaConnection.getAccountInfo(new PublicKey(destinationAddress));
 		if (destinationAccount.owner.equals(tokenProgram)) {
 			throw new Error(
 				'Destination address is not about token account.' +
@@ -202,8 +201,8 @@ export async function swapFromSolana(
 		programId: mayanProgram,
 	});
 	trx.add(swapInstruction);
-	const { blockhash } = await connection.getLatestBlockhash();
+	const { blockhash } = await solanaConnection.getLatestBlockhash();
 	trx.recentBlockhash = blockhash;
 	const signedTrx = await signTransaction(trx);
-	return await connection.sendRawTransaction(signedTrx.serialize(), { skipPreflight: true });
+	return await solanaConnection.sendRawTransaction(signedTrx.serialize(), { skipPreflight: true });
 }

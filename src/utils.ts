@@ -41,22 +41,6 @@ export async function getCurrentEvmTime(
 	return latestBlock.timestamp;
 }
 
-export async function getCurrentSolanaTime(
-	connection: Connection, retry:number = 15 ) : Promise<number> {
-	try {
-		const info = await connection.getAccountInfo(SYSVAR_CLOCK_PUBKEY);
-		const x = info.data.slice(32, 40).reverse();
-		const y = Buffer.from(x).toString('hex');
-		return  Number(`0x${y}`);
-	} catch (err) {
-		if(retry < 0) {
-			const result = await getCurrentSolanaTime(connection, retry - 1);
-			return result;
-		}
-		throw err;
-	}
-}
-
 export function getAssociatedTokenAddress(
 	mint: PublicKey,
 	owner: PublicKey,
