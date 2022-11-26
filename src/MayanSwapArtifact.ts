@@ -45,32 +45,32 @@ export default {
 						},
 						{
 							"internalType": "bytes32",
-							"name": "tokenAddress",
+							"name": "tokenAddr",
 							"type": "bytes32"
 						},
 						{
 							"internalType": "uint16",
-							"name": "tokenChain",
+							"name": "tokenChainId",
 							"type": "uint16"
 						},
 						{
 							"internalType": "bytes32",
-							"name": "to",
+							"name": "destAddr",
 							"type": "bytes32"
 						},
 						{
 							"internalType": "uint16",
-							"name": "toChain",
+							"name": "destChainId",
 							"type": "uint16"
 						},
 						{
 							"internalType": "bytes32",
-							"name": "from",
+							"name": "sourceAddr",
 							"type": "bytes32"
 						},
 						{
 							"internalType": "uint16",
-							"name": "fromChain",
+							"name": "sourceChainId",
 							"type": "uint16"
 						},
 						{
@@ -204,7 +204,7 @@ export default {
 				},
 				{
 					"internalType": "uint16",
-					"name": "tokenOutChain",
+					"name": "tokenOutChainId",
 					"type": "uint16"
 				},
 				{
@@ -355,7 +355,7 @@ export default {
 				},
 				{
 					"internalType": "uint16",
-					"name": "tokenOutChain",
+					"name": "tokenOutChainId",
 					"type": "uint16"
 				},
 				{

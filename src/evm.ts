@@ -109,8 +109,13 @@ async function swap(
 	overrides?: Overrides
 ): Promise<TransactionResponse> {
 	const mayanSwap = new ethers.Contract(contractAddress, MayanSwapArtifact.abi, signer);
-	return  mayanSwap.swap(relayerFees, recipient, tokenOut, tokenOutWChainId,
-		criteria, tokenIn, amountIn, overrides);
+	if (overrides) {
+		return  mayanSwap.swap(relayerFees, recipient, tokenOut, tokenOutWChainId,
+			criteria, tokenIn, amountIn, overrides);
+	} else {
+		return  mayanSwap.swap(relayerFees, recipient, tokenOut, tokenOutWChainId,
+			criteria, tokenIn, amountIn);
+	}
 }
 
 
