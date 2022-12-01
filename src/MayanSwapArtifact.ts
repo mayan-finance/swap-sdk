@@ -102,6 +102,11 @@ export default {
 							"internalType": "uint64",
 							"name": "refundFee",
 							"type": "uint64"
+						},
+						{
+							"internalType": "bytes32",
+							"name": "auctionAddr",
+							"type": "bytes32"
 						}
 					],
 					"internalType": "struct MayanStructs.Swap",
@@ -181,6 +186,11 @@ export default {
 							"internalType": "uint16",
 							"name": "mayanChainId",
 							"type": "uint16"
+						},
+						{
+							"internalType": "bytes32",
+							"name": "auctionAddr",
+							"type": "bytes32"
 						},
 						{
 							"internalType": "bytes32",
@@ -332,6 +342,11 @@ export default {
 							"internalType": "uint16",
 							"name": "mayanChainId",
 							"type": "uint16"
+						},
+						{
+							"internalType": "bytes32",
+							"name": "auctionAddr",
+							"type": "bytes32"
 						},
 						{
 							"internalType": "bytes32",

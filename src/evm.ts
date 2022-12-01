@@ -29,6 +29,7 @@ export type Criteria = {
 
 export type Recipient = {
 	mayanAddr: string,
+	auctionAddr: string,
 	destAddr: string,
 	mayanChainId: number,
 	destChainId: number,
@@ -49,6 +50,9 @@ export async function swapFromEvm(
 	const amountIn = getAmountOfFractionalAmount(
 		quote.effectiveAmountIn, quote.fromToken.decimals);
 	const recipientHex = nativeAddressToHexString(recipient.toString(), 1);
+	const auctionHex = nativeAddressToHexString(
+		new PublicKey(addresses.AUCTION_PROGRAM_ID).toString(), 1
+	);
 	const signerChainId = await signer.getChainId();
 	const signerWormholeChainId = getWormholeChainIdById(signerChainId);
 	const fromChainId = getWormholeChainIdByName(quote.fromChain);
@@ -61,6 +65,7 @@ export async function swapFromEvm(
 		mayanChainId: 1,
 		destAddr: nativeAddressToHexString(destinationAddress, destinationChainId),
 		destChainId: destinationChainId,
+		auctionAddr: auctionHex,
 	};
 	// Times are in seconds
 	const currentEvmTime = await getCurrentEvmTime(provider);

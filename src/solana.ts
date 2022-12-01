@@ -24,6 +24,8 @@ import addresses  from './addresses'
 import { ethers } from 'ethers';
 import { getCurrentSolanaTime } from './api';
 
+const STATE_SIZE = 307;
+
 function createAssociatedTokenAccountInstruction(
 	payer: PublicKey,
 	associatedToken: PublicKey,
@@ -47,6 +49,33 @@ function createAssociatedTokenAccountInstruction(
 		programId: associatedTokenProgramId,
 		data: Buffer.alloc(0),
 	});
+}
+
+const ApproveInstructionData = struct<any>([
+	u8('instruction'), nu64('amount')
+]);
+function createApproveInstruction(
+	account: PublicKey,
+	delegate: PublicKey,
+	owner: PublicKey,
+	amount: ethers.BigNumber,
+	programId = new PublicKey(addresses.TOKEN_PROGRAM_ID)
+): TransactionInstruction {
+	const keys: Array<AccountMeta> = [
+		{ pubkey: account, isSigner: false, isWritable: true },
+		{ pubkey: delegate, isSigner: false, isWritable: false },
+		{ pubkey: owner, isSigner: true, isWritable: false },
+	];
+
+	const data = Buffer.alloc(ApproveInstructionData.span);
+	ApproveInstructionData.encode(
+		{
+			instruction: 4,
+			amount,
+		},
+		data
+	);
+	return new TransactionInstruction({ keys, programId, data });
 }
 
 const SyncNativeInstructionData = struct<any>([u8('instruction')]);
@@ -76,7 +105,6 @@ const SwapLayout = struct<any>([
 	nu64('feeCancel'),
 	u16('destinationChain'),
 	blob(32, 'destinationAddress'),
-
 ]);
 export async function swapFromSolana(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
@@ -87,6 +115,7 @@ export async function swapFromSolana(
 	const tokenProgram = new PublicKey(addresses.TOKEN_PROGRAM_ID);
 	const swapper = new PublicKey(swapperWalletAddress);
 
+	const auctionAddr = new PublicKey(addresses.AUCTION_PROGRAM_ID);
 
 	const [main, mainNonce] = PublicKey.findProgramAddressSync(
 		[Buffer.from('MAIN')],
@@ -134,16 +163,36 @@ export async function swapFromSolana(
 		}));
 		trx.add(createSyncNativeInstruction(fromAccount));
 	}
+
+	const amount = getAmountOfFractionalAmount(
+		quote.effectiveAmountIn, quote.mintDecimals.from);
+
+	const delegate = Keypair.generate();
+	trx.add(createApproveInstruction(
+		fromAccount, delegate.publicKey, swapper, amount
+	));
+
+	const stateRent =
+		await solanaConnection.getMinimumBalanceForRentExemption(STATE_SIZE);
+	trx.add(SystemProgram.transfer({
+		fromPubkey: swapper,
+		toPubkey: delegate.publicKey,
+		lamports: stateRent,
+	}));
+
 	const swapKeys: Array<AccountMeta> = [
-		{pubkey: swapper, isWritable: false, isSigner: true},
+		{pubkey: delegate.publicKey, isWritable: false, isSigner: true},
 		{pubkey: main, isWritable: false, isSigner: false},
 		{pubkey: msg1, isWritable: false, isSigner: false},
 		{pubkey: msg2, isWritable: false, isSigner: false},
 		{pubkey: state, isWritable: true, isSigner: false},
 		{pubkey: fromAccount, isWritable: true, isSigner: false},
+		{pubkey: swapper, isWritable: false, isSigner: false},
 		{pubkey: toAccount, isWritable: true, isSigner: false},
 		{pubkey: fromMint, isWritable: false, isSigner: false},
 		{pubkey: toMint, isWritable: false, isSigner: false},
+		{pubkey: auctionAddr, isWritable: false, isSigner: false},
+		{pubkey: delegate.publicKey, isWritable: false, isSigner: true},
 		{pubkey: SYSVAR_CLOCK_PUBKEY, isWritable: false, isSigner: false},
 		{pubkey: SYSVAR_RENT_PUBKEY, isWritable: false, isSigner: false},
 		{pubkey: tokenProgram, isWritable: false, isSigner: false},
@@ -169,8 +218,6 @@ export async function swapFromSolana(
 		)
 	);
 
-	const amount = getAmountOfFractionalAmount(
-		quote.effectiveAmountIn, quote.mintDecimals.from);
 	const minAmountOut = getAmountOfFractionalAmount(
 		quote.minAmountOut, quote.mintDecimals.to);
 	const feeSwap = getAmountOfFractionalAmount(
@@ -203,6 +250,7 @@ export async function swapFromSolana(
 	trx.add(swapInstruction);
 	const { blockhash } = await solanaConnection.getLatestBlockhash();
 	trx.recentBlockhash = blockhash;
+	trx.partialSign(delegate);
 	const signedTrx = await signTransaction(trx);
 	return await solanaConnection.sendRawTransaction(signedTrx.serialize(), { skipPreflight: true });
 }
