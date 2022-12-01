@@ -10,7 +10,7 @@ npm install --save @mayanfinance/swap-sdk
 
 ## Usage: 
 
-import the necessary functions and models: 
+Import the necessary functions and models: 
 
 ```bash
 import { fetchQuote, swapFromEvm, swapFromSolana, Quote } from '@mayanfinance/swap-sdk'
@@ -20,7 +20,7 @@ Then we will need to get a quote:
 
 ### Getting Quote:
 ```bash
-const quote = await getQuote({
+const quote = await fetchQuote({
   amountIn: 250,
   fromToken: fromToken.contract,
   toToken: toToken.contract,
