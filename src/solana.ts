@@ -24,7 +24,7 @@ import addresses  from './addresses'
 import { ethers } from 'ethers';
 import { getCurrentSolanaTime } from './api';
 
-const STATE_SIZE = 307;
+const STATE_SIZE = 306;
 
 function createAssociatedTokenAccountInstruction(
 	payer: PublicKey,
