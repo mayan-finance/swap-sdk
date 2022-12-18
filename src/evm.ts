@@ -25,6 +25,7 @@ export type Criteria = {
 	swapDeadline: ethers.BigNumber,
 	amountOutMin: ethers.BigNumber,
 	nonce: number,
+	unwrap: boolean,
 }
 
 export type Recipient = {
@@ -70,6 +71,10 @@ export async function swapFromEvm(
 	// Times are in seconds
 	const currentEvmTime = await getCurrentEvmTime(provider);
 	const currentSolanaTime = await getCurrentSolanaTime();
+
+	const unwrapRedeem =
+		quote.toToken.contract === ethers.constants.AddressZero;
+
 	const criteria: Criteria = {
 		transferDeadline: ethers.BigNumber.from(currentEvmTime + timeout),
 		swapDeadline: ethers.BigNumber.from(currentSolanaTime + timeout),
@@ -77,7 +82,9 @@ export async function swapFromEvm(
 			quote.minAmountOut, Math.min(8, quote.toToken.decimals)
 		),
 		nonce: createNonce().readUInt32LE(0),
+		unwrap: unwrapRedeem,
 	};
+
 	const contractRelayerFees: ContractRelayerFees = {
 		swapFee: getAmountOfFractionalAmount(quote.swapRelayerFee,
 			Math.min(8, quote.fromToken.decimals)),

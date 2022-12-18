@@ -24,7 +24,7 @@ import addresses  from './addresses'
 import { ethers } from 'ethers';
 import { getCurrentSolanaTime } from './api';
 
-const STATE_SIZE = 306;
+const STATE_SIZE = 308;
 
 function createAssociatedTokenAccountInstruction(
 	payer: PublicKey,
@@ -93,6 +93,58 @@ function createSyncNativeInstruction(
 	});
 }
 
+const CloseAccountInstructionData = struct<any>([
+	u8('instruction')
+]);
+function createCloseAccountInstruction(
+	account: PublicKey,
+	destination: PublicKey,
+	owner: PublicKey,
+	programId = new PublicKey(addresses.TOKEN_PROGRAM_ID)
+): TransactionInstruction {
+	const keys: Array<AccountMeta> = [
+		{ pubkey: account, isSigner: false, isWritable: true },
+		{ pubkey: destination, isSigner: false, isWritable: true },
+		{ pubkey: owner, isSigner: true, isWritable: false },
+	];
+
+	const data = Buffer.alloc(CloseAccountInstructionData.span);
+	CloseAccountInstructionData.encode(
+		{
+			instruction: 9,
+		},
+		data
+	);
+	return new TransactionInstruction({ keys, programId, data });
+}
+
+const SplTransferInstructionData = struct<any>([
+	u8('instruction'), nu64('amount')
+]);
+function createSplTransferInstruction(
+	source: PublicKey,
+	destination: PublicKey,
+	owner: PublicKey,
+	amount: ethers.BigNumber,
+	programId = new PublicKey(addresses.TOKEN_PROGRAM_ID)
+): TransactionInstruction {
+	const keys: Array<AccountMeta> = [
+		{ pubkey: source, isSigner: false, isWritable: true },
+		{ pubkey: destination, isSigner: false, isWritable: true },
+		{ pubkey: owner, isSigner: true, isWritable: false },
+	];
+
+	const data = Buffer.alloc(SplTransferInstructionData.span);
+	SplTransferInstructionData.encode(
+		{
+			instruction: 3,
+			amount,
+		},
+		data
+	);
+	return new TransactionInstruction({ keys, programId, data });
+}
+
 const SwapLayout = struct<any>([
 	u8('instruction'),
 	u8('mainNonce'),
@@ -105,12 +157,15 @@ const SwapLayout = struct<any>([
 	nu64('feeCancel'),
 	u16('destinationChain'),
 	blob(32, 'destinationAddress'),
+	u8('unwrapRedeem'),
+	u8('unwrapRefund'),
 ]);
 export async function swapFromSolana(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
 	timeout: number, signTransaction: SolanaTransactionSigner, connection?: Connection
 ) : Promise<string> {
-	const solanaConnection = connection ?? new Connection('https://rpc.ankr.com/solana');
+	const solanaConnection = connection ??
+		new Connection('https://rpc.ankr.com/solana');
 	const mayanProgram = new PublicKey(addresses.MAYAN_PROGRAM_ID);
 	const tokenProgram = new PublicKey(addresses.TOKEN_PROGRAM_ID);
 	const swapper = new PublicKey(swapperWalletAddress);
@@ -140,14 +195,16 @@ export async function swapFromSolana(
 		feePayer: swapper,
 	});
 
-	const fromAccountData = await solanaConnection.getAccountInfo(fromAccount, 'finalized');
+	const fromAccountData = await solanaConnection.getAccountInfo(
+		fromAccount, 'finalized');
 	if (!fromAccountData || fromAccountData.data.length === 0) {
 		trx.add(createAssociatedTokenAccountInstruction(
 			swapper, fromAccount, swapper, fromMint
 		));
 	}
 
-	const toAccountData = await solanaConnection.getAccountInfo(toAccount, 'finalized');
+	const toAccountData = await solanaConnection.getAccountInfo(
+		toAccount, 'finalized');
 	if (!toAccountData || toAccountData.data.length === 0) {
 		trx.add(createAssociatedTokenAccountInstruction(
 			swapper, toAccount, main, fromMint
@@ -227,6 +284,11 @@ export async function swapFromSolana(
 	const feeCancel = getAmountOfFractionalAmount(
 		quote.refundRelayerFee, quote.mintDecimals.from)
 
+	const unwrapRedeem =
+		quote.toToken.contract === ethers.constants.AddressZero;
+	const unwrapRefund =
+		quote.fromToken.contract === ethers.constants.AddressZero;
+
 	const swapData = Buffer.alloc(SwapLayout.span);
 	const swapFields = {
 		instruction: 101,
@@ -240,6 +302,8 @@ export async function swapFromSolana(
 		feeCancel,
 		destinationChain: destinationChainId,
 		destinationAddress: destAddress,
+		unwrapRedeem: unwrapRedeem ? 1 : 0,
+		unwrapRefund: unwrapRefund ? 1 : 0,
 	}
 	SwapLayout.encode(swapFields, swapData);
 	const swapInstruction = new TransactionInstruction({
@@ -252,5 +316,74 @@ export async function swapFromSolana(
 	trx.recentBlockhash = blockhash;
 	trx.partialSign(delegate);
 	const signedTrx = await signTransaction(trx);
-	return await solanaConnection.sendRawTransaction(signedTrx.serialize(), { skipPreflight: true });
+	return await solanaConnection.sendRawTransaction(signedTrx.serialize());
+}
+
+const solMint = new PublicKey('So11111111111111111111111111111111111111112');
+
+export async function wrapSol(
+	owner: PublicKey, amount: number,
+	signTransaction: SolanaTransactionSigner, connection?: Connection
+) : Promise<string> {
+	const solanaConnection = connection ?? new Connection('https://rpc.ankr.com/solana');
+	const toAccount = getAssociatedTokenAddress(solMint, owner, false);
+
+	const trx = new Transaction({
+		feePayer: owner,
+	});
+
+	const toAccountData = await solanaConnection.getAccountInfo(toAccount, 'finalized');
+	if (!toAccountData || toAccountData.data.length === 0) {
+		trx.add(createAssociatedTokenAccountInstruction(
+			owner, toAccount, owner, solMint
+		));
+	}
+
+	trx.add(SystemProgram.transfer({
+		fromPubkey: owner,
+		toPubkey: toAccount,
+		lamports: getAmountOfFractionalAmount(amount, 9).toBigInt(),
+	}));
+
+	trx.add(createSyncNativeInstruction(toAccount));
+
+	const { blockhash } = await solanaConnection.getLatestBlockhash();
+	trx.recentBlockhash = blockhash;
+	const signedTrx = await signTransaction(trx);
+	return await solanaConnection.sendRawTransaction(signedTrx.serialize());
+}
+
+export async function unwrapSol(
+	owner: PublicKey, amount: number,
+	signTransaction: SolanaTransactionSigner, connection?: Connection
+) : Promise<string> {
+	const solanaConnection = connection ??
+		new Connection('https://rpc.ankr.com/solana');
+	const fromAccount = getAssociatedTokenAddress(solMint, owner, false);
+	const delegate = Keypair.generate();
+
+	const trx = new Transaction({
+		feePayer: owner,
+	});
+
+	const toAccount = getAssociatedTokenAddress(
+		solMint, delegate.publicKey, false);
+	trx.add(createAssociatedTokenAccountInstruction(
+		owner, toAccount, delegate.publicKey, solMint
+	));
+
+	trx.add(createSplTransferInstruction(
+		fromAccount, toAccount, owner,
+		getAmountOfFractionalAmount(amount, 9)
+	));
+
+	trx.add(createCloseAccountInstruction(
+		toAccount, owner, delegate.publicKey
+	));
+
+	const { blockhash } = await solanaConnection.getLatestBlockhash();
+	trx.recentBlockhash = blockhash;
+	trx.partialSign(delegate);
+	const signedTrx = await signTransaction(trx);
+	return await solanaConnection.sendRawTransaction(signedTrx.serialize());
 }

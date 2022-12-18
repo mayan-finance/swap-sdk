@@ -15,6 +15,31 @@ export default {
 			"type": "constructor"
 		},
 		{
+			"anonymous": false,
+			"inputs": [
+				{
+					"indexed": true,
+					"internalType": "uint16",
+					"name": "emitterChainId",
+					"type": "uint16"
+				},
+				{
+					"indexed": true,
+					"internalType": "bytes32",
+					"name": "emitterAddress",
+					"type": "bytes32"
+				},
+				{
+					"indexed": true,
+					"internalType": "uint64",
+					"name": "sequence",
+					"type": "uint64"
+				}
+			],
+			"name": "Redeemed",
+			"type": "event"
+		},
+		{
 			"inputs": [
 				{
 					"internalType": "address",
@@ -107,6 +132,16 @@ export default {
 							"internalType": "bytes32",
 							"name": "auctionAddr",
 							"type": "bytes32"
+						},
+						{
+							"internalType": "bool",
+							"name": "unwrapRedeem",
+							"type": "bool"
+						},
+						{
+							"internalType": "bool",
+							"name": "unwrapRefund",
+							"type": "bool"
 						}
 					],
 					"internalType": "struct MayanStructs.Swap",
@@ -136,6 +171,55 @@ export default {
 				}
 			],
 			"stateMutability": "view",
+			"type": "function"
+		},
+		{
+			"inputs": [
+				{
+					"internalType": "bytes",
+					"name": "encoded",
+					"type": "bytes"
+				}
+			],
+			"name": "parseRedeemPayload",
+			"outputs": [
+				{
+					"components": [
+						{
+							"internalType": "bytes32",
+							"name": "recepient",
+							"type": "bytes32"
+						},
+						{
+							"internalType": "uint64",
+							"name": "relayerFee",
+							"type": "uint64"
+						},
+						{
+							"internalType": "bool",
+							"name": "unwrap",
+							"type": "bool"
+						}
+					],
+					"internalType": "struct MayanStructs.Redeem",
+					"name": "r",
+					"type": "tuple"
+				}
+			],
+			"stateMutability": "pure",
+			"type": "function"
+		},
+		{
+			"inputs": [
+				{
+					"internalType": "bytes",
+					"name": "encodedVm",
+					"type": "bytes"
+				}
+			],
+			"name": "redeem",
+			"outputs": [],
+			"stateMutability": "nonpayable",
 			"type": "function"
 		},
 		{
@@ -233,6 +317,11 @@ export default {
 							"internalType": "uint64",
 							"name": "amountOutMin",
 							"type": "uint64"
+						},
+						{
+							"internalType": "bool",
+							"name": "unwrap",
+							"type": "bool"
 						},
 						{
 							"internalType": "uint32",
@@ -391,6 +480,11 @@ export default {
 							"type": "uint64"
 						},
 						{
+							"internalType": "bool",
+							"name": "unwrap",
+							"type": "bool"
+						},
+						{
 							"internalType": "uint32",
 							"name": "nonce",
 							"type": "uint32"
@@ -411,6 +505,10 @@ export default {
 			],
 			"stateMutability": "payable",
 			"type": "function"
+		},
+		{
+			"stateMutability": "payable",
+			"type": "receive"
 		}
 	]
 }
