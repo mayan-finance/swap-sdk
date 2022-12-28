@@ -176,13 +176,13 @@ export async function swapFromSolana(
 		[Buffer.from('MAIN')],
 		mayanProgram,
 	);
-	const msg1 = Keypair.generate().publicKey;
-	const msg2 = Keypair.generate().publicKey;
+	const msg1 = Keypair.generate();
+	const msg2 = Keypair.generate();
 	const [state, stateNonce] = PublicKey.findProgramAddressSync(
 		[
 			Buffer.from('V2STATE'),
-			Buffer.from(msg1.toBytes()),
-			Buffer.from(msg2.toBytes()),
+			Buffer.from(msg1.publicKey.toBytes()),
+			Buffer.from(msg2.publicKey.toBytes()),
 		],
 		mayanProgram,
 	);
@@ -240,8 +240,8 @@ export async function swapFromSolana(
 	const swapKeys: Array<AccountMeta> = [
 		{pubkey: delegate.publicKey, isWritable: false, isSigner: true},
 		{pubkey: main, isWritable: false, isSigner: false},
-		{pubkey: msg1, isWritable: false, isSigner: false},
-		{pubkey: msg2, isWritable: false, isSigner: false},
+		{pubkey: msg1.publicKey, isWritable: false, isSigner: true},
+		{pubkey: msg2.publicKey, isWritable: false, isSigner: true},
 		{pubkey: state, isWritable: true, isSigner: false},
 		{pubkey: fromAccount, isWritable: true, isSigner: false},
 		{pubkey: swapper, isWritable: false, isSigner: false},
@@ -315,6 +315,8 @@ export async function swapFromSolana(
 	const { blockhash } = await solanaConnection.getLatestBlockhash();
 	trx.recentBlockhash = blockhash;
 	trx.partialSign(delegate);
+	trx.partialSign(msg1);
+	trx.partialSign(msg2);
 	const signedTrx = await signTransaction(trx);
 	return await solanaConnection.sendRawTransaction(signedTrx.serialize());
 }
