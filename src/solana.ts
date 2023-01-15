@@ -262,7 +262,8 @@ export async function swapFromSolana(
 	if (destinationChainId === 1) { //destination address safety check!
 		const destinationAccount =
 			await solanaConnection.getAccountInfo(new PublicKey(destinationAddress));
-		if (destinationAccount.owner.equals(tokenProgram)) {
+		if (destinationAccount && destinationAccount.owner &&
+			destinationAccount.owner.equals(tokenProgram)) {
 			throw new Error(
 				'Destination address is not about token account.' +
 				' It should be a owner address'
