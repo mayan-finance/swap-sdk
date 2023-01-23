@@ -90,3 +90,4 @@ dist
 .rts2_cache_*
 schema.json
 _gen
+lib
