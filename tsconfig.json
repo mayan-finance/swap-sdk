@@ -1,0 +1,26 @@
+{
+	"$schema": "https://json.schemastore.org/tsconfig",
+	"compilerOptions": {
+		"lib": [
+			"es2018"
+		],
+		"target": "es2018",
+		// TODO: Add this back
+		"strict": false,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"forceConsistentCasingInFileNames": true,
+		"sourceMap": false,
+		"moduleResolution": "node",
+		"baseUrl": ".",
+		"declaration": true,
+		"outDir": "./lib"
+	},
+	"include": [
+		"src"
+	],
+	"exclude": [
+		"node_modules",
+		"**/__tests__/*"
+	]
+}

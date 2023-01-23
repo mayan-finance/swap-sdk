@@ -3,8 +3,8 @@
   "description": "A SDK to swap with Mayan",
   "version": "2.6.0",
   "source": "src/main.ts",
-  "main": "dist/main.umd.js",
-  "module": "dist/main.modern.module.js",
+  "main": "lib/index.js",
+  "module": "dist/main.esm.js",
   "unpkg": "dist/main.umd.js",
   "types": "dist/main.d.ts",
   "keywords": [
@@ -15,10 +15,15 @@
   ],
   "files": [
     "dist/**.js*",
-    "dist/**/*.ts"
+    "lib/**/*",
+    "LICENSE",
+    "README.md"
   ],
   "scripts": {
-    "build": "microbundle --define PKG_VERSION=$npm_package_version",
+    "clean": "rimraf dist lib",
+    "build": "npm run clean && npm run tsc && npm run rollup-build",
+    "rollup-build": "rollup -c rollup.config.js",
+    "tsc": "tsc",
     "watch": "microbundle watch --define PKG_VERSION=$npm_package_version",
     "lint": "prettier src -c",
     "format": "prettier src --write",
@@ -26,8 +31,11 @@
     "release": "npm run prepack && npx np --no-tests"
   },
   "devDependencies": {
-    "microbundle": "^0.15.0",
-    "prettier": "^2.6.2"
+    "prettier": "^2.6.2",
+    "rimraf": "^4.1.1",
+    "rollup": "^3.10.0",
+    "rollup-plugin-dts": "^5.1.1",
+    "typescript": "^4.9.4"
   },
   "prettier": {
     "singleQuote": true
@@ -39,10 +47,10 @@
   },
   "author": "Jiri",
   "dependencies": {
-    "@solana/buffer-layout": "^4.0.0",
-    "@solana/web3.js": "^1.66.0",
+    "@solana/buffer-layout": "^4 || ^3",
+    "@solana/web3.js": "^1.22.0",
     "cross-fetch": "^3.1.5",
-    "ethers": "^5.7.2",
+    "ethers": "^5",
     "js-sha3": "^0.8.0"
   }
 }
