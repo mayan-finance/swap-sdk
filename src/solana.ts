@@ -172,13 +172,13 @@ export async function swapFromSolana(
 
 	const auctionAddr = new PublicKey(addresses.AUCTION_PROGRAM_ID);
 
-	const [main, mainNonce] = PublicKey.findProgramAddressSync(
+	const [main, mainNonce] = await PublicKey.findProgramAddress(
 		[Buffer.from('MAIN')],
 		mayanProgram,
 	);
 	const msg1 = Keypair.generate();
 	const msg2 = Keypair.generate();
-	const [state, stateNonce] = PublicKey.findProgramAddressSync(
+	const [state, stateNonce] = await PublicKey.findProgramAddress(
 		[
 			Buffer.from('V2STATE'),
 			Buffer.from(msg1.publicKey.toBytes()),
@@ -188,8 +188,8 @@ export async function swapFromSolana(
 	);
 	const fromMint = new PublicKey(quote.fromToken.mint);
 	const toMint = new PublicKey(quote.toToken.mint);
-	const fromAccount = getAssociatedTokenAddress(fromMint, swapper);
-	const toAccount = getAssociatedTokenAddress(fromMint, main, true);
+	const fromAccount = await getAssociatedTokenAddress(fromMint, swapper);
+	const toAccount = await getAssociatedTokenAddress(fromMint, main, true);
 
 	const trx = new Transaction({
 		feePayer: swapper,
@@ -329,7 +329,7 @@ export async function wrapSol(
 	signTransaction: SolanaTransactionSigner, connection?: Connection
 ) : Promise<string> {
 	const solanaConnection = connection ?? new Connection('https://rpc.ankr.com/solana');
-	const toAccount = getAssociatedTokenAddress(solMint, owner, false);
+	const toAccount = await getAssociatedTokenAddress(solMint, owner, false);
 
 	const trx = new Transaction({
 		feePayer: owner,
@@ -362,14 +362,14 @@ export async function unwrapSol(
 ) : Promise<string> {
 	const solanaConnection = connection ??
 		new Connection('https://rpc.ankr.com/solana');
-	const fromAccount = getAssociatedTokenAddress(solMint, owner, false);
+	const fromAccount = await getAssociatedTokenAddress(solMint, owner, false);
 	const delegate = Keypair.generate();
 
 	const trx = new Transaction({
 		feePayer: owner,
 	});
 
-	const toAccount = getAssociatedTokenAddress(
+	const toAccount = await getAssociatedTokenAddress(
 		solMint, delegate.publicKey, false);
 	trx.add(createAssociatedTokenAccountInstruction(
 		owner, toAccount, delegate.publicKey, solMint

@@ -43,7 +43,7 @@ export async function swapFromEvm(
 	const mayanProgram = new PublicKey(addresses.MAYAN_PROGRAM_ID);
 	const [mayanMainAccount] = await PublicKey.findProgramAddress(
 		[Buffer.from('MAIN')], mayanProgram);
-	const recipient = getAssociatedTokenAddress(
+	const recipient = await getAssociatedTokenAddress(
 		new PublicKey(quote.fromToken.mint),
 		mayanMainAccount,
 		true,

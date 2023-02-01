@@ -41,18 +41,18 @@ export async function getCurrentEvmTime(
 	return latestBlock.timestamp;
 }
 
-export function getAssociatedTokenAddress(
+export async function getAssociatedTokenAddress(
 	mint: PublicKey,
 	owner: PublicKey,
 	allowOwnerOffCurve = false,
 	programId = new PublicKey(addresses.TOKEN_PROGRAM_ID),
 	associatedTokenProgramId = new PublicKey(addresses.ASSOCIATED_TOKEN_PROGRAM_ID)
-): PublicKey {
+): Promise<PublicKey> {
 	if (!allowOwnerOffCurve && !PublicKey.isOnCurve(owner.toBuffer())) {
 		throw new Error('TokenOwnerOffCurveError');
 	}
 
-	const [address] = PublicKey.findProgramAddressSync(
+	const [address] = await PublicKey.findProgramAddress(
 		[owner.toBuffer(), programId.toBuffer(), mint.toBuffer()],
 		associatedTokenProgramId
 	);
