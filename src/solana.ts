@@ -249,7 +249,7 @@ export async function swapFromSolana(
 		{pubkey: fromMint, isWritable: false, isSigner: false},
 		{pubkey: toMint, isWritable: false, isSigner: false},
 		{pubkey: auctionAddr, isWritable: false, isSigner: false},
-		{pubkey: delegate.publicKey, isWritable: false, isSigner: true},
+		{pubkey: delegate.publicKey, isWritable: true, isSigner: true},
 		{pubkey: SYSVAR_CLOCK_PUBKEY, isWritable: false, isSigner: false},
 		{pubkey: SYSVAR_RENT_PUBKEY, isWritable: false, isSigner: false},
 		{pubkey: tokenProgram, isWritable: false, isSigner: false},
