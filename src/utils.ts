@@ -90,6 +90,11 @@ const evmChainIdMap: { [index: string]: number }  = {
 	[137]: 5,
 	[43114]: 6,
 };
+
 export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
+}
+
+export function checkSDKVersionSupport(minimumVersion: string): {
+
 }

@@ -2,6 +2,7 @@ import fetch from 'cross-fetch';
 import { Token, ChainName, QuoteParams, Quote, QuoteError } from './types';
 import addresses from './addresses';
 
+const sdkVersion = process.env.npm_pack
 export async function fetchAllTokenList(): Promise<{[index: string]: Token[]}> {
 	const res = await fetch(`${addresses.PRICE_URL}/tokens`);
 	if (res.status === 200) {
