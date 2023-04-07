@@ -24,7 +24,7 @@ import addresses  from './addresses'
 import { ethers } from 'ethers';
 import { getCurrentSolanaTime } from './api';
 
-const STATE_SIZE = 308;
+const STATE_SIZE = 340;
 
 function createAssociatedTokenAccountInstruction(
 	payer: PublicKey,
@@ -162,7 +162,8 @@ const SwapLayout = struct<any>([
 ]);
 export async function swapFromSolana(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
-	timeout: number, signTransaction: SolanaTransactionSigner, connection?: Connection
+	timeout: number, referrerAddress: string,
+	signTransaction: SolanaTransactionSigner, connection?: Connection
 ) : Promise<string> {
 	const solanaConnection = connection ??
 		new Connection('https://rpc.ankr.com/solana');
@@ -171,6 +172,7 @@ export async function swapFromSolana(
 	const swapper = new PublicKey(swapperWalletAddress);
 
 	const auctionAddr = new PublicKey(addresses.AUCTION_PROGRAM_ID);
+	const referrerAddr = new PublicKey(referrerAddress);
 
 	const [main, mainNonce] = await PublicKey.findProgramAddress(
 		[Buffer.from('MAIN')],
@@ -249,6 +251,7 @@ export async function swapFromSolana(
 		{pubkey: fromMint, isWritable: false, isSigner: false},
 		{pubkey: toMint, isWritable: false, isSigner: false},
 		{pubkey: auctionAddr, isWritable: false, isSigner: false},
+		{pubkey: referrerAddr, isWritable: false, isSigner: false},
 		{pubkey: delegate.publicKey, isWritable: true, isSigner: true},
 		{pubkey: SYSVAR_CLOCK_PUBKEY, isWritable: false, isSigner: false},
 		{pubkey: SYSVAR_RENT_PUBKEY, isWritable: false, isSigner: false},

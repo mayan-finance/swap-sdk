@@ -285,6 +285,11 @@ export default {
 							"internalType": "uint16",
 							"name": "destChainId",
 							"type": "uint16"
+						},
+						{
+							"internalType": "bytes32",
+							"name": "referrer",
+							"type": "bytes32"
 						}
 					],
 					"internalType": "struct MayanSwap.Recepient",
@@ -446,6 +451,11 @@ export default {
 							"internalType": "uint16",
 							"name": "destChainId",
 							"type": "uint16"
+						},
+						{
+							"internalType": "bytes32",
+							"name": "referrer",
+							"type": "bytes32"
 						}
 					],
 					"internalType": "struct MayanSwap.Recepient",

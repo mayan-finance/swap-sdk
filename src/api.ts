@@ -1,10 +1,13 @@
 import fetch from 'cross-fetch';
 import { Token, ChainName, QuoteParams, Quote, QuoteError } from './types';
 import addresses from './addresses';
+import { checkSdkVersionSupport } from './utils';
 
-const sdkVersion = process.env.npm_pack
 export async function fetchAllTokenList(): Promise<{[index: string]: Token[]}> {
-	const res = await fetch(`${addresses.PRICE_URL}/tokens`);
+	const res = await fetch(`${addresses.PRICE_URL}/tokens`, {
+		method: 'GET',
+		redirect: 'follow',
+	});
 	if (res.status === 200) {
 		const result = await res.json();
 		return result as { [index: string]: Token[] };
@@ -32,7 +35,10 @@ export async function fetchQuote(params: QuoteParams): Promise<Quote> {
 		''
 	);
 	const url = baseUrl + basicQueries + criteriaQueries;
-	const res = await fetch(url);
+	const res = await fetch(url, {
+		method: 'GET',
+		redirect: 'follow',
+	});
 	const result = await res.json();
 	if (res.status !== 200) {
 		throw {
@@ -40,11 +46,20 @@ export async function fetchQuote(params: QuoteParams): Promise<Quote> {
 			message: result?.msg || 'Route not found',
 		} as QuoteError
 	}
+	if (!checkSdkVersionSupport(result.minimumSdkVersion)) {
+		throw {
+			code: 9999,
+			message: 'Swap SDK is outdated!',
+		} as QuoteError
+	}
 	return result;
 }
 
 export async function getCurrentSolanaTime(): Promise<number> {
-	const res = await fetch(`${addresses.PRICE_URL}/clock/solana`);
+	const res = await fetch(`${addresses.PRICE_URL}/clock/solana`, {
+		method: 'GET',
+		redirect: 'follow',
+	});
 	const result = await res.json();
 	if (res.status !== 200) {
 		throw result;

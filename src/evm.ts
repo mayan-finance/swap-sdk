@@ -31,6 +31,7 @@ export type Criteria = {
 export type Recipient = {
 	mayanAddr: string,
 	auctionAddr: string,
+	referrer: string,
 	destAddr: string,
 	mayanChainId: number,
 	destChainId: number,
@@ -38,7 +39,8 @@ export type Recipient = {
 
 export async function swapFromEvm(
 	quote: Quote, destinationAddress: string,
-	timeout: number,provider: ethers.providers.BaseProvider,
+	timeout: number, referrerAddress: string,
+	provider: ethers.providers.BaseProvider,
 	signer: Signer, overrides?: Overrides): Promise<TransactionResponse> {
 	const mayanProgram = new PublicKey(addresses.MAYAN_PROGRAM_ID);
 	const [mayanMainAccount] = await PublicKey.findProgramAddress(
@@ -52,7 +54,10 @@ export async function swapFromEvm(
 		quote.effectiveAmountIn, quote.fromToken.decimals);
 	const recipientHex = nativeAddressToHexString(recipient.toString(), 1);
 	const auctionHex = nativeAddressToHexString(
-		new PublicKey(addresses.AUCTION_PROGRAM_ID).toString(), 1
+		addresses.AUCTION_PROGRAM_ID, 1
+	);
+	const referrerHex = nativeAddressToHexString(
+		referrerAddress, 1
 	);
 	const signerChainId = await signer.getChainId();
 	const signerWormholeChainId = getWormholeChainIdById(signerChainId);
@@ -67,7 +72,9 @@ export async function swapFromEvm(
 		destAddr: nativeAddressToHexString(destinationAddress, destinationChainId),
 		destChainId: destinationChainId,
 		auctionAddr: auctionHex,
+		referrer: referrerHex,
 	};
+	console.log({ recipientStruct })
 	// Times are in seconds
 	const currentEvmTime = await getCurrentEvmTime(provider);
 	const currentSolanaTime = await getCurrentSolanaTime();

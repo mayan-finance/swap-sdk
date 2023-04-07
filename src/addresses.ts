@@ -1,9 +1,18 @@
+// export default {
+// 	"MAYAN_PROGRAM_ID": "8LPjGDbxhW4G2Q8S6FvdvUdfGWssgtqmvsc63bwNFA7E",
+// 	"AUCTION_PROGRAM_ID": "4U6MNAMRbYeTD4HumavhJ1ah9NQ5pNPhTNxcFdeybXFy",
+// 	"MAYAN_EVM_CONTRACT": "0x05B70Fb5477A93bE33822bfB31fDAF2c171970dF",
+// 	"TOKEN_PROGRAM_ID": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+// 	"ASSOCIATED_TOKEN_PROGRAM_ID": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+// 	"EXPLORER_URL": "https://price-api.mayan.finance/v1",
+// 	"PRICE_URL": "https://price-api.mayan.finance/v1"
+// }
 export default {
-	"MAYAN_PROGRAM_ID": "8LPjGDbxhW4G2Q8S6FvdvUdfGWssgtqmvsc63bwNFA7E",
-	"AUCTION_PROGRAM_ID": "4U6MNAMRbYeTD4HumavhJ1ah9NQ5pNPhTNxcFdeybXFy",
-	"MAYAN_EVM_CONTRACT": "0x05B70Fb5477A93bE33822bfB31fDAF2c171970dF",
+	"MAYAN_PROGRAM_ID": "9N34KcQXfKjCQcyAXkuCoGgixfi1dj53LtsfFrcBdjNh",
+	"AUCTION_PROGRAM_ID": "Gqjr8NdrykXUrpPFzZDzsHDNK3NUd3gNhXzgzAvXK2Nh",
+	"MAYAN_EVM_CONTRACT": "0x80F26b504872A32A31ad6e5bD1b9bCB71e206437",
 	"TOKEN_PROGRAM_ID": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
 	"ASSOCIATED_TOKEN_PROGRAM_ID": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
-	"EXPLORER_URL": "https://price-api.mayan.finance/v1",
-	"PRICE_URL": "https://price-api.mayan.finance/v1"
+	"EXPLORER_URL": "http://172.20.10.2:4000/v2",
+	"PRICE_URL": "http://172.20.10.2:5001/v2"
 }

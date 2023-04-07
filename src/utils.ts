@@ -95,6 +95,29 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-export function checkSDKVersionSupport(minimumVersion: string): {
+const sdkVersion = (process.env.npm_package_version || '0.0.0')
+	.split('.')
+	.map(Number);
 
+export function checkSdkVersionSupport(minimumVersion: [number, number, number]): boolean {
+	//major
+	console.log('sdk ve',process.env.npm_package_version)
+	if (sdkVersion[0] < minimumVersion[0]) {
+		return false;
+	}
+	if (sdkVersion[0] > minimumVersion[0]) {
+		return true;
+	}
+	//minor
+	if (sdkVersion[1] < minimumVersion[1]) {
+		return false;
+	}
+	if (sdkVersion[1] > minimumVersion[1]) {
+		return true;
+	}
+	//patch
+	if (sdkVersion[2] >= minimumVersion[2]) {
+		return true;
+	}
+	return false;
 }
