@@ -15,6 +15,7 @@
   ],
   "files": [
     "dist/**.js*",
+		"dist/main.d.ts",
     "lib/**/*",
     "LICENSE",
     "README.md"
