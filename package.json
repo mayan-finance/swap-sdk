@@ -14,8 +14,7 @@
     "swap-sdk"
   ],
   "files": [
-    "dist/**.js*",
-		"dist/main.d.ts",
+		"dist/**/*",
     "lib/**/*",
     "LICENSE",
     "README.md"
