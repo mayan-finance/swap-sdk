@@ -95,13 +95,10 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = (process.env.npm_package_version || '0.0.0')
-	.split('.')
-	.map(Number);
+const sdkVersion = [3, 0, 0];
 
 export function checkSdkVersionSupport(minimumVersion: [number, number, number]): boolean {
 	//major
-	console.log('sdk ve',process.env.npm_package_version)
 	if (sdkVersion[0] < minimumVersion[0]) {
 		return false;
 	}

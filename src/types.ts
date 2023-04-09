@@ -24,6 +24,7 @@ export type QuoteParams = {
 	toToken: string,
 	toChain: ChainName,
 	slippage: number,
+	withReferrer?:boolean,
 	customRelayerFees?: {
 		swapRelayerFee: number,
 		redeemRelayerFee: number,

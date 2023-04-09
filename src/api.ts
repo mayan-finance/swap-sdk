@@ -25,11 +25,11 @@ export async function fetchTokenList(chain: ChainName): Promise<Token[]> {
 }
 
 export async function fetchQuote(params: QuoteParams): Promise<Quote> {
-	const { customRelayerFees: relayerFees } = params;
+	const { customRelayerFees: relayerFees, withReferrer } = params;
 	const normalizedSlippage = params.slippage / 100;
 	const baseUrl = `${addresses.PRICE_URL}/quote?`;
 	const basicQueries = `amountIn=${params.amount}&fromToken=${params.fromToken}&fromChain=${params.fromChain}&toToken=${params.toToken}&toChain=${params.toChain}`;
-	const criteriaQueries = `&slippage=${normalizedSlippage}` + (
+	const criteriaQueries = `&slippage=${normalizedSlippage}&withReferrer=${!!withReferrer}` + (
 		relayerFees ?
 		`&swapRelayerFee=${relayerFees.swapRelayerFee}&redeemRelayerFee=${relayerFees.redeemRelayerFee}&refundRelayerFee=${relayerFees.refundRelayerFee}` :
 		''

@@ -74,7 +74,6 @@ export async function swapFromEvm(
 		auctionAddr: auctionHex,
 		referrer: referrerHex,
 	};
-	console.log({ recipientStruct })
 	// Times are in seconds
 	const currentEvmTime = await getCurrentEvmTime(provider);
 	const currentSolanaTime = await getCurrentSolanaTime();
