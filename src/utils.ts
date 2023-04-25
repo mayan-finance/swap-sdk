@@ -13,7 +13,9 @@ export function nativeAddressToHexString(
 	let padded: Uint8Array;
 	if (wChainId === 1) {
 		padded = zeroPad(new PublicKey(address).toBytes(), 32);
-	} else if (wChainId === 2 || wChainId === 4 || wChainId === 5 || wChainId === 6 || wChainId === 22) {
+	} else if (
+		wChainId === 2 || wChainId === 4 || wChainId === 5 ||
+		wChainId === 6 || wChainId === 22 || wChainId === 23) {
 		if (wChainId === 22 && isValidAptosType(address)) {
 			return `0x${sha3_256(address)}`
 		}
@@ -24,6 +26,7 @@ export function nativeAddressToHexString(
 		}
 		padded = zeroPad(new Uint8Array(result), 32);
 	} else {
+		console.log(`Unsupported chain id: ${wChainId}`, address);
 		throw new Error('Unsupported token chain');
 	}
 	const hex = Buffer.from(padded).toString("hex");
@@ -77,6 +80,7 @@ const chains: { [index: string]: number }  = {
 	bsc: 4,
 	polygon: 5,
 	avalanche: 6,
+	arbitrum: 23,
 	aptos: 22,
 };
 
