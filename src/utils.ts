@@ -93,6 +93,7 @@ const evmChainIdMap: { [index: string]: number }  = {
 	[56]: 4,
 	[137]: 5,
 	[43114]: 6,
+	[42161]: 23,
 };
 
 export function getWormholeChainIdById(chainId: number) : number | null {
