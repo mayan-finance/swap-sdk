@@ -1,7 +1,7 @@
 {
   "name": "@mayanfinance/swap-sdk",
   "description": "A SDK to swap with Mayan",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "source": "src/main.ts",
   "main": "lib/index.js",
   "module": "dist/main.esm.js",
