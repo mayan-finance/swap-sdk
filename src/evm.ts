@@ -66,6 +66,9 @@ export async function swapFromEvm(
 	if (fromChainId !== signerWormholeChainId) {
 		throw new Error('Signer chain id and quote from chain are not same!');
 	}
+	const contractAddress = signerWormholeChainId === 23 ?
+		addresses.MAYAN_L2_CONTRACT : addresses.MAYAN_EVM_CONTRACT;
+
 	const recipientStruct : Recipient = {
 		mayanAddr: recipientHex,
 		mayanChainId: 1,
@@ -104,11 +107,11 @@ export async function swapFromEvm(
 	);
 	if(quote.fromToken.contract === ethers.constants.AddressZero) {
 		return wrapAndSwapETH(
-			addresses.MAYAN_EVM_CONTRACT, contractRelayerFees, recipientStruct,
+			contractAddress, contractRelayerFees, recipientStruct,
 			tokenOut, quote.toToken.realOriginChainId, criteria, amountIn, signer, overrides);
 	} else {
 		return swap(
-			addresses.MAYAN_EVM_CONTRACT, contractRelayerFees, recipientStruct,
+			contractAddress, contractRelayerFees, recipientStruct,
 			tokenOut, quote.toToken.realOriginChainId, criteria,
 			quote.fromToken.contract, amountIn, signer, overrides);
 	}
