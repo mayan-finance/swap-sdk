@@ -14,7 +14,7 @@ import { blob, nu64, struct, u16, u8 } from '@solana/buffer-layout';
 import { Quote, SolanaTransactionSigner } from './types';
 import {
 	getAmountOfFractionalAmount,
-	getAssociatedTokenAddress,
+	getAssociatedTokenAddress, getGasDecimalsInSolana,
 	getWormholeChainIdByName,
 	hexToUint8Array,
 	nativeAddressToHexString
@@ -24,7 +24,7 @@ import addresses  from './addresses'
 import { ethers } from 'ethers';
 import { getCurrentSolanaTime } from './api';
 
-const STATE_SIZE = 340;
+const STATE_SIZE = 348;
 
 function createAssociatedTokenAccountInstruction(
 	payer: PublicKey,
@@ -155,6 +155,7 @@ const SwapLayout = struct<any>([
 	nu64('feeSwap'),
 	nu64('feeReturn'),
 	nu64('feeCancel'),
+	nu64('gasDrop'),
 	u16('destinationChain'),
 	blob(32, 'destinationAddress'),
 	u8('unwrapRedeem'),
@@ -286,7 +287,9 @@ export async function swapFromSolana(
 	const feeReturn = getAmountOfFractionalAmount(
 		quote.redeemRelayerFee, quote.mintDecimals.to);
 	const feeCancel = getAmountOfFractionalAmount(
-		quote.refundRelayerFee, quote.mintDecimals.from)
+		quote.refundRelayerFee, quote.mintDecimals.from);
+	const gasDrop = getAmountOfFractionalAmount(
+		quote.gasDrop, getGasDecimalsInSolana(quote.toChain));
 
 	const unwrapRedeem =
 		quote.toToken.contract === ethers.constants.AddressZero;
@@ -304,6 +307,7 @@ export async function swapFromSolana(
 		feeSwap,
 		feeReturn,
 		feeCancel,
+		gasDrop,
 		destinationChain: destinationChainId,
 		destinationAddress: destAddress,
 		unwrapRedeem: unwrapRedeem ? 1 : 0,

@@ -199,6 +199,11 @@ export default {
 							"internalType": "bool",
 							"name": "unwrap",
 							"type": "bool"
+						},
+						{
+							"internalType": "uint64",
+							"name": "gasDrop",
+							"type": "uint64"
 						}
 					],
 					"internalType": "struct MayanStructs.Redeem",
@@ -219,7 +224,7 @@ export default {
 			],
 			"name": "redeem",
 			"outputs": [],
-			"stateMutability": "nonpayable",
+			"stateMutability": "payable",
 			"type": "function"
 		},
 		{
@@ -321,6 +326,11 @@ export default {
 						{
 							"internalType": "uint64",
 							"name": "amountOutMin",
+							"type": "uint64"
+						},
+						{
+							"internalType": "uint64",
+							"name": "gasDrop",
 							"type": "uint64"
 						},
 						{
@@ -487,6 +497,11 @@ export default {
 						{
 							"internalType": "uint64",
 							"name": "amountOutMin",
+							"type": "uint64"
+						},
+						{
+							"internalType": "uint64",
+							"name": "gasDrop",
 							"type": "uint64"
 						},
 						{

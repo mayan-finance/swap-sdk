@@ -4,6 +4,7 @@ import { PublicKey, Connection, SYSVAR_CLOCK_PUBKEY } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import { sha3_256 } from 'js-sha3';
 import addresses  from './addresses';
+import { ChainName } from './types';
 
 export const isValidAptosType = (str: string): boolean =>
 	/^(0x)?[0-9a-fA-F]+::\w+::\w+$/.test(str);
@@ -122,4 +123,18 @@ export function checkSdkVersionSupport(minimumVersion: [number, number, number])
 		return true;
 	}
 	return false;
+}
+
+export function getGasDecimal(chain: ChainName): number {
+	if (chain === 'solana') {
+		return 9;
+	}
+	return 18;
+}
+
+export function getGasDecimalsInSolana(chain: ChainName): number {
+	if (chain === 'solana') {
+		return 9;
+	}
+	return 8;
 }

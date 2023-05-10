@@ -8,7 +8,7 @@ import {
 	getAssociatedTokenAddress,
 	nativeAddressToHexString,
 	getAmountOfFractionalAmount, getWormholeChainIdByName,
-	getWormholeChainIdById,
+	getWormholeChainIdById, getGasDecimal
 } from './utils';
 import { getCurrentSolanaTime } from './api';
 import MayanSwapArtifact from './MayanSwapArtifact';
@@ -24,6 +24,7 @@ export type Criteria = {
 	transferDeadline: ethers.BigNumber,
 	swapDeadline: ethers.BigNumber,
 	amountOutMin: ethers.BigNumber,
+	gasDrop: ethers.BigNumber,
 	nonce: number,
 	unwrap: boolean,
 }
@@ -89,6 +90,9 @@ export async function swapFromEvm(
 		swapDeadline: ethers.BigNumber.from(currentSolanaTime + timeout),
 		amountOutMin: getAmountOfFractionalAmount(
 			quote.minAmountOut, Math.min(8, quote.toToken.decimals)
+		),
+		gasDrop: getAmountOfFractionalAmount(
+			quote.gasDrop, Math.min(8, getGasDecimal(quote.toChain))
 		),
 		nonce: createNonce().readUInt32LE(0),
 		unwrap: unwrapRedeem,

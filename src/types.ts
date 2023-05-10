@@ -24,12 +24,8 @@ export type QuoteParams = {
 	toToken: string,
 	toChain: ChainName,
 	slippage: number,
+	gasDrop?: number,
 	withReferrer?:boolean,
-	customRelayerFees?: {
-		swapRelayerFee: number,
-		redeemRelayerFee: number,
-		refundRelayerFee: number,
-	}
 }
 
 export type QuoteError = {
@@ -42,6 +38,7 @@ export type Quote = {
 	expectedAmountOut: number;
 	priceImpact: number;
 	minAmountOut: number;
+	gasDrop: number;
 	price: number;
 	route: Array<{
 		fromSymbol: string;
@@ -53,8 +50,8 @@ export type Quote = {
 	refundRelayerFee: number,
 	fromToken: Token,
 	toToken: Token,
-	fromChain: string,
-	toChain: string,
+	fromChain: ChainName,
+	toChain: ChainName,
 	mintDecimals: {
 		from: number,
 		to: number,
