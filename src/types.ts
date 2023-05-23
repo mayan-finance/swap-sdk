@@ -38,6 +38,7 @@ export type Quote = {
 	expectedAmountOut: number;
 	priceImpact: number;
 	minAmountOut: number;
+	minReceived: number;
 	gasDrop: number;
 	price: number;
 	route: Array<{
