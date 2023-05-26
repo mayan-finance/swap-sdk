@@ -2,9 +2,10 @@ import { zeroPad } from '@ethersproject/bytes';
 import { ethers } from 'ethers';
 import { PublicKey, Connection, SYSVAR_CLOCK_PUBKEY } from '@solana/web3.js';
 import { Buffer } from 'buffer';
-import { sha3_256 } from 'js-sha3';
 import addresses  from './addresses';
 import { ChainName } from './types';
+import * as sha3 from 'js-sha3';
+const sha3_256 = sha3.sha3_256;
 
 export const isValidAptosType = (str: string): boolean =>
 	/^(0x)?[0-9a-fA-F]+::\w+::\w+$/.test(str);
@@ -101,7 +102,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [4, 0, 3];
+const sdkVersion = [4, 1, 3];
 
 export function checkSdkVersionSupport(minimumVersion: [number, number, number]): boolean {
 	//major
