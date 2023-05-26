@@ -3,7 +3,7 @@
   "description": "A SDK to swap with Mayan",
   "version": "4.0.3",
   "source": "src/main.ts",
-  "main": "dist/index.cjs.js",
+  "main": "dist/index.js",
   "module": "dist/index.esm.min.js",
   "unpkg": "dist/index.iife.min.js",
   "types": "dist/index.d.ts",
@@ -15,14 +15,13 @@
   ],
   "exports": {
     ".": {
-      "require": "./dist/index.cjs.js",
+      "require": "./dist/index.js",
       "import": "./dist/index.mjs",
 			"types": "./dist/index.d.ts"
     }
   },
   "files": [
     "dist/**/*",
-    "lib/**/*",
     "LICENSE",
     "README.md"
   ],
