@@ -3,16 +3,23 @@
   "description": "A SDK to swap with Mayan",
   "version": "4.0.3",
   "source": "src/main.ts",
-  "main": "lib/index.js",
-  "module": "dist/main.esm.js",
-  "unpkg": "dist/main.umd.js",
-  "types": "dist/main.d.ts",
+  "main": "dist/index.cjs.js",
+  "module": "dist/index.esm.min.js",
+  "unpkg": "dist/index.iife.min.js",
+  "types": "dist/index.d.ts",
   "keywords": [
     "mayan",
     "mayanfinance",
     "mayansdk",
     "swap-sdk"
   ],
+  "exports": {
+    ".": {
+      "require": "./dist/index.cjs.js",
+      "import": "./dist/index.mjs",
+			"types": "./dist/index.d.ts"
+    }
+  },
   "files": [
     "dist/**/*",
     "lib/**/*",
@@ -20,21 +27,16 @@
     "README.md"
   ],
   "scripts": {
-    "clean": "rimraf dist lib",
-    "build": "npm run clean && npm run tsc && npm run rollup-build",
-    "rollup-build": "rollup -c rollup.config.js",
-    "tsc": "tsc",
-    "watch": "microbundle watch --define PKG_VERSION=$npm_package_version",
+    "build": "tsup --clean && tsup --minify",
+    "watch": "tsup --watch",
     "lint": "prettier src -c",
     "format": "prettier src --write",
-    "prepack": "rm -rf dist && npm run build",
+    "prepack": "npm run build",
     "release": "npm run prepack && npx np --no-tests"
   },
   "devDependencies": {
     "prettier": "^2.6.2",
-    "rimraf": "^4.1.1",
-    "rollup": "^3.10.0",
-    "rollup-plugin-dts": "^5.1.1",
+    "tsup": "^6.7.0",
     "typescript": "^4.9.4"
   },
   "prettier": {
