@@ -25,11 +25,11 @@ export async function fetchTokenList(chain: ChainName): Promise<Token[]> {
 }
 
 export async function fetchQuote(params: QuoteParams): Promise<Quote> {
-	const { withReferrer, gasDrop } = params;
+	const { referrer, gasDrop } = params;
 	const normalizedSlippage = params.slippage / 100;
 	const baseUrl = `${addresses.PRICE_URL}/quote?`;
 	const basicQueries = `amountIn=${params.amount}&fromToken=${params.fromToken}&fromChain=${params.fromChain}&toToken=${params.toToken}&toChain=${params.toChain}`;
-	const criteriaQueries = `&slippage=${normalizedSlippage}&withReferrer=${!!withReferrer}${gasDrop ? `&gasDrop=${gasDrop}` : ''}`;
+	const criteriaQueries = `&slippage=${normalizedSlippage}${referrer ? `&referrer=${referrer}` : ''}${gasDrop ? `&gasDrop=${gasDrop}` : ''}`;
 	const url = baseUrl + basicQueries + criteriaQueries;
 	const res = await fetch(url, {
 		method: 'GET',

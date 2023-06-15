@@ -25,7 +25,7 @@ export type QuoteParams = {
 	toChain: ChainName,
 	slippage: number,
 	gasDrop?: number,
-	withReferrer?:boolean,
+	referrer?: string,
 }
 
 export type QuoteError = {
@@ -49,6 +49,7 @@ export type Quote = {
 	swapRelayerFee: number,
 	redeemRelayerFee: number,
 	refundRelayerFee: number,
+	eta: number,
 	fromToken: Token,
 	toToken: Token,
 	fromChain: ChainName,

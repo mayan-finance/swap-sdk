@@ -1,5 +1,5 @@
 import { ethers, Overrides, Signer, BigNumber } from 'ethers';
-import { PublicKey } from '@solana/web3.js';
+import { PublicKey, SystemProgram } from '@solana/web3.js';
 
 import { TransactionResponse } from '@ethersproject/abstract-provider';
 import type { Quote } from './types';
@@ -40,7 +40,7 @@ export type Recipient = {
 
 export async function swapFromEvm(
 	quote: Quote, destinationAddress: string,
-	timeout: number, referrerAddress: string,
+	timeout: number, referrerAddress: string | null | undefined,
 	provider: ethers.providers.BaseProvider,
 	signer: Signer, overrides?: Overrides): Promise<TransactionResponse> {
 	const mayanProgram = new PublicKey(addresses.MAYAN_PROGRAM_ID);
@@ -57,9 +57,16 @@ export async function swapFromEvm(
 	const auctionHex = nativeAddressToHexString(
 		addresses.AUCTION_PROGRAM_ID, 1
 	);
-	const referrerHex = nativeAddressToHexString(
-		referrerAddress, 1
-	);
+	let referrerHex: string;
+	if (referrerAddress) {
+		referrerHex = nativeAddressToHexString(
+			referrerAddress, 1
+		);
+	} else {
+		referrerHex = nativeAddressToHexString(
+			SystemProgram.programId.toString(), 1
+		);
+	}
 	const signerChainId = await signer.getChainId();
 	const signerWormholeChainId = getWormholeChainIdById(signerChainId);
 	const fromChainId = getWormholeChainIdByName(quote.fromChain);

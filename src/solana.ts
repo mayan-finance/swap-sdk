@@ -163,7 +163,7 @@ const SwapLayout = struct<any>([
 ]);
 export async function swapFromSolana(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
-	timeout: number, referrerAddress: string,
+	timeout: number, referrerAddress: string | null | undefined,
 	signTransaction: SolanaTransactionSigner, connection?: Connection
 ) : Promise<string> {
 	const solanaConnection = connection ??
@@ -173,7 +173,13 @@ export async function swapFromSolana(
 	const swapper = new PublicKey(swapperWalletAddress);
 
 	const auctionAddr = new PublicKey(addresses.AUCTION_PROGRAM_ID);
-	const referrerAddr = new PublicKey(referrerAddress);
+
+	let referrerAddr: PublicKey;
+	if (referrerAddress) {
+		referrerAddr = new PublicKey(referrerAddress);
+	} else {
+		referrerAddr = SystemProgram.programId;
+	}
 
 	const [main, mainNonce] = await PublicKey.findProgramAddress(
 		[Buffer.from('MAIN')],
