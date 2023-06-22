@@ -28,14 +28,14 @@ const quote = await fetchQuote({
   toChain: "solana",
   slippage: 3,
   gasDrop: 0.04, // optional
-  referrer: "YOUR WALLET ADDRESS", // optional
+  referrer: "YOUR SOLANA WALLET ADDRESS", // optional
 });
 ```
 
-You can get the list of available tokens using [Tokens API](https://price-api.mayan.finance/swagger/)
+You can get the list of supported tokens using [Tokens API](https://price-api.mayan.finance/swagger/)
 
 #### Gas on destination:
-To enable "Gas on destination" set the gasDrop param to the amount of native token (e.g. ETH, BNB..) you want to receive on the destination chain.
+To enable [Gas on destination](https://docs.mayan.finance/dapp/gas-on-destination) set the gasDrop param to the amount of native token (e.g. ETH, BNB..) you want to receive on the destination chain.
 
 
 ```
@@ -73,4 +73,4 @@ swapTrx = await swapFromEvm(quote, destinationWalletAddress, deadlineInSeconds, 
 
 >```referrerAddress``` must be a Solana wallet address. If you don't want to get referrer fee from users, set "referrerAddress" to ```null``` or ```"11111111111111111111111111111111"```
 ### Tracking:
-To track the progress of a swap, you can use [Mayan Explorer API](https://explorer-api.mayan.finance/swagger/)
+To track the progress of swaps, you can use [Mayan Explorer API](https://explorer-api.mayan.finance/swagger/)
