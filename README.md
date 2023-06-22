@@ -28,7 +28,7 @@ const quote = await fetchQuote({
   toChain: "solana",
   slippage: 3,
   gasDrop: 0.04, // optional
-  withReferrer: false, // optional
+  referrer: "YOUR WALLET ADDRESS", // optional
 });
 ```
 
@@ -50,7 +50,7 @@ arbitrum: 0.01 ETH
 ```
 
 #### Referrer fee:
-> If you want to receive referrer fee, set `withReferrer` param to `true`.
+> If you want to receive [referrer fee](https://docs.mayan.finance/integration/referral), set the `referrer` param to your wallet address.
 
 #### Slippage:
 > Slippage is in percentage, so 3 means "up to three percent slippage".
@@ -71,6 +71,6 @@ swapTrx = await swapFromEvm(quote, destinationWalletAddress, deadlineInSeconds, 
 ```
 <br />
 
->"referrerAddress" should be a Solana wallet address. If you don't want to get referrer fee from users, set "referrerAddress" to "11111111111111111111111111111111"
+>```referrerAddress``` must be a Solana wallet address. If you don't want to get referrer fee from users, set "referrerAddress" to ```null``` or ```"11111111111111111111111111111111"```
 ### Tracking:
 To track the progress of a swap, you can use [Mayan Explorer API](https://explorer-api.mayan.finance/swagger/)
