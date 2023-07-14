@@ -21,7 +21,7 @@ Then you will need to get a quote:
 ### Getting Quote:
 ```javascript
 const quote = await fetchQuote({
-  amountIn: 250,
+  amount: 250,
   fromToken: fromToken.contract,
   toToken: toToken.contract,
   fromChain: "bsc",
