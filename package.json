@@ -1,17 +1,17 @@
 {
   "name": "@mayanfinance/swap-sdk",
   "description": "A SDK to swap with Mayan",
-  "version": "4.2.2",
+  "version": "4.2.3",
   "source": "src/main.ts",
   "main": "dist/index.js",
   "module": "dist/index.esm.min.js",
   "unpkg": "dist/index.iife.min.js",
   "types": "dist/index.d.ts",
-	"homepage": "https://github.com/mayan-finance/swap-sdk#readme",
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/mayan-finance/swap-sdk.git"
-	},
+  "homepage": "https://github.com/mayan-finance/swap-sdk#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mayan-finance/swap-sdk.git"
+  },
   "keywords": [
     "mayan",
     "mayanfinance",
