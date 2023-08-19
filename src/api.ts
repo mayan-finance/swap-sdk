@@ -15,8 +15,8 @@ export async function fetchAllTokenList(): Promise<{[index: string]: Token[]}> {
 	throw new Error('Cannot fetch Mayan tokens!');
 }
 
-export async function fetchTokenList(chain: ChainName): Promise<Token[]> {
-	const res = await fetch(`${addresses.PRICE_URL}/tokens?chain=${chain}`);
+export async function fetchTokenList(chain: ChainName, nonPortal: boolean = false): Promise<Token[]> {
+	const res = await fetch(`${addresses.PRICE_URL}/tokens?chain=${chain}${nonPortal ? '&nonPortal=true' : ''}`);
 	if (res.status === 200) {
 		const result = await res.json();
 		return result[chain] as Token[];
