@@ -9,6 +9,11 @@ export default {
 					"internalType": "address",
 					"name": "_tokenBridge",
 					"type": "address"
+				},
+				{
+					"internalType": "address",
+					"name": "_weth",
+					"type": "address"
 				}
 			],
 			"stateMutability": "nonpayable",
@@ -65,7 +70,7 @@ export default {
 					"components": [
 						{
 							"internalType": "uint8",
-							"name": "payloadID",
+							"name": "payloadId",
 							"type": "uint8"
 						},
 						{
@@ -162,6 +167,19 @@ export default {
 		},
 		{
 			"inputs": [],
+			"name": "getWeth",
+			"outputs": [
+				{
+					"internalType": "address",
+					"name": "",
+					"type": "address"
+				}
+			],
+			"stateMutability": "view",
+			"type": "function"
+		},
+		{
+			"inputs": [],
 			"name": "isPaused",
 			"outputs": [
 				{
@@ -186,8 +204,13 @@ export default {
 				{
 					"components": [
 						{
+							"internalType": "uint8",
+							"name": "payloadId",
+							"type": "uint8"
+						},
+						{
 							"internalType": "bytes32",
-							"name": "recepient",
+							"name": "recipient",
 							"type": "bytes32"
 						},
 						{
@@ -204,6 +227,11 @@ export default {
 							"internalType": "uint64",
 							"name": "gasDrop",
 							"type": "uint64"
+						},
+						{
+							"internalType": "bytes",
+							"name": "customPayload",
+							"type": "bytes"
 						}
 					],
 					"internalType": "struct MayanStructs.Redeem",
@@ -225,6 +253,19 @@ export default {
 			"name": "redeem",
 			"outputs": [],
 			"stateMutability": "payable",
+			"type": "function"
+		},
+		{
+			"inputs": [
+				{
+					"internalType": "bytes",
+					"name": "encodedVm",
+					"type": "bytes"
+				}
+			],
+			"name": "redeemAndUnwrap",
+			"outputs": [],
+			"stateMutability": "nonpayable",
 			"type": "function"
 		},
 		{
@@ -295,10 +336,15 @@ export default {
 							"internalType": "bytes32",
 							"name": "referrer",
 							"type": "bytes32"
+						},
+						{
+							"internalType": "bytes32",
+							"name": "refundAddr",
+							"type": "bytes32"
 						}
 					],
 					"internalType": "struct MayanSwap.Recepient",
-					"name": "recepient",
+					"name": "recipient",
 					"type": "tuple"
 				},
 				{
@@ -329,19 +375,19 @@ export default {
 							"type": "uint64"
 						},
 						{
-							"internalType": "uint64",
-							"name": "gasDrop",
-							"type": "uint64"
-						},
-						{
 							"internalType": "bool",
 							"name": "unwrap",
 							"type": "bool"
 						},
 						{
-							"internalType": "uint32",
-							"name": "nonce",
-							"type": "uint32"
+							"internalType": "uint64",
+							"name": "gasDrop",
+							"type": "uint64"
+						},
+						{
+							"internalType": "bytes",
+							"name": "customPayload",
+							"type": "bytes"
 						}
 					],
 					"internalType": "struct MayanSwap.Criteria",
@@ -466,10 +512,15 @@ export default {
 							"internalType": "bytes32",
 							"name": "referrer",
 							"type": "bytes32"
+						},
+						{
+							"internalType": "bytes32",
+							"name": "refundAddr",
+							"type": "bytes32"
 						}
 					],
 					"internalType": "struct MayanSwap.Recepient",
-					"name": "recepient",
+					"name": "recipient",
 					"type": "tuple"
 				},
 				{
@@ -500,19 +551,19 @@ export default {
 							"type": "uint64"
 						},
 						{
-							"internalType": "uint64",
-							"name": "gasDrop",
-							"type": "uint64"
-						},
-						{
 							"internalType": "bool",
 							"name": "unwrap",
 							"type": "bool"
 						},
 						{
-							"internalType": "uint32",
-							"name": "nonce",
-							"type": "uint32"
+							"internalType": "uint64",
+							"name": "gasDrop",
+							"type": "uint64"
+						},
+						{
+							"internalType": "bytes",
+							"name": "customPayload",
+							"type": "bytes"
 						}
 					],
 					"internalType": "struct MayanSwap.Criteria",

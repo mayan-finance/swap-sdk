@@ -13,6 +13,7 @@ import {
 import { getCurrentSolanaTime } from './api';
 import MayanSwapArtifact from './MayanSwapArtifact';
 import addresses  from './addresses';
+import { Buffer } from 'buffer';
 
 export type ContractRelayerFees = {
 	swapFee: ethers.BigNumber,
@@ -25,8 +26,8 @@ export type Criteria = {
 	swapDeadline: ethers.BigNumber,
 	amountOutMin: ethers.BigNumber,
 	gasDrop: ethers.BigNumber,
-	nonce: number,
 	unwrap: boolean,
+	customPayload: string,
 }
 
 export type Recipient = {
@@ -36,13 +37,14 @@ export type Recipient = {
 	destAddr: string,
 	mayanChainId: number,
 	destChainId: number,
+	refundAddr: string,
 };
 
 export async function swapFromEvm(
 	quote: Quote, destinationAddress: string,
 	timeout: number, referrerAddress: string | null | undefined,
 	provider: ethers.providers.BaseProvider,
-	signer: Signer, overrides?: Overrides): Promise<TransactionResponse> {
+	signer: Signer, overrides?: Overrides, payload?: Uint8Array | Buffer | null): Promise<TransactionResponse> {
 	const mayanProgram = new PublicKey(addresses.MAYAN_PROGRAM_ID);
 	const [mayanMainAccount] = await PublicKey.findProgramAddress(
 		[Buffer.from('MAIN')], mayanProgram);
@@ -77,6 +79,7 @@ export async function swapFromEvm(
 	const contractAddress = signerWormholeChainId === 23 ?
 		addresses.MAYAN_L2_CONTRACT : addresses.MAYAN_EVM_CONTRACT;
 
+	const signerAddress = await signer.getAddress();
 	const recipientStruct : Recipient = {
 		mayanAddr: recipientHex,
 		mayanChainId: 1,
@@ -84,6 +87,7 @@ export async function swapFromEvm(
 		destChainId: destinationChainId,
 		auctionAddr: auctionHex,
 		referrer: referrerHex,
+		refundAddr: nativeAddressToHexString(signerAddress, signerWormholeChainId),
 	};
 	// Times are in seconds
 	const currentEvmTime = await getCurrentEvmTime(provider);
@@ -101,8 +105,8 @@ export async function swapFromEvm(
 		gasDrop: getAmountOfFractionalAmount(
 			quote.gasDrop, Math.min(8, getGasDecimal(quote.toChain))
 		),
-		nonce: createNonce().readUInt32LE(0),
 		unwrap: unwrapRedeem,
+		customPayload: payload ? `0x${Buffer.from(payload).toString('hex')}` : '0x',
 	};
 
 	const contractRelayerFees: ContractRelayerFees = {
@@ -168,9 +172,3 @@ async function wrapAndSwapETH(
 		overrides ? { value: amountIn, ...overrides } :  { value: amountIn });
 }
 
-function createNonce() {
-	const nonceConst = Math.random() * 100000;
-	const nonceBuffer = Buffer.alloc(4);
-	nonceBuffer.writeUInt32LE(nonceConst, 0);
-	return nonceBuffer;
-}
