@@ -91,7 +91,7 @@ import { createSwapFromSolanaInstructions } from '@react-native-swap-sdk';
 For swaps from solana after importing the necessary functions you can use ```createSwapFromSolanaInstructions``` function to get the instructions and signers for the swap transaction. Then you can use ```transact``` function to sign and then send the transaction.
 <br />
 
-For Swaps from EVM you can continue using ```swapFromEvm``` function.
+For swaps from EVM you can continue using ```swapFromEvm``` function.
 
 ```javascript
 const swapper = new PublicKey(originWalletAddress);
@@ -127,4 +127,4 @@ const signedTrx = await transact(async (wallet: Web3MobileWallet) => {
 const trxHash = await solanaConnection.sendRawTransaction(signedTrx.serialize());
 ```
 
-To learn more about how to manage authorized session you can check [this practice]('https://github.com/solana-mobile/solana-mobile-dapp-scaffold/blob/main/template/components/providers/AuthorizationProvider.tsx').
+To learn more about how to manage authorized session you can check [this practice](https://github.com/solana-mobile/solana-mobile-dapp-scaffold/blob/main/template/components/providers/AuthorizationProvider.tsx).
