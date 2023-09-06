@@ -74,3 +74,57 @@ swapTrx = await swapFromEvm(quote, destinationWalletAddress, deadlineInSeconds, 
 >```referrerAddress``` must be a Solana wallet address. If you don't want to get referrer fee from users, set "referrerAddress" to ```null``` or ```"11111111111111111111111111111111"```
 ### Tracking:
 To track the progress of swaps, you can use [Mayan Explorer API](https://explorer-api.mayan.finance/swagger/)
+
+
+<br />
+
+## 📱 React Native Support (Solana Mobile SDK):
+
+You can also use this SDK in your react native app:
+<br />
+```javascript
+import { transact, Web3MobileWallet } from '@solana-mobile/mobile-wallet-adapter-protocol-web3js';
+
+import { createSwapFromSolanaInstructions } from '@react-native-swap-sdk';
+```
+
+For swaps from solana after importing the necessary functions you can use ```createSwapFromSolanaInstructions``` function to get the instructions and signers for the swap transaction. Then you can use ```transact``` function to sign and then send the transaction.
+<br />
+
+For Swaps from EVM you can continue using ```swapFromEvm``` function.
+
+```javascript
+const swapper = new PublicKey(originWalletAddress);
+const { instructions, signers } = await createSwapFromSolanaInstructions(
+  quote,
+  originWalletAddress,
+  finalDestination,
+  deadlineInSeconds,
+  referrerAddress,
+  solanaConnection,
+);
+
+const signedTrx = await transact(async (wallet: Web3MobileWallet) => {
+  const authorizationResult = await authorizeSession(wallet);
+  if (!authorizationResult.publicKey.equals(swapper)) {
+    throw new Error('Wallet account does not match the swapper account');
+  }
+  const blockhash = await solanaConnection.getLatestBlockhash();
+  const swapTransaction = new Transaction({
+    ...blockhash,
+    feePayer: authorizationResult.publicKey,
+  });
+  swapTransaction.add(...instructions);
+  signers.forEach(signer => {
+    return swapTransaction.partialSign(signer);
+  });
+
+  const signedTransactions = await wallet.signTransactions({
+    transactions: [swapTransaction],
+  });
+  return signedTransactions[0];
+});
+const trxHash = await solanaConnection.sendRawTransaction(signedTrx.serialize());
+```
+
+To learn more about how to manage authorized session you can check [this practice]('https://github.com/solana-mobile/solana-mobile-dapp-scaffold/blob/main/template/components/providers/AuthorizationProvider.tsx').
