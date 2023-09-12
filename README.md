@@ -85,7 +85,7 @@ You can also use this SDK in your react native app:
 ```javascript
 import { transact, Web3MobileWallet } from '@solana-mobile/mobile-wallet-adapter-protocol-web3js';
 
-import { createSwapFromSolanaInstructions } from '@react-native-swap-sdk';
+import { createSwapFromSolanaInstructions } from '@mayanfinance/swap-sdk';
 ```
 
 For swaps from solana after importing the necessary functions you can use ```createSwapFromSolanaInstructions``` function to get the instructions and signers for the swap transaction. Then you can use ```transact``` function to sign and then send the transaction.
