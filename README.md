@@ -84,47 +84,39 @@ You can also use this SDK in your react native app:
 <br />
 ```javascript
 import { transact, Web3MobileWallet } from '@solana-mobile/mobile-wallet-adapter-protocol-web3js';
-
-import { createSwapFromSolanaInstructions } from '@mayanfinance/swap-sdk';
 ```
 
-For swaps from solana after importing the necessary functions you can use ```createSwapFromSolanaInstructions``` function to get the instructions and signers for the swap transaction. Then you can use ```transact``` function to sign and then send the transaction.
-<br />
+For swaps from solana after importing the above functions from Solana Mobile SDK you have to pass a callback function that calls `transact` function as the `signSolanaTransaction` parameter of `swapFromSolana` function:
 
-For swaps from EVM you can continue using ```swapFromEvm``` function.
 
 ```javascript
-const swapper = new PublicKey(originWalletAddress);
-const { instructions, signers } = await createSwapFromSolanaInstructions(
-  quote,
-  originWalletAddress,
-  finalDestination,
-  deadlineInSeconds,
-  referrerAddress,
-  solanaConnection,
+const signSolanaTransaction = useCallback(
+async (tx: Transaction) => {
+  return await transact(async (wallet: Web3MobileWallet) => {
+    authorizeSession(wallet);
+    const signedTransactions = await wallet.signTransactions({
+      transactions: [tx],
+    });
+
+    return signedTransactions[0];
+  });
+},
+[authorizeSession],
 );
-
-const signedTrx = await transact(async (wallet: Web3MobileWallet) => {
-  const authorizationResult = await authorizeSession(wallet);
-  if (!authorizationResult.publicKey.equals(swapper)) {
-    throw new Error('Wallet account does not match the swapper account');
-  }
-  const blockhash = await solanaConnection.getLatestBlockhash();
-  const swapTransaction = new Transaction({
-    ...blockhash,
-    feePayer: authorizationResult.publicKey,
-  });
-  swapTransaction.add(...instructions);
-  signers.forEach(signer => {
-    return swapTransaction.partialSign(signer);
-  });
-
-  const signedTransactions = await wallet.signTransactions({
-    transactions: [swapTransaction],
-  });
-  return signedTransactions[0];
-});
-const trxHash = await solanaConnection.sendRawTransaction(signedTrx.serialize());
 ```
 
-To learn more about how to manage authorized session you can check [this practice](https://github.com/solana-mobile/solana-mobile-dapp-scaffold/blob/main/template/components/providers/AuthorizationProvider.tsx).
+For swaps from EVM you can use `useWalletConnectModal` hook from  [WalletConnet](https://github.com/WalletConnect/modal-react-native) to get the provider and pass it to `swapFromEvm` function as the `signer`:
+
+```javascript
+import {useWalletConnectModal} from '@walletconnect/modal-react-native';
+...
+const { provider: evmWalletProvider} =
+    useWalletConnectModal();
+...
+const web3Provider = new ethers.providers.Web3Provider(
+                    evmWalletProvider,
+                  );
+const signer = web3Provider.getSigner(0);
+```
+
+To learn more about how to use Mayan SDK in a react-native project, you can check [this scaffold](https://github.com/mayan-finance/react-native-scaffold).
