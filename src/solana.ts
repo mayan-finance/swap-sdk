@@ -10,14 +10,15 @@ import {
 	Transaction,
 	TransactionInstruction,
 } from '@solana/web3.js';
-import { blob, nu64, struct, u16, u8 } from '@solana/buffer-layout';
+import { blob, struct, u16, u8 } from '@solana/buffer-layout';
 import { Quote, SolanaTransactionSigner } from './types';
 import {
 	getAmountOfFractionalAmount,
 	getAssociatedTokenAddress, getGasDecimalsInSolana,
 	getWormholeChainIdByName,
 	hexToUint8Array,
-	nativeAddressToHexString
+	nativeAddressToHexString,
+	getSafeU64Blob,
 } from './utils';
 import { Buffer } from 'buffer';
 import addresses  from './addresses'
@@ -52,13 +53,13 @@ function createAssociatedTokenAccountInstruction(
 }
 
 const ApproveInstructionData = struct<any>([
-	u8('instruction'), nu64('amount')
+	u8('instruction'), blob(8, 'amount')
 ]);
 function createApproveInstruction(
 	account: PublicKey,
 	delegate: PublicKey,
 	owner: PublicKey,
-	amount: ethers.BigNumber,
+	amount: bigint,
 	programId = new PublicKey(addresses.TOKEN_PROGRAM_ID)
 ): TransactionInstruction {
 	const keys: Array<AccountMeta> = [
@@ -71,7 +72,7 @@ function createApproveInstruction(
 	ApproveInstructionData.encode(
 		{
 			instruction: 4,
-			amount,
+			amount: getSafeU64Blob(amount),
 		},
 		data
 	);
@@ -119,13 +120,13 @@ function createCloseAccountInstruction(
 }
 
 const SplTransferInstructionData = struct<any>([
-	u8('instruction'), nu64('amount')
+	u8('instruction'), blob(8, 'amount')
 ]);
 function createSplTransferInstruction(
 	source: PublicKey,
 	destination: PublicKey,
 	owner: PublicKey,
-	amount: ethers.BigNumber,
+	amount: bigint,
 	programId = new PublicKey(addresses.TOKEN_PROGRAM_ID)
 ): TransactionInstruction {
 	const keys: Array<AccountMeta> = [
@@ -138,7 +139,7 @@ function createSplTransferInstruction(
 	SplTransferInstructionData.encode(
 		{
 			instruction: 3,
-			amount,
+			amount: getSafeU64Blob(amount),
 		},
 		data
 	);
@@ -149,13 +150,13 @@ const SwapLayout = struct<any>([
 	u8('instruction'),
 	u8('mainNonce'),
 	u8('stateNonce'),
-	nu64('amount'),
-	nu64('minAmountOut'),
-	nu64('deadline'),
-	nu64('feeSwap'),
-	nu64('feeReturn'),
-	nu64('feeCancel'),
-	nu64('gasDrop'),
+	blob(8, 'amount'),
+	blob(8, 'minAmountOut'),
+	blob(8, 'deadline'),
+	blob(8, 'feeSwap'),
+	blob(8, 'feeReturn'),
+	blob(8, 'feeCancel'),
+	blob(8, 'gasDrop'),
 	u16('destinationChain'),
 	blob(32, 'destinationAddress'),
 	u8('unwrapRedeem'),
@@ -238,7 +239,7 @@ export async function createSwapFromSolanaInstructions(
 
 	const delegate = Keypair.generate();
 	instructions.push(createApproveInstruction(
-		fromAccount, delegate.publicKey, swapper, amount
+		fromAccount, delegate.publicKey, swapper, amount.toBigInt()
 	));
 
 	const stateRent =
@@ -305,18 +306,21 @@ export async function createSwapFromSolanaInstructions(
 	const unwrapRefund =
 		quote.fromToken.contract === ethers.constants.AddressZero;
 
+
+	const deadline = BigInt(solanaTime + timeout);
+
 	const swapData = Buffer.alloc(SwapLayout.span);
 	const swapFields = {
 		instruction: 101,
 		mainNonce,
 		stateNonce,
-		amount,
-		minAmountOut,
-		deadline: solanaTime + timeout,
-		feeSwap,
-		feeReturn,
-		feeCancel,
-		gasDrop,
+		amount: getSafeU64Blob(amount.toBigInt()),
+		minAmountOut: getSafeU64Blob(minAmountOut.toBigInt()),
+		deadline: getSafeU64Blob(deadline),
+		feeSwap: getSafeU64Blob(feeSwap.toBigInt()),
+		feeReturn: getSafeU64Blob(feeReturn.toBigInt()),
+		feeCancel: getSafeU64Blob(feeCancel.toBigInt()),
+		gasDrop: getSafeU64Blob(gasDrop.toBigInt()),
 		destinationChain: destinationChainId,
 		destinationAddress: destAddress,
 		unwrapRedeem: unwrapRedeem ? 1 : 0,
@@ -413,7 +417,7 @@ export async function unwrapSol(
 
 	trx.add(createSplTransferInstruction(
 		fromAccount, toAccount, owner,
-		getAmountOfFractionalAmount(amount, 9)
+		getAmountOfFractionalAmount(amount, 9).toBigInt()
 	));
 
 	trx.add(createCloseAccountInstruction(

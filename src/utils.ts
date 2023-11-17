@@ -139,3 +139,13 @@ export function getGasDecimalsInSolana(chain: ChainName): number {
 	}
 	return 8;
 }
+
+const MAX_U64 = BigInt(2) ** BigInt(64) - BigInt(1);
+export function getSafeU64Blob(value: bigint): Buffer {
+	if (value < BigInt(0) || value > MAX_U64) {
+		throw new Error(`Invalid u64: ${value}`);
+	}
+	const buf = Buffer.alloc(8);
+	buf.writeBigUInt64LE(value);
+	return buf;
+}
