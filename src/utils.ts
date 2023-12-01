@@ -102,7 +102,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [4, 4, 2];
+const sdkVersion = [4, 4, 3];
 
 export function checkSdkVersionSupport(minimumVersion: [number, number, number]): boolean {
 	//major
