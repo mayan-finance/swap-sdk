@@ -57,7 +57,8 @@ export type Quote = {
 	mintDecimals: {
 		from: number,
 		to: number,
-	}
+	},
+	bridgeFee: number,
 };
 
 export type SolanaTransactionSigner = (trx: Transaction) => Promise<Transaction>;
