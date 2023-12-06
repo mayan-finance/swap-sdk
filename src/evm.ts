@@ -86,8 +86,8 @@ async function getEvmSwapParams(
 	if (fromChainId !== signerWormholeChainId) {
 		throw new Error('Signer chain id and quote from chain are not same!');
 	}
-	const contractAddress = signerWormholeChainId === 23 ?
-		addresses.MAYAN_L2_CONTRACT : addresses.MAYAN_EVM_CONTRACT;
+
+	const contractAddress = addresses.MAYAN_EVM_CONTRACT;
 
 	const recipientStruct : Recipient = {
 		mayanAddr: recipientHex,
