@@ -39,8 +39,14 @@ export function hexToUint8Array(input): Uint8Array {
 	return new Uint8Array(Buffer.from(input.substring(2), "hex"));
 }
 
+export type GetBlockProvider =
+	ethers.providers.BaseProvider |
+	ethers.providers.JsonRpcProvider |
+	ethers.providers.StaticJsonRpcProvider |
+	ethers.providers.UrlJsonRpcProvider
+
 export async function getCurrentEvmTime(
-	provider: ethers.providers.BaseProvider
+	provider: GetBlockProvider
 ) : Promise<number> {
 	const latestBlock = await provider.getBlock('latest');
 	return latestBlock.timestamp;
