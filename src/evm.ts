@@ -175,7 +175,6 @@ export async function getSwapFromEvmTxPayload(
 		to: contractAddress,
 		data,
 		value,
-		chainId: Number(signerChainId),
 	}
 }
 export async function swapFromEvm(
