@@ -141,7 +141,7 @@ async function getEvmSwapParams(
 	}
 }
 
-export async function getSwapFromEvmPayload(
+export async function getSwapFromEvmTxPayload(
 	quote: Quote, destinationAddress: string,
 	timeout: number, referrerAddress: string | null | undefined,
 	signerAddress: string, signerChainId: number | string,
