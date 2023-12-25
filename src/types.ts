@@ -59,6 +59,7 @@ export type Quote = {
 		to: number,
 	},
 	bridgeFee: number,
+	suggestedPriorityFee: number,
 };
 
 export type SolanaTransactionSigner = (trx: Transaction) => Promise<Transaction>;

@@ -8,7 +8,7 @@ import {
 	SYSVAR_CLOCK_PUBKEY,
 	SYSVAR_RENT_PUBKEY,
 	Transaction,
-	TransactionInstruction,
+	TransactionInstruction, ComputeBudgetProgram
 } from '@solana/web3.js';
 import { blob, struct, u16, u8 } from '@solana/buffer-layout';
 import { Quote, SolanaTransactionSigner } from './types';
@@ -179,6 +179,12 @@ export async function createSwapFromSolanaInstructions(
 	const swapper = new PublicKey(swapperWalletAddress);
 
 	const auctionAddr = new PublicKey(addresses.AUCTION_PROGRAM_ID);
+
+	if (quote.suggestedPriorityFee > 0) {
+		instructions.push(ComputeBudgetProgram.setComputeUnitPrice({
+			microLamports: quote.suggestedPriorityFee,
+		}))
+	}
 
 	let referrerAddr: PublicKey;
 	if (referrerAddress) {
@@ -351,11 +357,14 @@ export async function swapFromSolana(
 		timeout, referrerAddress, connection);
 
 	const swapper = new PublicKey(swapperWalletAddress);
+	const { blockhash, lastValidBlockHeight } = await solanaConnection.getLatestBlockhash();
 	const trx = new Transaction({
 		feePayer: swapper,
+		blockhash: blockhash,
+		lastValidBlockHeight,
 	});
+
 	trx.add(...instructions);
-	const { blockhash } = await solanaConnection.getLatestBlockhash();
 	trx.recentBlockhash = blockhash;
 	signers.forEach(signer => trx.partialSign(signer));
 	const signedTrx = await signTransaction(trx);
