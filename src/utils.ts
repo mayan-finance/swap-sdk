@@ -1,4 +1,3 @@
-import { zeroPad } from '@ethersproject/bytes';
 import { ethers } from 'ethers';
 import { PublicKey, Connection, SYSVAR_CLOCK_PUBKEY } from '@solana/web3.js';
 import { Buffer } from 'buffer';
@@ -12,9 +11,9 @@ export const isValidAptosType = (str: string): boolean =>
 
 export function nativeAddressToHexString(
 	address: string, wChainId: number) : string {
-	let padded: Uint8Array;
+	let padded: string;
 	if (wChainId === 1) {
-		padded = zeroPad(new PublicKey(address).toBytes(), 32);
+		padded = ethers.zeroPadValue(new PublicKey(address).toBytes(), 32);
 	} else if (
 		wChainId === 2 || wChainId === 4 || wChainId === 5 ||
 		wChainId === 6 || wChainId === 22 || wChainId === 23) {
@@ -26,7 +25,7 @@ export function nativeAddressToHexString(
 		for (let i = 0; i < hex.length; i += 2) {
 			result.push(parseInt(hex.substring(i, i + 2), 16));
 		}
-		padded = zeroPad(new Uint8Array(result), 32);
+		padded = ethers.zeroPadValue(new Uint8Array(result), 32);
 	} else {
 		console.log(`Unsupported chain id: ${wChainId}`, address);
 		throw new Error('Unsupported token chain');
@@ -39,14 +38,8 @@ export function hexToUint8Array(input): Uint8Array {
 	return new Uint8Array(Buffer.from(input.substring(2), "hex"));
 }
 
-export type GetBlockProvider =
-	ethers.providers.BaseProvider |
-	ethers.providers.JsonRpcProvider |
-	ethers.providers.StaticJsonRpcProvider |
-	ethers.providers.UrlJsonRpcProvider
-
 export async function getCurrentEvmTime(
-	provider: GetBlockProvider
+	provider: ethers.Provider
 ) : Promise<number> {
 	const latestBlock = await provider.getBlock('latest');
 	return latestBlock.timestamp;
@@ -72,14 +65,14 @@ export async function getAssociatedTokenAddress(
 }
 
 export function getAmountOfFractionalAmount(
-	amount: string | number, decimals: string | number) : ethers.BigNumber {
+	amount: string | number, decimals: string | number) : bigint {
 	const fixedAmount = Number(amount).toFixed(Math.min(8, Number(decimals)));
-	return ethers.utils.parseUnits(fixedAmount, Number(decimals))
+	return ethers.parseUnits(fixedAmount, Number(decimals))
 }
 
 export function getDisplayAmount(
-	inputAmount: ethers.BigNumberish, decimals: string | ethers.BigNumberish) : number {
-	return  Number(ethers.utils.formatUnits(inputAmount, decimals))
+	inputAmount: ethers.BigNumberish, decimals: string | ethers.Numeric) : number {
+	return Number(ethers.formatUnits(inputAmount, decimals))
 }
 
 const chains: { [index: string]: number }  = {

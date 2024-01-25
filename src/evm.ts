@@ -1,14 +1,13 @@
-import { ethers, Signer, BigNumber, PayableOverrides } from 'ethers';
+import { ethers, Signer, Overrides, TransactionResponse, TransactionRequest } from 'ethers';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
 
-import { TransactionResponse, TransactionRequest } from '@ethersproject/abstract-provider';
 import type { Quote } from './types';
 import {
 	getCurrentEvmTime,
 	getAssociatedTokenAddress,
 	nativeAddressToHexString,
 	getAmountOfFractionalAmount, getWormholeChainIdByName,
-	getWormholeChainIdById, getGasDecimal, GetBlockProvider
+	getWormholeChainIdById, getGasDecimal,
 } from './utils';
 import { getCurrentSolanaTime } from './api';
 import MayanSwapArtifact from './MayanSwapArtifact';
@@ -16,16 +15,16 @@ import addresses  from './addresses';
 import { Buffer } from 'buffer';
 
 export type ContractRelayerFees = {
-	swapFee: ethers.BigNumber,
-	redeemFee: ethers.BigNumber,
-	refundFee: ethers.BigNumber,
+	swapFee: bigint,
+	redeemFee: bigint,
+	refundFee: bigint,
 }
 
 export type Criteria = {
-	transferDeadline: ethers.BigNumber,
-	swapDeadline: ethers.BigNumber,
-	amountOutMin: ethers.BigNumber,
-	gasDrop: ethers.BigNumber,
+	transferDeadline: bigint,
+	swapDeadline: bigint,
+	amountOutMin: bigint,
+	gasDrop: bigint,
 	unwrap: boolean,
 	customPayload: string,
 }
@@ -48,14 +47,15 @@ export type EvmSwapParams = {
 	tokenOutWChainId: number,
 	criteria: Criteria,
 	tokenIn: string,
-	amountIn: BigNumber,
-	bridgeFee: BigNumber,
+	amountIn: bigint,
+	bridgeFee: bigint,
 }
 async function getEvmSwapParams(
+  provider: ethers.Provider,
 	quote: Quote, destinationAddress: string,
 	timeout: number, referrerAddress: string | null | undefined,
-	provider: GetBlockProvider, signerAddress: string,
-	signerChainId: string | number, payload?: Uint8Array | Buffer | null
+	signerAddress: string,
+	signerChainId: ethers.BigNumberish, payload?: Uint8Array | Buffer | null
 ) : Promise<EvmSwapParams> {
 	const mayanProgram = new PublicKey(addresses.MAYAN_PROGRAM_ID);
 	const [mayanMainAccount] = await PublicKey.findProgramAddress(
@@ -104,11 +104,11 @@ async function getEvmSwapParams(
 	const currentSolanaTime = await getCurrentSolanaTime();
 
 	const unwrapRedeem =
-		quote.toToken.contract === ethers.constants.AddressZero;
+		quote.toToken.contract === ethers.ZeroAddress;
 
 	const criteria: Criteria = {
-		transferDeadline: ethers.BigNumber.from(currentEvmTime + timeout),
-		swapDeadline: ethers.BigNumber.from(currentSolanaTime + timeout),
+		transferDeadline: BigInt(currentEvmTime + timeout),
+		swapDeadline: BigInt(currentSolanaTime + timeout),
 		amountOutMin: getAmountOfFractionalAmount(
 			quote.minAmountOut, Math.min(8, quote.toToken.decimals)
 		),
@@ -148,34 +148,36 @@ async function getEvmSwapParams(
 }
 
 export async function getSwapFromEvmTxPayload(
+  provider: ethers.Provider,
 	quote: Quote, destinationAddress: string,
 	timeout: number, referrerAddress: string | null | undefined,
 	signerAddress: string, signerChainId: number | string,
-	provider: GetBlockProvider, payload?: Uint8Array | Buffer | null
+	payload?: Uint8Array | Buffer | null
 ) : Promise<TransactionRequest> {
 	const {
 		relayerFees, recipient, tokenOut, tokenOutWChainId,
 		criteria, tokenIn, amountIn, contractAddress, bridgeFee,
 	} = await getEvmSwapParams(
+    provider,
 		quote, destinationAddress, timeout, referrerAddress,
-		provider, signerAddress, signerChainId, payload
+		signerAddress, signerChainId, payload
 	);
 	const mayanSwap = new ethers.Contract(contractAddress, MayanSwapArtifact.abi);
 	let data: string;
 	let value: string | null;
-	if (tokenIn === ethers.constants.AddressZero) {
+	if (tokenIn === ethers.ZeroAddress) {
 		data = mayanSwap.interface.encodeFunctionData(
 			"wrapAndSwapETH",
 			[relayerFees, recipient, tokenOut, tokenOutWChainId, criteria]
 		);
-		value = ethers.utils.hexlify(amountIn);
+		value = ethers.hexlify(amountIn.toString());
 	} else {
 		data = mayanSwap.interface.encodeFunctionData(
 			"swap",
 			[relayerFees, recipient, tokenOut, tokenOutWChainId,
 				criteria, tokenIn, amountIn]
 		)
-		value = ethers.utils.hexlify(bridgeFee);
+		value = ethers.hexlify(bridgeFee.toString());
 	}
 	return {
 		to: contractAddress,
@@ -186,15 +188,15 @@ export async function getSwapFromEvmTxPayload(
 export async function swapFromEvm(
 	quote: Quote, destinationAddress: string,
 	timeout: number, referrerAddress: string | null | undefined,
-	provider: GetBlockProvider,
-	signer: Signer, overrides?: PayableOverrides, payload?: Uint8Array | Buffer | null
+	signer: Signer, overrides?: Overrides, payload?: Uint8Array | Buffer | null
 ): Promise<TransactionResponse> {
 	const signerAddress = await signer.getAddress();
-	const signerChainId = await signer.getChainId();
+	const signerChainId = (await signer.provider.getNetwork()).chainId;
 	const swapParams =
 		await getEvmSwapParams(
+      signer.provider,
 			quote, destinationAddress, timeout, referrerAddress,
-			provider, signerAddress, signerChainId, payload
+			signerAddress, signerChainId, payload
 		);
 
 	if (!overrides) {
@@ -203,7 +205,7 @@ export async function swapFromEvm(
 		}
 	}
 
-	if(swapParams.tokenIn === ethers.constants.AddressZero) {
+	if(swapParams.tokenIn === ethers.ZeroAddress) {
 		overrides.value = swapParams.amountIn;
 		return wrapAndSwapETH(swapParams, signer, overrides);
 	} else {
@@ -217,7 +219,7 @@ export async function swapFromEvm(
 async function swap(
 	swapData: EvmSwapParams,
 	signer: ethers.Signer,
-	overrides?: PayableOverrides
+	overrides?: Overrides
 ): Promise<TransactionResponse> {
 	const {
 		relayerFees, recipient, tokenOut, contractAddress,
@@ -239,7 +241,7 @@ async function swap(
 async function wrapAndSwapETH(
 	swapParams: EvmSwapParams,
 	signer: ethers.Signer,
-	overrides?: PayableOverrides,
+	overrides?: Overrides,
 ): Promise<TransactionResponse> {
 	const {
 		relayerFees, recipient, tokenOut,
