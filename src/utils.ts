@@ -1,7 +1,7 @@
 import { ethers } from 'ethers';
 import { PublicKey, Connection, SYSVAR_CLOCK_PUBKEY } from '@solana/web3.js';
 import { Buffer } from 'buffer';
-import addresses  from './addresses';
+import addresses from './addresses';
 import { ChainName } from './types';
 import * as sha3 from 'js-sha3';
 const sha3_256 = sha3.sha3_256;
@@ -10,37 +10,46 @@ export const isValidAptosType = (str: string): boolean =>
 	/^(0x)?[0-9a-fA-F]+::\w+::\w+$/.test(str);
 
 export function nativeAddressToHexString(
-	address: string, wChainId: number) : string {
-	let padded: string;
+	address: string,
+	wChainId: number
+): string {
+	let padded: Uint8Array;
 	if (wChainId === 1) {
-		padded = ethers.zeroPadValue(new PublicKey(address).toBytes(), 32);
+		padded = ethers.getBytes(
+			ethers.zeroPadValue(new PublicKey(address).toBytes(), 32)
+		);
 	} else if (
-		wChainId === 2 || wChainId === 4 || wChainId === 5 ||
-		wChainId === 6 || wChainId === 22 || wChainId === 23) {
+		wChainId === 2 ||
+		wChainId === 4 ||
+		wChainId === 5 ||
+		wChainId === 6 ||
+		wChainId === 22 ||
+		wChainId === 23
+	) {
 		if (wChainId === 22 && isValidAptosType(address)) {
-			return `0x${sha3_256(address)}`
+			return `0x${sha3_256(address)}`;
 		}
 		let hex = (<string>address).substring(2);
 		const result = [];
 		for (let i = 0; i < hex.length; i += 2) {
 			result.push(parseInt(hex.substring(i, i + 2), 16));
 		}
-		padded = ethers.zeroPadValue(new Uint8Array(result), 32);
+		padded = ethers.getBytes(ethers.zeroPadValue(new Uint8Array(result), 32));
 	} else {
 		console.log(`Unsupported chain id: ${wChainId}`, address);
 		throw new Error('Unsupported token chain');
 	}
-	const hex = Buffer.from(padded).toString("hex");
+	const hex = Buffer.from(padded).toString('hex');
 	return `0x${hex}`;
 }
 
 export function hexToUint8Array(input): Uint8Array {
-	return new Uint8Array(Buffer.from(input.substring(2), "hex"));
+	return new Uint8Array(Buffer.from(input.substring(2), 'hex'));
 }
 
 export async function getCurrentEvmTime(
 	provider: ethers.Provider
-) : Promise<number> {
+): Promise<number> {
 	const latestBlock = await provider.getBlock('latest');
 	return latestBlock.timestamp;
 }
@@ -50,7 +59,9 @@ export async function getAssociatedTokenAddress(
 	owner: PublicKey,
 	allowOwnerOffCurve = false,
 	programId = new PublicKey(addresses.TOKEN_PROGRAM_ID),
-	associatedTokenProgramId = new PublicKey(addresses.ASSOCIATED_TOKEN_PROGRAM_ID)
+	associatedTokenProgramId = new PublicKey(
+		addresses.ASSOCIATED_TOKEN_PROGRAM_ID
+	)
 ): Promise<PublicKey> {
 	if (!allowOwnerOffCurve && !PublicKey.isOnCurve(owner.toBuffer())) {
 		throw new Error('TokenOwnerOffCurveError');
@@ -65,17 +76,21 @@ export async function getAssociatedTokenAddress(
 }
 
 export function getAmountOfFractionalAmount(
-	amount: string | number, decimals: string | number) : bigint {
+	amount: string | number,
+	decimals: string | number
+): bigint {
 	const fixedAmount = Number(amount).toFixed(Math.min(8, Number(decimals)));
-	return ethers.parseUnits(fixedAmount, Number(decimals))
+	return ethers.parseUnits(fixedAmount, Number(decimals));
 }
 
 export function getDisplayAmount(
-	inputAmount: ethers.BigNumberish, decimals: string | ethers.Numeric) : number {
-	return Number(ethers.formatUnits(inputAmount, decimals))
+	inputAmount: ethers.BigNumberish,
+	decimals: string | ethers.Numeric
+): number {
+	return Number(ethers.formatUnits(inputAmount, decimals));
 }
 
-const chains: { [index: string]: number }  = {
+const chains: { [index: string]: number } = {
 	solana: 1,
 	ethereum: 2,
 	bsc: 4,
@@ -85,11 +100,11 @@ const chains: { [index: string]: number }  = {
 	aptos: 22,
 };
 
-export function getWormholeChainIdByName(chain: string) : number | null {
+export function getWormholeChainIdByName(chain: string): number | null {
 	return chains[chain];
 }
 
-const evmChainIdMap: { [index: string]: number }  = {
+const evmChainIdMap: { [index: string]: number } = {
 	[1]: 2,
 	[56]: 4,
 	[137]: 5,
@@ -97,13 +112,15 @@ const evmChainIdMap: { [index: string]: number }  = {
 	[42161]: 23,
 };
 
-export function getWormholeChainIdById(chainId: number) : number | null {
+export function getWormholeChainIdById(chainId: number): number | null {
 	return evmChainIdMap[chainId];
 }
 
 const sdkVersion = [4, 5, 1];
 
-export function checkSdkVersionSupport(minimumVersion: [number, number, number]): boolean {
+export function checkSdkVersionSupport(
+	minimumVersion: [number, number, number]
+): boolean {
 	//major
 	if (sdkVersion[0] < minimumVersion[0]) {
 		return false;
