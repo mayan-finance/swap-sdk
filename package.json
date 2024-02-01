@@ -26,11 +26,13 @@
     }
   },
   "files": [
-    "dist/**/*",
+    "src",
+    "dist",
     "LICENSE",
     "README.md"
   ],
   "scripts": {
+    "prepare": "npm run build",
     "build": "tsup --clean && tsup --minify",
     "watch": "tsup --watch",
     "lint": "prettier src -c",
