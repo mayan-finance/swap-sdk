@@ -1,6 +1,5 @@
 import {
 	AccountMeta,
-	clusterApiUrl,
 	Connection,
 	PublicKey,
 	Keypair,
@@ -22,7 +21,7 @@ import {
 } from './utils';
 import { Buffer } from 'buffer';
 import addresses  from './addresses'
-import { ethers } from 'ethers';
+import { ZeroAddress } from 'ethers';
 import { getCurrentSolanaTime } from './api';
 
 const STATE_SIZE = 348;
@@ -230,12 +229,12 @@ export async function createSwapFromSolanaInstructions(
 		));
 	}
 
-	if (quote.fromToken.contract === ethers.constants.AddressZero) {
+	if (quote.fromToken.contract === ZeroAddress) {
 		instructions.push(SystemProgram.transfer({
 			fromPubkey: swapper,
 			toPubkey: fromAccount,
 			lamports: getAmountOfFractionalAmount(
-				quote.effectiveAmountIn, 9).toBigInt(),
+				quote.effectiveAmountIn, 9),
 		}));
 		instructions.push(createSyncNativeInstruction(fromAccount));
 	}
@@ -245,7 +244,7 @@ export async function createSwapFromSolanaInstructions(
 
 	const delegate = Keypair.generate();
 	instructions.push(createApproveInstruction(
-		fromAccount, delegate.publicKey, swapper, amount.toBigInt()
+		fromAccount, delegate.publicKey, swapper, amount
 	));
 
 	const stateRent =
@@ -308,9 +307,9 @@ export async function createSwapFromSolanaInstructions(
 		quote.gasDrop, getGasDecimalsInSolana(quote.toChain));
 
 	const unwrapRedeem =
-		quote.toToken.contract === ethers.constants.AddressZero;
+		quote.toToken.contract === ZeroAddress;
 	const unwrapRefund =
-		quote.fromToken.contract === ethers.constants.AddressZero;
+		quote.fromToken.contract === ZeroAddress;
 
 
 	const deadline = BigInt(solanaTime + timeout);
@@ -320,13 +319,13 @@ export async function createSwapFromSolanaInstructions(
 		instruction: 101,
 		mainNonce,
 		stateNonce,
-		amount: getSafeU64Blob(amount.toBigInt()),
-		minAmountOut: getSafeU64Blob(minAmountOut.toBigInt()),
+		amount: getSafeU64Blob(amount),
+		minAmountOut: getSafeU64Blob(minAmountOut),
 		deadline: getSafeU64Blob(deadline),
-		feeSwap: getSafeU64Blob(feeSwap.toBigInt()),
-		feeReturn: getSafeU64Blob(feeReturn.toBigInt()),
-		feeCancel: getSafeU64Blob(feeCancel.toBigInt()),
-		gasDrop: getSafeU64Blob(gasDrop.toBigInt()),
+		feeSwap: getSafeU64Blob(feeSwap),
+		feeReturn: getSafeU64Blob(feeReturn),
+		feeCancel: getSafeU64Blob(feeCancel),
+		gasDrop: getSafeU64Blob(gasDrop),
 		destinationChain: destinationChainId,
 		destinationAddress: destAddress,
 		unwrapRedeem: unwrapRedeem ? 1 : 0,
@@ -394,7 +393,7 @@ export async function wrapSol(
 	trx.add(SystemProgram.transfer({
 		fromPubkey: owner,
 		toPubkey: toAccount,
-		lamports: getAmountOfFractionalAmount(amount, 9).toBigInt(),
+		lamports: getAmountOfFractionalAmount(amount, 9),
 	}));
 
 	trx.add(createSyncNativeInstruction(toAccount));
@@ -426,7 +425,7 @@ export async function unwrapSol(
 
 	trx.add(createSplTransferInstruction(
 		fromAccount, toAccount, owner,
-		getAmountOfFractionalAmount(amount, 9).toBigInt()
+		getAmountOfFractionalAmount(amount, 9)
 	));
 
 	trx.add(createCloseAccountInstruction(
