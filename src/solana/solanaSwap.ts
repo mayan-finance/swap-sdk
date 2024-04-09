@@ -295,8 +295,6 @@ export async function swapFromSolana2(
 	const transaction = new VersionedTransaction(message);
 	transaction.sign(signers);
 	const signedTrx = await signTransaction(transaction);
-	const simulate = await connection.simulateTransaction(signedTrx);
-	console.log({ simulate });
 	return await submitTransactionWithRetry({
 		trx: signedTrx.serialize(),
 		connection: solanaConnection,

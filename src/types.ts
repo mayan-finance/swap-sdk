@@ -48,6 +48,8 @@ export type Quote = {
 	redeemRelayerFee: number;
 	refundRelayerFee: number;
 	solanaRelayerFee: number;
+	clientRelayerFeeSuccess: number | null;
+	clientRelayerFeeRefund: number | null;
 	eta: number;
 	fromToken: Token;
 	toToken: Token;
