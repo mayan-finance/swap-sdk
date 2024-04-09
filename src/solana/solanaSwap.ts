@@ -7,10 +7,12 @@ import {
 	SYSVAR_CLOCK_PUBKEY,
 	SYSVAR_RENT_PUBKEY,
 	Transaction,
-	TransactionInstruction, ComputeBudgetProgram
+	SendOptions,
+	TransactionInstruction,
+	ComputeBudgetProgram, AddressLookupTableAccount, MessageV0, VersionedTransaction
 } from '@solana/web3.js';
-import { blob, struct, u16, u8 } from '@solana/buffer-layout';
-import { Quote, SolanaTransactionSigner } from './types';
+import {blob, struct, u16, u8} from '@solana/buffer-layout';
+import {Quote, SolanaTransactionSigner} from '../types';
 import {
 	getAmountOfFractionalAmount,
 	getAssociatedTokenAddress, getGasDecimalsInSolana,
@@ -18,136 +20,24 @@ import {
 	hexToUint8Array,
 	nativeAddressToHexString,
 	getSafeU64Blob,
+} from '../utils';
+import {Buffer} from 'buffer';
+import addresses from '../addresses'
+import {ZeroAddress} from 'ethers';
+import {getCurrentChainTime, getSuggestedRelayer} from '../api';
+import {
+	createAssociatedTokenAccountInstruction,
+	createSyncNativeInstruction,
+	createApproveInstruction,
+	submitTransactionWithRetry,
 } from './utils';
-import { Buffer } from 'buffer';
-import addresses  from './addresses'
-import { ZeroAddress } from 'ethers';
-import { getCurrentSolanaTime } from './api';
+import { createMctpFromSolanaInstructions } from "./solanaMctp";
 
-const STATE_SIZE = 348;
 
-function createAssociatedTokenAccountInstruction(
-	payer: PublicKey,
-	associatedToken: PublicKey,
-	owner: PublicKey,
-	mint: PublicKey,
-	programId = new PublicKey(addresses.TOKEN_PROGRAM_ID),
-	associatedTokenProgramId = new PublicKey(addresses.ASSOCIATED_TOKEN_PROGRAM_ID)
-): TransactionInstruction {
-	const keys = [
-		{ pubkey: payer, isSigner: true, isWritable: true },
-		{ pubkey: associatedToken, isSigner: false, isWritable: true },
-		{ pubkey: owner, isSigner: false, isWritable: false },
-		{ pubkey: mint, isSigner: false, isWritable: false },
-		{ pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-		{ pubkey: programId, isSigner: false, isWritable: false },
-		{ pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
-	];
-
-	return new TransactionInstruction({
-		keys,
-		programId: associatedTokenProgramId,
-		data: Buffer.alloc(0),
-	});
-}
-
-const ApproveInstructionData = struct<any>([
-	u8('instruction'), blob(8, 'amount')
-]);
-function createApproveInstruction(
-	account: PublicKey,
-	delegate: PublicKey,
-	owner: PublicKey,
-	amount: bigint,
-	programId = new PublicKey(addresses.TOKEN_PROGRAM_ID)
-): TransactionInstruction {
-	const keys: Array<AccountMeta> = [
-		{ pubkey: account, isSigner: false, isWritable: true },
-		{ pubkey: delegate, isSigner: false, isWritable: false },
-		{ pubkey: owner, isSigner: true, isWritable: false },
-	];
-
-	const data = Buffer.alloc(ApproveInstructionData.span);
-	ApproveInstructionData.encode(
-		{
-			instruction: 4,
-			amount: getSafeU64Blob(amount),
-		},
-		data
-	);
-	return new TransactionInstruction({ keys, programId, data });
-}
-
-const SyncNativeInstructionData = struct<any>([u8('instruction')]);
-function createSyncNativeInstruction(
-	account: PublicKey): TransactionInstruction {
-	const keys = [{ pubkey: account, isSigner: false, isWritable: true }];
-
-	const data = Buffer.alloc(SyncNativeInstructionData.span);
-	SyncNativeInstructionData.encode({ instruction: 17 }, data);
-
-	return new TransactionInstruction({
-		keys,
-		programId: new PublicKey(addresses.TOKEN_PROGRAM_ID),
-		data
-	});
-}
-
-const CloseAccountInstructionData = struct<any>([
-	u8('instruction')
-]);
-function createCloseAccountInstruction(
-	account: PublicKey,
-	destination: PublicKey,
-	owner: PublicKey,
-	programId = new PublicKey(addresses.TOKEN_PROGRAM_ID)
-): TransactionInstruction {
-	const keys: Array<AccountMeta> = [
-		{ pubkey: account, isSigner: false, isWritable: true },
-		{ pubkey: destination, isSigner: false, isWritable: true },
-		{ pubkey: owner, isSigner: true, isWritable: false },
-	];
-
-	const data = Buffer.alloc(CloseAccountInstructionData.span);
-	CloseAccountInstructionData.encode(
-		{
-			instruction: 9,
-		},
-		data
-	);
-	return new TransactionInstruction({ keys, programId, data });
-}
-
-const SplTransferInstructionData = struct<any>([
-	u8('instruction'), blob(8, 'amount')
-]);
-function createSplTransferInstruction(
-	source: PublicKey,
-	destination: PublicKey,
-	owner: PublicKey,
-	amount: bigint,
-	programId = new PublicKey(addresses.TOKEN_PROGRAM_ID)
-): TransactionInstruction {
-	const keys: Array<AccountMeta> = [
-		{ pubkey: source, isSigner: false, isWritable: true },
-		{ pubkey: destination, isSigner: false, isWritable: true },
-		{ pubkey: owner, isSigner: true, isWritable: false },
-	];
-
-	const data = Buffer.alloc(SplTransferInstructionData.span);
-	SplTransferInstructionData.encode(
-		{
-			instruction: 3,
-			amount: getSafeU64Blob(amount),
-		},
-		data
-	);
-	return new TransactionInstruction({ keys, programId, data });
-}
+const STATE_SIZE = 420;
 
 const SwapLayout = struct<any>([
 	u8('instruction'),
-	u8('mainNonce'),
 	u8('stateNonce'),
 	blob(8, 'amount'),
 	blob(8, 'minAmountOut'),
@@ -160,6 +50,8 @@ const SwapLayout = struct<any>([
 	blob(32, 'destinationAddress'),
 	u8('unwrapRedeem'),
 	u8('unwrapRefund'),
+	u8('mayanFeeNonce'),
+	u8('referrerFeeNonce'),
 ]);
 
 export async function createSwapFromSolanaInstructions(
@@ -168,8 +60,14 @@ export async function createSwapFromSolanaInstructions(
 	connection?: Connection,
 ): Promise<{
 	instructions: Array<TransactionInstruction>,
-	signers: Array<Keypair>
+	signers: Array<Keypair>,
+	lookupTables: Array<AddressLookupTableAccount>,
 }> {
+
+	if (quote.type === 'MCTP') {
+		return createMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, timeout, referrerAddress, connection)
+	}
+
 	let instructions: Array<TransactionInstruction> = [];
 	const solanaConnection = connection ??
 		new Connection('https://rpc.ankr.com/solana');
@@ -192,13 +90,21 @@ export async function createSwapFromSolanaInstructions(
 		referrerAddr = SystemProgram.programId;
 	}
 
-	const [main, mainNonce] = await PublicKey.findProgramAddress(
-		[Buffer.from('MAIN')],
+	const [mayanFee, mayanFeeNonce] = PublicKey.findProgramAddressSync(
+		[Buffer.from('MAYANFEE')],
 		mayanProgram,
 	);
+	const [referrerFee, referrerFeeNonce] = PublicKey.findProgramAddressSync(
+		[
+			Buffer.from('REFERRERFEE'),
+			referrerAddr.toBuffer(),
+		],
+		mayanProgram,
+	);
+
 	const msg1 = Keypair.generate();
 	const msg2 = Keypair.generate();
-	const [state, stateNonce] = await PublicKey.findProgramAddress(
+	const [state, stateNonce] = PublicKey.findProgramAddressSync(
 		[
 			Buffer.from('V2STATE'),
 			Buffer.from(msg1.publicKey.toBytes()),
@@ -208,9 +114,8 @@ export async function createSwapFromSolanaInstructions(
 	);
 	const fromMint = new PublicKey(quote.fromToken.mint);
 	const toMint = new PublicKey(quote.toToken.mint);
-	const fromAccount = await getAssociatedTokenAddress(fromMint, swapper);
-	const toAccount = await getAssociatedTokenAddress(fromMint, main, true);
-
+	const fromAccount = getAssociatedTokenAddress(fromMint, swapper);
+	const toAccount = getAssociatedTokenAddress(fromMint, state, true);
 
 
 	const fromAccountData = await solanaConnection.getAccountInfo(
@@ -225,7 +130,7 @@ export async function createSwapFromSolanaInstructions(
 		toAccount, 'finalized');
 	if (!toAccountData || toAccountData.data.length === 0) {
 		instructions.push(createAssociatedTokenAccountInstruction(
-			swapper, toAccount, main, fromMint
+			swapper, toAccount, state, fromMint
 		));
 	}
 
@@ -255,9 +160,17 @@ export async function createSwapFromSolanaInstructions(
 		lamports: stateRent,
 	}));
 
+	let relayer: PublicKey;
+	try {
+		const suggestedRelayer = await getSuggestedRelayer();
+		relayer = new PublicKey(suggestedRelayer);
+	} catch (err) {
+		console.log('Relayer not found, using system program');
+		relayer = SystemProgram.programId;
+	}
+
 	const swapKeys: Array<AccountMeta> = [
 		{pubkey: delegate.publicKey, isWritable: false, isSigner: true},
-		{pubkey: main, isWritable: false, isSigner: false},
 		{pubkey: msg1.publicKey, isWritable: false, isSigner: true},
 		{pubkey: msg2.publicKey, isWritable: false, isSigner: true},
 		{pubkey: state, isWritable: true, isSigner: false},
@@ -268,14 +181,17 @@ export async function createSwapFromSolanaInstructions(
 		{pubkey: toMint, isWritable: false, isSigner: false},
 		{pubkey: auctionAddr, isWritable: false, isSigner: false},
 		{pubkey: referrerAddr, isWritable: false, isSigner: false},
+		{pubkey: mayanFee, isWritable: false, isSigner: false},
+		{pubkey: referrerFee, isWritable: false, isSigner: false},
 		{pubkey: delegate.publicKey, isWritable: true, isSigner: true},
+		{pubkey: relayer, isWritable: false, isSigner: false},
 		{pubkey: SYSVAR_CLOCK_PUBKEY, isWritable: false, isSigner: false},
 		{pubkey: SYSVAR_RENT_PUBKEY, isWritable: false, isSigner: false},
 		{pubkey: tokenProgram, isWritable: false, isSigner: false},
 		{pubkey: SystemProgram.programId, isWritable: false, isSigner: false},
 	];
 
-	const solanaTime = await getCurrentSolanaTime();
+	const solanaTime = await getCurrentChainTime('solana');
 	const destinationChainId = getWormholeChainIdByName(quote.toChain);
 
 	if (destinationChainId === 1) { //destination address safety check!
@@ -317,7 +233,6 @@ export async function createSwapFromSolanaInstructions(
 	const swapData = Buffer.alloc(SwapLayout.span);
 	const swapFields = {
 		instruction: 101,
-		mainNonce,
 		stateNonce,
 		amount: getSafeU64Blob(amount),
 		minAmountOut: getSafeU64Blob(minAmountOut),
@@ -330,6 +245,8 @@ export async function createSwapFromSolanaInstructions(
 		destinationAddress: destAddress,
 		unwrapRedeem: unwrapRedeem ? 1 : 0,
 		unwrapRefund: unwrapRefund ? 1 : 0,
+		mayanFeeNonce,
+		referrerFeeNonce,
 	}
 	SwapLayout.encode(swapFields, swapData);
 	const swapInstruction = new TransactionInstruction({
@@ -342,21 +259,71 @@ export async function createSwapFromSolanaInstructions(
 	return {
 		instructions,
 		signers: [delegate, msg1, msg2],
+		lookupTables: [],
 	};
 }
-export async function swapFromSolana(
+
+export async function swapFromSolana2(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
 	timeout: number, referrerAddress: string | null | undefined,
-	signTransaction: SolanaTransactionSigner, connection?: Connection
-) : Promise<string> {
+	signTransaction: SolanaTransactionSigner,
+	connection?: Connection, extraRpcs?: string[], sendOptions?: SendOptions
+): Promise<{
+	signature: string,
+	serializedTrx: Uint8Array,
+}> {
 	const solanaConnection = connection ??
 		new Connection('https://rpc.ankr.com/solana');
-	const { instructions, signers } = await createSwapFromSolanaInstructions(
+
+	const {
+		instructions,
+		signers,
+		lookupTables
+	} = await createSwapFromSolanaInstructions(
 		quote, swapperWalletAddress, destinationAddress,
 		timeout, referrerAddress, connection);
 
 	const swapper = new PublicKey(swapperWalletAddress);
-	const { blockhash, lastValidBlockHeight } = await solanaConnection.getLatestBlockhash();
+
+	const {blockhash} = await connection.getLatestBlockhash();
+	const message = MessageV0.compile({
+		instructions,
+		payerKey: swapper,
+		recentBlockhash: blockhash,
+		addressLookupTableAccounts: lookupTables,
+	});
+	const transaction = new VersionedTransaction(message);
+	transaction.sign(signers);
+	const signedTrx = await signTransaction(transaction);
+	const simulate = await connection.simulateTransaction(signedTrx);
+	console.log({ simulate });
+	return await submitTransactionWithRetry({
+		trx: signedTrx.serialize(),
+		connection: solanaConnection,
+		extraRpcs: extraRpcs ?? [],
+		errorChance: 2,
+		options: sendOptions,
+	});
+}
+
+/**
+ * @deprecated Use swapFromSolana2 instead
+ */
+export async function swapFromSolana(
+	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
+	timeout: number, referrerAddress: string | null | undefined,
+	signTransaction: SolanaTransactionSigner,
+	connection?: Connection, extraRpcs?: string[], sendOptions?: SendOptions
+): Promise<string> {
+	const solanaConnection = connection ??
+		new Connection('https://rpc.ankr.com/solana');
+	const {instructions, signers} = await createSwapFromSolanaInstructions(
+		quote, swapperWalletAddress, destinationAddress,
+		timeout, referrerAddress, connection);
+
+	const swapper = new PublicKey(swapperWalletAddress);
+	const {blockhash, lastValidBlockHeight} = await solanaConnection.getLatestBlockhash();
+
 	const trx = new Transaction({
 		feePayer: swapper,
 		blockhash: blockhash,
@@ -367,74 +334,22 @@ export async function swapFromSolana(
 	trx.recentBlockhash = blockhash;
 	signers.forEach(signer => trx.partialSign(signer));
 	const signedTrx = await signTransaction(trx);
-	return await solanaConnection.sendRawTransaction(signedTrx.serialize());
+	return await connection.sendRawTransaction(signedTrx.serialize(), sendOptions);
 }
 
-const solMint = new PublicKey('So11111111111111111111111111111111111111112');
 
-export async function wrapSol(
-	owner: PublicKey, amount: number,
-	signTransaction: SolanaTransactionSigner, connection?: Connection
-) : Promise<string> {
-	const solanaConnection = connection ?? new Connection('https://rpc.ankr.com/solana');
-	const toAccount = await getAssociatedTokenAddress(solMint, owner, false);
 
-	const trx = new Transaction({
-		feePayer: owner,
-	});
 
-	const toAccountData = await solanaConnection.getAccountInfo(toAccount, 'finalized');
-	if (!toAccountData || toAccountData.data.length === 0) {
-		trx.add(createAssociatedTokenAccountInstruction(
-			owner, toAccount, owner, solMint
-		));
-	}
 
-	trx.add(SystemProgram.transfer({
-		fromPubkey: owner,
-		toPubkey: toAccount,
-		lamports: getAmountOfFractionalAmount(amount, 9),
-	}));
 
-	trx.add(createSyncNativeInstruction(toAccount));
 
-	const { blockhash } = await solanaConnection.getLatestBlockhash();
-	trx.recentBlockhash = blockhash;
-	const signedTrx = await signTransaction(trx);
-	return await solanaConnection.sendRawTransaction(signedTrx.serialize());
-}
 
-export async function unwrapSol(
-	owner: PublicKey, amount: number,
-	signTransaction: SolanaTransactionSigner, connection?: Connection
-) : Promise<string> {
-	const solanaConnection = connection ??
-		new Connection('https://rpc.ankr.com/solana');
-	const fromAccount = await getAssociatedTokenAddress(solMint, owner, false);
-	const delegate = Keypair.generate();
 
-	const trx = new Transaction({
-		feePayer: owner,
-	});
 
-	const toAccount = await getAssociatedTokenAddress(
-		solMint, delegate.publicKey, false);
-	trx.add(createAssociatedTokenAccountInstruction(
-		owner, toAccount, delegate.publicKey, solMint
-	));
 
-	trx.add(createSplTransferInstruction(
-		fromAccount, toAccount, owner,
-		getAmountOfFractionalAmount(amount, 9)
-	));
 
-	trx.add(createCloseAccountInstruction(
-		toAccount, owner, delegate.publicKey
-	));
 
-	const { blockhash } = await solanaConnection.getLatestBlockhash();
-	trx.recentBlockhash = blockhash;
-	trx.partialSign(delegate);
-	const signedTrx = await signTransaction(trx);
-	return await solanaConnection.sendRawTransaction(signedTrx.serialize());
-}
+
+
+
+
