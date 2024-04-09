@@ -12,7 +12,7 @@ export default {
 	"CCTP_CORE_PROGRAM_ID": "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
 	"CCTP_TOKEN_PROGRAM_ID": "CCTPiPYPc6AsJuwueEnWgSgucamXDZwBd53dQ11YiKX3",
 	"LOOKUP_TABLE": "AAJD5ef3combuWT586MxuWPwff3VtWu3FXVUPBJesoiy",
-	"EXPLORER_URL": "https://test-explorer-api.mayan.finance/v3",
-	"PRICE_URL": "https://test-price-api.mayan.finance/v3",
-	"RELAYER_URL": "https://test-relayer-api.mayan.finance/v3",
+	"EXPLORER_URL": "https://explorer-api.mayan.finance/v3",
+	"PRICE_URL": "https://price-api.mayan.finance/v3",
+	"RELAYER_URL": "https://relayer-api.mayan.finance/v3",
 }
