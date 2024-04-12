@@ -191,7 +191,6 @@ async function getEvmMctpCreateOrderParams(
 	const contractAddress = quote.mctpMayanContract;
 
 
-	console.log('debug 0');
 	let mintRecipient: string;
 	let callerAddr: string;
 	if (quote.toChain === 'solana') {
@@ -215,8 +214,6 @@ async function getEvmMctpCreateOrderParams(
 	}
 	const destDomain = getCCTPDomain(quote.toChain);
 
-	console.log('debug 1');
-
 	const destinationAddressHex = nativeAddressToHexString(destinationAddress, destChainId);
 	let referrerHex: string;
 	if (referrerAddress) {
@@ -228,8 +225,6 @@ async function getEvmMctpCreateOrderParams(
 			SystemProgram.programId.toString(), getWormholeChainIdByName('solana')
 		);
 	}
-
-	console.log('debug 2');
 
 	const redeemFee = getAmountOfFractionalAmount(quote.redeemRelayerFee, CCTP_TOKEN_DECIMALS);
 	const gasDrop = getAmountOfFractionalAmount(quote.gasDrop, Math.min(getGasDecimal(quote.toChain), 8));
@@ -246,8 +241,6 @@ async function getEvmMctpCreateOrderParams(
 		quote.toToken.contract === ZeroAddress ?
 			nativeAddressToHexString(SystemProgram.programId.toString(), getWormholeChainIdByName('solana')) :
 			nativeAddressToHexString(quote.toToken.contract, quote.toToken.wChainId);
-
-	console.log('debug 3');
 
 	return {
 		params: {
@@ -277,7 +270,6 @@ async function getEvmMctpCreateOrderTxPayload(
 	quote: Quote, destinationAddress: string, timeout: number,
 	referrerAddress: string | null | undefined, signerChainId: string | number
 ): Promise<TransactionRequest & { _params: EvmMctpCreateOrderParams }> {
-	console.log('debug 0.0');
 	const orderParams = await getEvmMctpCreateOrderParams(
 		quote, destinationAddress, timeout, referrerAddress, signerChainId
 	);
@@ -285,12 +277,10 @@ async function getEvmMctpCreateOrderTxPayload(
 		contractAddress, params, bridgeFee, recipient
 	} = orderParams;
 	const mctpContract = new Contract(contractAddress, MayanCircleArtifact.abi);
-	console.log('debug 0.8', params, recipient);
 	const data = mctpContract.interface.encodeFunctionData(
 		'createOrder',
 		[params, recipient]
 	);
-	console.log('debug 0.9');
 	const value = toBeHex(bridgeFee);
 
 	return {
@@ -358,9 +348,6 @@ export async function getMctpFromEvmTxPayload(
 				mctpPayloadIx._params.contractAddress,
 				mctpPayloadIx.data,
 			]);
-			console.log('no swap in source');
-			console.log('no auction');
-			console.log('mctpPayloadIx', mctpPayloadIx);
 			return {
 				data,
 				to: addresses.MAYAN_FORWARDER_CONTRACT,
@@ -392,12 +379,6 @@ export async function getMctpFromEvmTxPayload(
 
 				value = toBeHex(mctpPayloadIx._params.params.amountIn);
 
-				console.log('swap ETH in source');
-				console.log('has auction');
-				console.log('mctpPayloadIx', mctpPayloadIx);
-				console.log('minMiddleAmount', minMiddleAmount);
-				console.log('value', value);
-
 				const data = forwarder.interface.encodeFunctionData('swapAndForwardEth', [
 					amountIn,
 					evmSwapRouterAddress,
@@ -414,12 +395,6 @@ export async function getMctpFromEvmTxPayload(
 					chainId: signerChainId,
 				}
 			} else {
-				console.log('swap token in source');
-				console.log('has auction');
-				console.log('mctpPayloadIx', mctpPayloadIx);
-				console.log('minMiddleAmount', minMiddleAmount);
-				console.log('value', value);
-
 				const data = forwarder.interface.encodeFunctionData('swapAndForwardERC20', [
 					quote.fromToken.contract,
 					mctpPayloadIx._params.params.amountIn,
@@ -453,12 +428,6 @@ export async function getMctpFromEvmTxPayload(
 
 				value = toBeHex(mctpPayloadIx._params.amountIn);
 
-				console.log('swap in source ETH');
-				console.log('no auction');
-				console.log('mctpPayloadIx', mctpPayloadIx);
-				console.log('minMiddleAmount', minMiddleAmount);
-				console.log('value', value);
-
 				const data = forwarder.interface.encodeFunctionData('swapAndForwardEth', [
 					amountIn,
 					evmSwapRouterAddress,
@@ -475,12 +444,6 @@ export async function getMctpFromEvmTxPayload(
 					chainId: signerChainId,
 				}
 			} else {
-
-				console.log('swap in source');
-				console.log('no auction');
-				console.log('mctpPayloadIx', mctpPayloadIx);
-				console.log('minMiddleAmount', minMiddleAmount);
-				console.log('value', value);
 				const data = forwarder.interface.encodeFunctionData('swapAndForwardERC20', [
 					quote.fromToken.contract,
 					mctpPayloadIx._params.amountIn,
