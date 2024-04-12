@@ -24,7 +24,9 @@ export type QuoteParams = {
 	fromChain: ChainName;
 	toToken: string;
 	toChain: ChainName;
+	//@deprecated
 	slippage: number;
+	slippageBps: number;
 	gasDrop?: number;
 	referrer?: string;
 	referrerBps?: number;
@@ -55,7 +57,7 @@ export type Quote = {
 	toToken: Token;
 	fromChain: ChainName;
 	toChain: ChainName;
-	slippage: number;
+	slippageBps: number;
 	priceStat: {
 		ratio: number;
 		status: 'GOOD' | 'NORMAL' | 'BAD';
@@ -112,7 +114,7 @@ export type GetSolanaSwapParams = {
 	middleToken: string,
 	userWallet: string,
 	userLedger: string,
-	slippage: number,
+	slippageBps: number,
 	depositMode: 'WITH_FEE' | 'LOCK_FEE' | 'SWAP',
 }
 

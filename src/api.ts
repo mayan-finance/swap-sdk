@@ -45,7 +45,10 @@ export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions
 	mctp: true,
 }): Promise<Quote[]> {
 	const { gasDrop, referrerBps } = params;
-	const normalizedSlippage = params.slippage / 100;
+	let slippageBps = params.slippageBps;
+	if (!Number.isFinite(slippageBps)) {
+		slippageBps = params.slippage * 100;
+	}
 	const queryParams: Record<string, any> = {
 		...quoteOptions,
 		solanaProgram: addresses.MAYAN_PROGRAM_ID,
@@ -54,7 +57,7 @@ export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions
 		fromChain: params.fromChain,
 		toToken: params.toToken,
 		toChain: params.toChain,
-		slippage: Number.isFinite(normalizedSlippage) ? normalizedSlippage : undefined,
+		slippageBps,
 		referrer: params.referrer,
 		referrerBps: Number.isFinite(referrerBps) ? referrerBps : undefined,
 		gasDrop: Number.isFinite(gasDrop) ? gasDrop : undefined,

@@ -627,7 +627,7 @@ export async function createMctpFromSolanaInstructions(
 			middleToken: quote.mctpInputContract,
 			userWallet: swapperAddress,
 			userLedger: ledger.toString(),
-			slippage: quote.slippage,
+			slippageBps: quote.slippageBps,
 			fromToken: quote.fromToken.contract,
 			amountIn: quote.effectiveAmountIn,
 			depositMode: quote.hasAuction ? 'SWAP' : mode,
