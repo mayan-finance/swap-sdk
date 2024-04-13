@@ -1,8 +1,8 @@
-import {ethers, zeroPadValue, parseUnits, formatUnits, ZeroAddress} from 'ethers';
+import { ethers, zeroPadValue, parseUnits, formatUnits } from 'ethers';
 import {PublicKey, SystemProgram} from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import addresses  from './addresses';
-import { ChainName, Erc20Permit } from './types';
+import { ChainName, Erc20Permit, Quote, ReferrerAddresses } from './types';
 import * as sha3 from 'js-sha3';
 const sha3_256 = sha3.sha3_256;
 
@@ -186,3 +186,21 @@ export function wait(time: number): Promise<void> {
 	});
 }
 
+export function getQuoteSuitableReferrerAddress(
+	quote: Quote,
+	referrerAddresses?: ReferrerAddresses,
+): string | null {
+	if (!quote || !referrerAddresses) {
+		return null;
+	}
+	if (quote.type === 'WH') {
+		return referrerAddresses?.solana || null;
+	}
+	if (quote.type === 'MCTP') {
+		if (quote.toChain === 'solana') {
+			return referrerAddresses?.solana || null;
+		}
+		return referrerAddresses?.evm || null;
+	}
+	return null;
+}

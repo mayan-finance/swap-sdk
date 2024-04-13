@@ -136,3 +136,8 @@ export type SolanaClientSwap = {
 	cleanupInstruction: InstructionInfo,
 	addressLookupTableAddresses: string[],
 }
+
+export type ReferrerAddresses = {
+	solana?: string | null,
+	evm?: string | null,
+}

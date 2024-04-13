@@ -8,19 +8,19 @@ import {
 	TransactionRequest
 } from 'ethers';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
-import type {Erc20Permit, Quote} from '../types';
+import type {Erc20Permit, Quote, ReferrerAddresses} from '../types';
 import {
 	getAssociatedTokenAddress,
 	nativeAddressToHexString,
 	getAmountOfFractionalAmount, getWormholeChainIdByName,
-	getWormholeChainIdById, getGasDecimal, getEvmChainIdByName
+	getWormholeChainIdById, getGasDecimal, getEvmChainIdByName,
+	getQuoteSuitableReferrerAddress,
 } from '../utils';
 import { getCurrentChainTime } from '../api';
 import MayanSwapArtifact from './MayanSwapArtifact';
 import addresses from '../addresses';
 import { Buffer } from 'buffer';
-import { swiftFromEvm } from './evmSwift';
-import {getMctpFromEvmTxPayload, mctpFromEvm} from './evmMctp';
+import { getMctpFromEvmTxPayload } from './evmMctp';
 
 export type ContractRelayerFees = {
 	swapFee: bigint,
@@ -157,7 +157,7 @@ async function getEvmSwapParams(
 
 export async function getSwapFromEvmTxPayload(
 	quote: Quote, destinationAddress: string,
-	timeout: number, referrerAddress: string | null | undefined,
+	timeout: number, referrerAddresses: ReferrerAddresses | null | undefined,
 	signerAddress: string, signerChainId: number | string,
 	payload: Uint8Array | Buffer | null | undefined,
 	permit: Erc20Permit | null | undefined,
@@ -168,6 +168,8 @@ export async function getSwapFromEvmTxPayload(
 	if (fromChainId !== signerWormholeChainId) {
 		throw new Error(`Signer chain id(${Number(signerChainId)}) and quote from chain are not same! ${fromChainId} !== ${signerWormholeChainId}`);
 	}
+
+	const referrerAddress = getQuoteSuitableReferrerAddress(quote, referrerAddresses);
 
 	if (quote.type === 'MCTP') {
 		return getMctpFromEvmTxPayload(quote, destinationAddress, timeout, referrerAddress, signerChainId, permit);
@@ -209,7 +211,7 @@ export async function getSwapFromEvmTxPayload(
 }
 export async function swapFromEvm(
 	quote: Quote, swapperAddress: string, destinationAddress: string,
-	timeout: number, referrerAddress: string | null | undefined,
+	timeout: number, referrerAddresses: ReferrerAddresses | null | undefined,
 	signer: Signer, permit: Erc20Permit | null | undefined,
 	overrides: Overrides | null | undefined,
 	payload: Uint8Array | Buffer | null | undefined
@@ -224,7 +226,7 @@ export async function swapFromEvm(
 	const signerChainId = Number((await signer.provider.getNetwork()).chainId);
 
 	const transactionRequest = await getSwapFromEvmTxPayload(
-		quote, destinationAddress, timeout, referrerAddress,
+		quote, destinationAddress, timeout, referrerAddresses,
 		signerAddress, signerChainId, payload, permit
 	);
 

@@ -12,7 +12,7 @@ import {
 	ComputeBudgetProgram, AddressLookupTableAccount, MessageV0, VersionedTransaction
 } from '@solana/web3.js';
 import {blob, struct, u16, u8} from '@solana/buffer-layout';
-import {Quote, SolanaTransactionSigner} from '../types';
+import { Quote, ReferrerAddresses, SolanaTransactionSigner } from '../types';
 import {
 	getAmountOfFractionalAmount,
 	getAssociatedTokenAddress, getGasDecimalsInSolana,
@@ -20,6 +20,7 @@ import {
 	hexToUint8Array,
 	nativeAddressToHexString,
 	getSafeU64Blob,
+	getQuoteSuitableReferrerAddress,
 } from '../utils';
 import {Buffer} from 'buffer';
 import addresses from '../addresses'
@@ -56,13 +57,15 @@ const SwapLayout = struct<any>([
 
 export async function createSwapFromSolanaInstructions(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
-	timeout: number, referrerAddress: string | null | undefined,
+	timeout: number, referrerAddresses: ReferrerAddresses | null | undefined,
 	connection?: Connection,
 ): Promise<{
 	instructions: Array<TransactionInstruction>,
 	signers: Array<Keypair>,
 	lookupTables: Array<AddressLookupTableAccount>,
 }> {
+
+	const referrerAddress = getQuoteSuitableReferrerAddress(quote, referrerAddresses);
 
 	if (quote.type === 'MCTP') {
 		return createMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, timeout, referrerAddress, connection)
@@ -263,9 +266,9 @@ export async function createSwapFromSolanaInstructions(
 	};
 }
 
-export async function swapFromSolana2(
+export async function swapFromSolana(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
-	timeout: number, referrerAddress: string | null | undefined,
+	timeout: number, referrerAddresses: ReferrerAddresses | null | undefined,
 	signTransaction: SolanaTransactionSigner,
 	connection?: Connection, extraRpcs?: string[], sendOptions?: SendOptions
 ): Promise<{
@@ -281,7 +284,7 @@ export async function swapFromSolana2(
 		lookupTables
 	} = await createSwapFromSolanaInstructions(
 		quote, swapperWalletAddress, destinationAddress,
-		timeout, referrerAddress, connection);
+		timeout, referrerAddresses, connection);
 
 	const swapper = new PublicKey(swapperWalletAddress);
 
@@ -303,49 +306,6 @@ export async function swapFromSolana2(
 		options: sendOptions,
 	});
 }
-
-/**
- * @deprecated Use swapFromSolana2 instead
- */
-export async function swapFromSolana(
-	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
-	timeout: number, referrerAddress: string | null | undefined,
-	signTransaction: SolanaTransactionSigner,
-	connection?: Connection, extraRpcs?: string[], sendOptions?: SendOptions
-): Promise<string> {
-	const solanaConnection = connection ??
-		new Connection('https://rpc.ankr.com/solana');
-	const {instructions, signers} = await createSwapFromSolanaInstructions(
-		quote, swapperWalletAddress, destinationAddress,
-		timeout, referrerAddress, connection);
-
-	const swapper = new PublicKey(swapperWalletAddress);
-	const {blockhash, lastValidBlockHeight} = await solanaConnection.getLatestBlockhash();
-
-	const trx = new Transaction({
-		feePayer: swapper,
-		blockhash: blockhash,
-		lastValidBlockHeight,
-	});
-
-	trx.add(...instructions);
-	trx.recentBlockhash = blockhash;
-	signers.forEach(signer => trx.partialSign(signer));
-	const signedTrx = await signTransaction(trx);
-	return await connection.sendRawTransaction(signedTrx.serialize(), sendOptions);
-}
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
