@@ -1,8 +1,8 @@
 import { ethers, zeroPadValue, parseUnits, formatUnits } from 'ethers';
-import { PublicKey } from '@solana/web3.js';
+import {PublicKey, SystemProgram} from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import addresses  from './addresses';
-import { ChainName } from './types';
+import { ChainName, Erc20Permit, Quote, ReferrerAddresses } from './types';
 import * as sha3 from 'js-sha3';
 const sha3_256 = sha3.sha3_256;
 
@@ -16,7 +16,8 @@ export function nativeAddressToHexString(
 		return zeroPadValue(new PublicKey(address).toBytes(), 32);
 	} else if (
 		wChainId === 2 || wChainId === 4 || wChainId === 5 ||
-		wChainId === 6  || wChainId === 23
+		wChainId === 6  || wChainId === 23 || wChainId === 24 ||
+		wChainId === 30
 	) {
 		return zeroPadValue(address, 32);
 	} else if (wChainId === 22 && isValidAptosType(address)) {
@@ -27,19 +28,13 @@ export function nativeAddressToHexString(
 	}
 }
 
-export function hexToUint8Array(input): Uint8Array {
-	return new Uint8Array(Buffer.from(input.substring(2), "hex"));
-}
-
-export type GetBlockProvider = {
-	getBlock: (blockTag: 'latest') => Promise<{ timestamp: number }>;
-}
-
-export async function getCurrentEvmTime(
-	provider: GetBlockProvider
-) : Promise<number> {
-	const latestBlock = await provider.getBlock('latest');
-	return latestBlock.timestamp;
+export function hexToUint8Array(input: string): Uint8Array {
+	return new Uint8Array(
+		Buffer.from(
+			input.startsWith('0x') ? input.substring(2) : input,
+			"hex"
+		)
+	);
 }
 
 export function getAssociatedTokenAddress(
@@ -63,6 +58,18 @@ export function getAssociatedTokenAddress(
 
 export function getAmountOfFractionalAmount(
 	amount: string | number, decimals: string | number) : bigint {
+	if (amount === null || amount === undefined) {
+		throw new Error('getAmountOfFractionalAmount: Amount is null or undefined');
+	}
+	if (typeof amount !== 'string' && typeof amount !== 'number') {
+		throw new Error('getAmountOfFractionalAmount: Amount is not a string or number');
+	}
+	if (typeof amount === 'string' && amount.length === 0) {
+		throw new Error('getAmountOfFractionalAmount: Amount is empty');
+	}
+	if (!Number.isFinite(Number(amount))) {
+		throw new Error('getAmountOfFractionalAmount: Amount is not a number');
+	}
 	const fixedAmount = Number(amount).toFixed(Math.min(8, Number(decimals)));
 	return parseUnits(fixedAmount, Number(decimals))
 }
@@ -79,6 +86,8 @@ const chains: { [index in ChainName]: number }  = {
 	polygon: 5,
 	avalanche: 6,
 	arbitrum: 23,
+	optimism: 24,
+	base: 30,
 	aptos: 22,
 };
 
@@ -92,13 +101,28 @@ const evmChainIdMap: { [index: string]: number }  = {
 	[137]: 5,
 	[43114]: 6,
 	[42161]: 23,
+	[10]: 24,
+	[8453]: 30,
 };
+
+export function getEvmChainIdByName(chain: ChainName) {
+	const wormholeChainId = chains[chain];
+	const evmIds = Object.keys(evmChainIdMap);
+	for (const evmId of evmIds) {
+		if (evmChainIdMap[evmId] === wormholeChainId) {
+			return Number(evmId);
+		}
+	}
+	throw new Error(`Unsupported chain: ${chain}`);
+}
+
+
 
 export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [5, 0, 0];
+const sdkVersion = [6, 0, 0];
 
 export function checkSdkVersionSupport(minimumVersion: [number, number, number]): boolean {
 	//major
@@ -144,4 +168,39 @@ export function getSafeU64Blob(value: bigint): Buffer {
 	const buf = Buffer.alloc(8);
 	buf.writeBigUInt64LE(value);
 	return buf;
+}
+
+export const ZeroPermit: Erc20Permit = {
+	value: BigInt(0),
+	deadline: 0,
+	v: 0,
+	r: `0x${SystemProgram.programId.toBuffer().toString('hex')}`,
+	s: `0x${SystemProgram.programId.toBuffer().toString('hex')}`,
+}
+
+export function wait(time: number): Promise<void> {
+	return new Promise((resolve) => {
+		setTimeout(() => {
+			resolve();
+		}, time);
+	});
+}
+
+export function getQuoteSuitableReferrerAddress(
+	quote: Quote,
+	referrerAddresses?: ReferrerAddresses,
+): string | null {
+	if (!quote || !referrerAddresses) {
+		return null;
+	}
+	if (quote.type === 'WH') {
+		return referrerAddresses?.solana || null;
+	}
+	if (quote.type === 'MCTP') {
+		if (quote.toChain === 'solana') {
+			return referrerAddresses?.solana || null;
+		}
+		return referrerAddresses?.evm || null;
+	}
+	return null;
 }

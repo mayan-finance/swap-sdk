@@ -2,9 +2,9 @@
 	"$schema": "https://json.schemastore.org/tsconfig",
 	"compilerOptions": {
 		"lib": [
-			"es2018"
+			"es2021"
 		],
-		"target": "es2018",
+		"target": "es2021",
 		// TODO: Add this back
 		"strict": false,
 		"esModuleInterop": true,
