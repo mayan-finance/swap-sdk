@@ -19,11 +19,30 @@ function toQueryString(params: Record<string, any>): string {
 		.join('&');
 }
 
+async function check5xxError(res: Response): Promise<void> {
+	if (res.status.toString().startsWith('5')) {
+		let error: Error | QuoteError;
+		try {
+			const err = await res.json();
+			if (err.code && (err?.message || err?.msg)) {
+				error = {
+					code: err.code,
+					message: err?.message || err?.msg,
+				} as QuoteError
+			}
+		} catch (err) {
+			error = new Error('Internal server error');
+		}
+		throw error;
+	}
+}
+
 export async function fetchAllTokenList(): Promise<{[index: string]: Token[]}> {
 	const res = await fetch(`${addresses.PRICE_URL}/tokens`, {
 		method: 'GET',
 		redirect: 'follow',
 	});
+	await check5xxError(res);
 	if (res.status === 200) {
 		const result = await res.json();
 		return result as { [index: string]: Token[] };
@@ -33,6 +52,7 @@ export async function fetchAllTokenList(): Promise<{[index: string]: Token[]}> {
 
 export async function fetchTokenList(chain: ChainName, nonPortal: boolean = false): Promise<Token[]> {
 	const res = await fetch(`${addresses.PRICE_URL}/tokens?chain=${chain}${nonPortal ? '&nonPortal=true' : ''}`);
+	await check5xxError(res);
 	if (res.status === 200) {
 		const result = await res.json();
 		return result[chain] as Token[];
@@ -69,9 +89,7 @@ export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions
 		method: 'GET',
 		redirect: 'follow',
 	});
-	if (res.status.toString().startsWith('5')) {
-		throw new Error('Internal server error');
-	}
+	await check5xxError(res);
 	const result = await res.json();
 	if (res.status !== 200 && res.status !== 201) {
 		throw {
@@ -93,9 +111,7 @@ export async function getCurrentChainTime(chain: ChainName): Promise<number> {
 		method: 'GET',
 		redirect: 'follow',
 	});
-	if (res.status.toString().startsWith('5')) {
-		throw new Error('Internal server error');
-	}
+	await check5xxError(res);
 	const result = await res.json();
 	if (res.status !== 200 && res.status !== 201) {
 		throw result;
@@ -108,9 +124,7 @@ export async function getSuggestedRelayer(): Promise<string> {
 		method: 'GET',
 		redirect: 'follow',
 	});
-	if (res.status.toString().startsWith('5')) {
-		throw new Error('Internal server error');
-	}
+	await check5xxError(res);
 	const result = await res.json();
 	if (res.status !== 200 && res.status !== 201) {
 		throw result;
@@ -125,9 +139,7 @@ export async function getSwapSolana(params : GetSolanaSwapParams): Promise<Solan
 		method: 'GET',
 		redirect: 'follow',
 	});
-	if (res.status.toString().startsWith('5')) {
-		throw new Error('Internal server error');
-	}
+	await check5xxError(res);
 	const result = await res.json();
 	if (res.status !== 200 && res.status !== 201) {
 		throw result;
