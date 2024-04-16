@@ -20,7 +20,7 @@ Then you will need to get a quote:
 
 ### Getting Quote:
 ```javascript
-const quote = await fetchQuote({
+const quotes = await fetchQuote({
   amount: 250,
   fromToken: fromToken.contract,
   toToken: toToken.contract,
@@ -64,7 +64,7 @@ After you get the quote, you can build and send the swap transaction:
 ### Swap from Solana:
 
 ```javascript
-swapTrx = await swapFromSolana(quote, originWalletAddress, destinationWalletAddress, deadlineInSeconds, referrerAddresses, signSolanaTransaction, solanaConnection)
+swapTrx = await swapFromSolana(quotes[0], originWalletAddress, destinationWalletAddress, deadlineInSeconds, referrerAddresses, signSolanaTransaction, solanaConnection)
 ```
 <br />
 
@@ -86,7 +86,7 @@ If you need more control over the transaction and manualy send the trx you can u
 ### Swap from EVM:
 
 ```javascript
-swapTrx = await swapFromEvm(quote, destinationWalletAddress, deadlineInSeconds, referrerAddress, provider, signer)
+swapTrx = await swapFromEvm(quotes[0], destinationWalletAddress, deadlineInSeconds, referrerAddress, provider, signer)
 ```
 <br />
 
