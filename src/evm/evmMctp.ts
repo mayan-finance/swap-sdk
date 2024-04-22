@@ -466,20 +466,3 @@ export async function getMctpFromEvmTxPayload(
 	}
 }
 
-export async function mctpFromEvm(
-	quote: Quote, destinationAddress: string, timeout: number | null, referrerAddress: string | null | undefined,
-	signer: Signer, signerChainId: number, permit: Erc20Permit | null, overrides?: Overrides
-): Promise<TransactionResponse>{
-
-	if (quote.type !== 'MCTP') {
-		throw new Error('Quote type is not MCTP');
-	}
-
-	const txPayload = await getMctpFromEvmTxPayload(
-		quote, destinationAddress, timeout, referrerAddress, signerChainId, permit
-	);
-	if (overrides?.gasLimit) {
-		txPayload.gasLimit = overrides.gasLimit;
-	}
-	return signer.sendTransaction(txPayload);
-}
