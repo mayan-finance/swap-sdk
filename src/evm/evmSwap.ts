@@ -14,13 +14,14 @@ import {
 	nativeAddressToHexString,
 	getAmountOfFractionalAmount, getWormholeChainIdByName,
 	getWormholeChainIdById, getGasDecimal, getEvmChainIdByName,
-	getQuoteSuitableReferrerAddress,
+	getQuoteSuitableReferrerAddress, ZeroPermit
 } from '../utils';
-import { getCurrentChainTime } from '../api';
 import MayanSwapArtifact from './MayanSwapArtifact';
+import MayanForwarderArtifact from './MayanForwarderArtifact';
 import addresses from '../addresses';
 import { Buffer } from 'buffer';
 import { getMctpFromEvmTxPayload } from './evmMctp';
+import { getSwiftFromEvmTxPayload } from './evmSwift';
 
 export type ContractRelayerFees = {
 	swapFee: bigint,
@@ -61,7 +62,7 @@ export type EvmSwapParams = {
 
 async function getEvmSwapParams(
 	quote: Quote, destinationAddress: string,
-	timeout: number, referrerAddress: string | null | undefined,
+	referrerAddress: string | null | undefined,
 	signerAddress: string, signerChainId: string | number,
 	payload?: Uint8Array | Buffer | null
 ): Promise<EvmSwapParams> {
@@ -96,7 +97,7 @@ async function getEvmSwapParams(
 		throw new Error(`Signer chain id(${Number(signerChainId)}) and quote from chain are not same! ${fromChainId} !== ${signerWormholeChainId}`);
 	}
 
-	const contractAddress = addresses.MAYAN_EVM_CONTRACT;
+	const contractAddress = quote.whMayanContract;
 
 	const recipientStruct: Recipient = {
 		mayanAddr: recipientHex,
@@ -107,16 +108,13 @@ async function getEvmSwapParams(
 		referrer: referrerHex,
 		refundAddr: nativeAddressToHexString(signerAddress, signerWormholeChainId)
 	};
-	// Times are in seconds
-	const currentEvmTime = await getCurrentChainTime(quote.fromChain);
-	const currentSolanaTime = await getCurrentChainTime('solana');
 
 	const unwrapRedeem =
 		quote.toToken.contract === ZeroAddress;
 
 	const criteria: Criteria = {
-		transferDeadline: BigInt(currentEvmTime + timeout),
-		swapDeadline: BigInt(currentSolanaTime + timeout),
+		transferDeadline: BigInt(quote.deadline64),
+		swapDeadline: BigInt(quote.deadline64),
 		amountOutMin: getAmountOfFractionalAmount(
 			quote.minAmountOut, Math.min(8, quote.toToken.decimals)
 		),
@@ -156,11 +154,11 @@ async function getEvmSwapParams(
 }
 
 export async function getSwapFromEvmTxPayload(
-	quote: Quote, destinationAddress: string,
-	timeout: number, referrerAddresses: ReferrerAddresses | null | undefined,
+	quote: Quote, swapperAddress: string, destinationAddress: string,
+	referrerAddresses: ReferrerAddresses | null | undefined,
 	signerAddress: string, signerChainId: number | string,
 	payload: Uint8Array | Buffer | null | undefined,
-	permit: Erc20Permit | null | undefined,
+	permit: Erc20Permit | null | undefined
 ): Promise<TransactionRequest> {
 
 	const signerWormholeChainId = getWormholeChainIdById(Number(signerChainId));
@@ -172,38 +170,63 @@ export async function getSwapFromEvmTxPayload(
 	const referrerAddress = getQuoteSuitableReferrerAddress(quote, referrerAddresses);
 
 	if (quote.type === 'MCTP') {
-		return getMctpFromEvmTxPayload(quote, destinationAddress, timeout, referrerAddress, signerChainId, permit);
+		return getMctpFromEvmTxPayload(quote, destinationAddress, referrerAddress, signerChainId, permit);
+	}
+	if (quote.type === 'SWIFT') {
+		return getSwiftFromEvmTxPayload(quote, swapperAddress, destinationAddress, referrerAddress, signerChainId, permit);
 	}
 
 	if (quote.type != 'WH') {
 		throw new Error('Unsupported quote type');
 	}
+
+	if (!Number(quote.deadline64)) {
+		throw new Error('WH mode requires a timeout');
+	}
 	const {
 		relayerFees, recipient, tokenOut, tokenOutWChainId,
 		criteria, tokenIn, amountIn, contractAddress, bridgeFee
 	} = await getEvmSwapParams(
-		quote, destinationAddress, timeout, referrerAddress,
+		quote, destinationAddress, referrerAddress,
 		signerAddress, signerChainId, payload
 	);
+
+	const forwarderContract = new Contract(addresses.MAYAN_FORWARDER_CONTRACT, MayanForwarderArtifact.abi);
 	const mayanSwap = new Contract(contractAddress, MayanSwapArtifact.abi);
 	let data: string;
 	let value: string | null;
+
+	const _permit = permit || ZeroPermit;
+
 	if (tokenIn === ZeroAddress) {
-		data = mayanSwap.interface.encodeFunctionData(
+		const mayanCallData = mayanSwap.interface.encodeFunctionData(
 			'wrapAndSwapETH',
 			[relayerFees, recipient, tokenOut, tokenOutWChainId, criteria]
 		);
+		data = forwarderContract.interface.encodeFunctionData(
+			'forwardEth',
+			[contractAddress, mayanCallData],
+		)
 		value = toBeHex(amountIn);
 	} else {
-		data = mayanSwap.interface.encodeFunctionData(
+		console.log('mayan wh swap erc20', {relayerFees, recipient, tokenOut, tokenOutWChainId,
+			criteria, tokenIn, amountIn});
+		const mayanCallData = mayanSwap.interface.encodeFunctionData(
 			'swap',
-			[relayerFees, recipient, tokenOut, tokenOutWChainId,
-				criteria, tokenIn, amountIn]
+			[
+				relayerFees, recipient, tokenOut, tokenOutWChainId,
+				criteria, tokenIn, amountIn
+			]
 		);
+
+		data = forwarderContract.interface.encodeFunctionData(
+			'forwardERC20',
+			[tokenIn, amountIn, _permit, contractAddress, mayanCallData]
+		)
 		value = toBeHex(bridgeFee);
 	}
 	return {
-		to: contractAddress,
+		to: addresses.MAYAN_FORWARDER_CONTRACT,
 		data,
 		value,
 		chainId: signerChainId
@@ -211,7 +234,7 @@ export async function getSwapFromEvmTxPayload(
 }
 export async function swapFromEvm(
 	quote: Quote, swapperAddress: string, destinationAddress: string,
-	timeout: number, referrerAddresses: ReferrerAddresses | null | undefined,
+	referrerAddresses: ReferrerAddresses | null | undefined,
 	signer: Signer, permit: Erc20Permit | null | undefined,
 	overrides: Overrides | null | undefined,
 	payload: Uint8Array | Buffer | null | undefined
@@ -226,7 +249,7 @@ export async function swapFromEvm(
 	const signerChainId = Number((await signer.provider.getNetwork()).chainId);
 
 	const transactionRequest = await getSwapFromEvmTxPayload(
-		quote, destinationAddress, timeout, referrerAddresses,
+		quote, swapperAddress, destinationAddress, referrerAddresses,
 		signerAddress, signerChainId, payload, permit
 	);
 

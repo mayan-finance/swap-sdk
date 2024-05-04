@@ -176,7 +176,7 @@ type EvmMctpCreateOrderParams = {
 }
 
 async function getEvmMctpCreateOrderParams(
-	quote: Quote, destinationAddress: string, timeout: number,
+	quote: Quote, destinationAddress: string,
 	referrerAddress: string | null | undefined, signerChainId: string | number
 ): Promise<EvmMctpCreateOrderParams> {
 	const signerWormholeChainId = getWormholeChainIdById(Number(signerChainId));
@@ -234,8 +234,7 @@ async function getEvmMctpCreateOrderParams(
 		quote.minAmountOut, Math.min(8, quote.toToken.decimals)
 	);
 
-	const destChainTime = await getCurrentChainTime(quote.toChain);
-	const deadline = BigInt(destChainTime + timeout);
+	const deadline = BigInt(quote.deadline64);
 
 	const tokenOut =
 		quote.toToken.contract === ZeroAddress ?
@@ -267,11 +266,11 @@ async function getEvmMctpCreateOrderParams(
 }
 
 async function getEvmMctpCreateOrderTxPayload(
-	quote: Quote, destinationAddress: string, timeout: number,
+	quote: Quote, destinationAddress: string,
 	referrerAddress: string | null | undefined, signerChainId: string | number
 ): Promise<TransactionRequest & { _params: EvmMctpCreateOrderParams }> {
 	const orderParams = await getEvmMctpCreateOrderParams(
-		quote, destinationAddress, timeout, referrerAddress, signerChainId
+		quote, destinationAddress, referrerAddress, signerChainId
 	);
 	const {
 		contractAddress, params, bridgeFee, recipient
@@ -292,7 +291,7 @@ async function getEvmMctpCreateOrderTxPayload(
 }
 
 export async function getMctpFromEvmTxPayload(
-	quote: Quote, destinationAddress: string, timeout: number | null, referrerAddress: string | null | undefined,
+	quote: Quote, destinationAddress: string, referrerAddress: string | null | undefined,
 	signerChainId: number | string, permit: Erc20Permit | null
 ): Promise<TransactionRequest>{
 
@@ -317,11 +316,11 @@ export async function getMctpFromEvmTxPayload(
 
 	if (quote.fromToken.contract === quote.mctpInputContract) {
 		if (quote.hasAuction) {
-			if (!timeout) {
+			if (!Number(quote.deadline64)) {
 				throw new Error('MCTP order requires timeout');
 			}
 			const mctpPayloadIx = await getEvmMctpCreateOrderTxPayload(
-				quote, destinationAddress, timeout, referrerAddress, signerChainId
+				quote, destinationAddress, referrerAddress, signerChainId
 			);
 
 			const data = forwarder.interface.encodeFunctionData('forwardERC20', [
@@ -361,10 +360,12 @@ export async function getMctpFromEvmTxPayload(
 			throw new Error('MCTP swap requires middle amount, router address and calldata');
 		}
 		if (quote.hasAuction) {
-			if (!timeout) {
+			if (!Number(quote.deadline64)) {
 				throw new Error('MCTP order requires timeout');
 			}
-			const mctpPayloadIx = await getEvmMctpCreateOrderTxPayload(quote, destinationAddress, timeout, referrerAddress, signerChainId);
+			const mctpPayloadIx = await getEvmMctpCreateOrderTxPayload(
+				quote, destinationAddress, referrerAddress, signerChainId
+			);
 			const minMiddleAmount = getAmountOfFractionalAmount(quote.minMiddleAmount, CCTP_TOKEN_DECIMALS);
 
 			if (quote.fromToken.contract === ZeroAddress) {
@@ -465,4 +466,3 @@ export async function getMctpFromEvmTxPayload(
 		}
 	}
 }
-

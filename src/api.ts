@@ -72,6 +72,7 @@ export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions
 	const queryParams: Record<string, any> = {
 		...quoteOptions,
 		solanaProgram: addresses.MAYAN_PROGRAM_ID,
+		forwarderAddress: addresses.MAYAN_FORWARDER_CONTRACT,
 		amountIn: Number.isFinite(params.amount) ? params.amount : undefined,
 		fromToken: params.fromToken,
 		fromChain: params.fromChain,

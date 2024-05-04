@@ -1,48 +1,47 @@
 import {
 	Contract,
-	Signer,
 	toBeHex,
-	Overrides,
 	ZeroAddress,
-	TransactionResponse,
 	TransactionRequest
 } from 'ethers';
 import { Keypair, SystemProgram } from '@solana/web3.js';
-import type { Quote } from '../types';
+import { Erc20Permit, Quote } from '../types';
 import {
 	nativeAddressToHexString,
 	getAmountOfFractionalAmount, getWormholeChainIdByName,
-	getWormholeChainIdById, getGasDecimal,
+	getWormholeChainIdById, getGasDecimal, ZeroPermit
 } from '../utils';
 import MayanSwiftArtifact from './MayanSwiftArtifact';
 import addresses from '../addresses';
-import { Buffer } from 'buffer';
+import MayanForwarderArtifact from './MayanForwarderArtifact';
 
 
 export type SwiftOrderParams = {
+	trader: string;
 	tokenOut: string;
 	minAmountOut: bigint;
 	gasDrop: bigint;
+	cancelFee: bigint;
+	refundFee: bigint;
+	deadline: bigint;
 	destAddr: string;
 	destChainId: number;
 	referrerAddr: string;
 	referrerBps: number;
-	auctionMode: 1 | 2;
+	auctionMode: number;
 	random: string;
-	destEmitter: string;
 };
 
 export type EvmSwiftParams = {
 	contractAddress: string;
-	trader: string;
 	tokenIn: string;
 	amountIn: bigint;
 	order: SwiftOrderParams;
 };
 
 export async function getEvmSwiftParams(
-	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
-	signerChainId: number | string
+	quote: Quote, swapperAddress: string, destinationAddress: string,
+	referrerAddress: string | null | undefined, signerChainId: string | number
 ): Promise<EvmSwiftParams> {
 	const signerWormholeChainId = getWormholeChainIdById(Number(signerChainId));
 	const sourceChainId = getWormholeChainIdByName(quote.fromChain);
@@ -50,7 +49,22 @@ export async function getEvmSwiftParams(
 	if (sourceChainId !== signerWormholeChainId) {
 		throw new Error(`Signer chain id(${Number(signerChainId)}) and quote from chain are not same! ${sourceChainId} !== ${signerWormholeChainId}`);
 	}
-	const tokenIn = quote.fromToken.contract;
+	if (!quote.swiftMayanContract) {
+		throw new Error('SWIFT contract address is missing');
+	}
+
+	if (quote.toToken.wChainId !== destChainId) {
+		throw new Error(`Destination chain ID mismatch: ${destChainId} != ${quote.toToken.wChainId}`);
+	}
+	const contractAddress = quote.swiftMayanContract;
+
+	if (!Number(quote.deadline64)) {
+		throw new Error('Swift order requires timeout');
+	}
+
+	const deadline = BigInt(quote.deadline64);
+
+	const tokenIn = quote.swiftInputContract;
 	const amountIn = getAmountOfFractionalAmount(
 		quote.effectiveAmountIn,
 		quote.fromToken.decimals
@@ -67,34 +81,42 @@ export async function getEvmSwiftParams(
 			1
 		);
 	}
-	const contractAddress = addresses.SWIFT_EVM_CONTRACT;
+
 	const randomKey = nativeAddressToHexString(Keypair.generate().publicKey.toString(), 1);
 	const destEmitter = nativeAddressToHexString(SystemProgram.programId.toString(), 1);
-	const tokenOut = quote.toToken.contract === ZeroAddress ? nativeAddressToHexString(SystemProgram.programId.toString(), 1) : nativeAddressToHexString(quote.toToken.contract, quote.toToken.wChainId);
+
+	const tokenOut = quote.toToken.contract === ZeroAddress ?
+		nativeAddressToHexString(SystemProgram.programId.toString(), 1) :
+		nativeAddressToHexString(quote.toToken.contract, destChainId);
+
 	const minAmountOut = getAmountOfFractionalAmount(
-		quote.minAmountOut,
-		Math.min(8, quote.toToken.decimals)
+		quote.minAmountOut, Math.min(8, quote.toToken.decimals)
 	);
+
 	const gasDrop = getAmountOfFractionalAmount(
 		quote.gasDrop,
 		Math.min(8, getGasDecimal(quote.toChain))
 	);
-	const destinationAddressHex = nativeAddressToHexString(destinationAddress, getWormholeChainIdByName(quote.toChain));
+
+	const destinationAddressHex = nativeAddressToHexString(destinationAddress, destChainId);
 	const orderParams: SwiftOrderParams = {
+		trader: nativeAddressToHexString(swapperAddress, sourceChainId),
 		tokenOut,
 		minAmountOut,
 		gasDrop,
+		cancelFee: BigInt(quote.cancelRelayerFee64),
+		refundFee: BigInt(quote.refundRelayerFee64),
+		deadline,
 		destAddr: destinationAddressHex,
 		destChainId,
 		referrerAddr: referrerHex,
 		referrerBps: quote.referrerBps || 0,
-		auctionMode: 2, // Swift token
+		auctionMode: quote.swiftAuctionMode,
 		random: randomKey,
-		destEmitter,
 	};
+
 	return {
 		contractAddress,
-		trader: swapperAddress,
 		tokenIn,
 		amountIn,
 		order: orderParams
@@ -102,106 +124,113 @@ export async function getEvmSwiftParams(
 }
 
 export async function getSwiftFromEvmTxPayload(
-	quote: Quote, swapperAddress: string, destinationAddress: string,
-	referrerAddress: string | null | undefined,
-	signerChainId: number | string
-): Promise<TransactionRequest> {
+	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
+	signerChainId: number | string, permit: Erc20Permit | null
+): Promise<TransactionRequest>{
+	if (quote.type !== 'SWIFT') {
+		throw new Error('Quote type is not SWIFT');
+	}
+
+	if (!Number.isFinite(Number(signerChainId))) {
+		throw new Error('Invalid signer chain id');
+	}
+
+	if (!Number(quote.deadline64)) {
+		throw new Error('Swift order requires timeout');
+	}
+
+	signerChainId = Number(signerChainId);
+
+	const _permit = permit || ZeroPermit;
+	const forwarder = new Contract(addresses.MAYAN_FORWARDER_CONTRACT, MayanForwarderArtifact.abi);
+
 	const {
 		tokenIn,
 		amountIn,
-		trader,
 		order,
-		contractAddress
-	} = await getEvmSwiftParams(
-		quote,
-		swapperAddress,
-		destinationAddress,
-		referrerAddress,
-		signerChainId
-	);
+		contractAddress: swiftContractAddress
+	} = await getEvmSwiftParams(quote, swapperAddress, destinationAddress, referrerAddress, signerChainId);
+
+	let swiftCallData: string;
+	const swiftContract = new Contract(swiftContractAddress, MayanSwiftArtifact.abi);
+
+	if (quote.swiftInputContract === ZeroAddress) {
+		console.log('createOrderWithEth', {order});
+		swiftCallData = swiftContract.interface.encodeFunctionData(
+			'createOrderWithEth',
+			[order]
+		);
+	} else {
+		console.log('createOrderWithToken', {tokenIn, amountIn, order})
+		swiftCallData = swiftContract.interface.encodeFunctionData(
+			'createOrderWithToken',
+			[tokenIn, amountIn, order]
+		);
+	}
+
 	let data: string;
 	let value: string | null;
-	const mayanSwift = new Contract(addresses.SWIFT_EVM_CONTRACT, MayanSwiftArtifact.abi);
-	if (tokenIn === ZeroAddress) {
-		data = mayanSwift.interface.encodeFunctionData(
-			'createOrderWithEth',
-			[trader, order]
-		);
-		value = toBeHex(amountIn);
+
+	if (quote.fromToken.contract === quote.swiftInputContract) {
+		if (quote.fromToken.contract === ZeroAddress) {
+			data = forwarder.interface.encodeFunctionData(
+				'forwardEth',
+				[swiftContractAddress, swiftCallData]
+			);
+			value = toBeHex(amountIn);
+		} else {
+			console.log('Swift no swap token');
+			console.log({tokenIn, amountIn, _permit, swiftContractAddress, swiftCallData});
+			data = forwarder.interface.encodeFunctionData(
+				'forwardERC20',
+				[tokenIn, amountIn, _permit, swiftContractAddress, swiftCallData],
+			);
+			value = toBeHex(0);
+		}
 	} else {
-		data = mayanSwift.interface.encodeFunctionData(
-			'createOrderWithToken',
-			[
-				tokenIn,
-				amountIn,
-				trader,
-				order,
-			]
-		);
-		value = toBeHex(0);
+		const { evmSwapRouterAddress, evmSwapRouterCalldata } = quote;
+		if (!quote.minMiddleAmount || !evmSwapRouterAddress || !evmSwapRouterCalldata) {
+			throw new Error('Swift swap requires middle amount, router address and calldata');
+		}
+
+		const minMiddleAmount = getAmountOfFractionalAmount(quote.minMiddleAmount, quote.swiftInputDecimals);
+
+		if (quote.fromToken.contract === ZeroAddress) {
+			data = forwarder.interface.encodeFunctionData(
+				'swapAndForwardEth',
+				[
+					amountIn,
+					evmSwapRouterAddress,
+					evmSwapRouterCalldata,
+					quote.swiftInputContract,
+					minMiddleAmount,
+					swiftContractAddress,
+					swiftCallData
+				]
+			);
+			value = toBeHex(amountIn);
+		} else {
+			data = forwarder.interface.encodeFunctionData(
+				'swapAndForwardERC20',
+				[
+					tokenIn,
+					amountIn,
+					_permit,
+					evmSwapRouterAddress,
+					evmSwapRouterCalldata,
+					quote.swiftInputContract,
+					minMiddleAmount,
+					swiftContractAddress,
+					swiftCallData
+				]
+			);
+			value = toBeHex(0);
+		}
 	}
 	return {
-		to: contractAddress,
 		data,
-		value
+		to: addresses.MAYAN_FORWARDER_CONTRACT,
+		value,
+		chainId: signerChainId,
 	};
-}
-
-
-export async function swiftFromEvm(
-	quote: Quote, swapperAddress: string, destinationAddress: string,
-	referrerAddress: string | null | undefined,
-	signer: Signer, signerChainId: number, overrides?: Overrides
-): Promise<TransactionResponse>{
-	const params = await getEvmSwiftParams(
-		quote,
-		swapperAddress,
-		destinationAddress,
-		referrerAddress,
-		signerChainId
-	);
-	const mayanSwift = new Contract(addresses.SWIFT_EVM_CONTRACT, MayanSwiftArtifact.abi, signer);
-	if (params.tokenIn === ZeroAddress) {
-		if (!overrides) {
-			overrides = {
-				value: params.amountIn
-			};
-		} else {
-			overrides.value = params.amountIn;
-		}
-		return mayanSwift.createOrderWithEth(
-			params.trader,
-			params.order,
-			overrides
-		);
-	} else {
-		if (!overrides) {
-			overrides = {
-				value: 0
-			};
-		}
-		return mayanSwift.createOrderWithToken(
-			params.tokenIn,
-			params.amountIn,
-			params.trader,
-			params.order,
-			overrides
-		);
-	}
-}
-
-export async function swiftUnlockFundsEvm(
-	vaa: Uint8Array | Buffer | string, signer: Signer, overrides?: Overrides
-): Promise<TransactionResponse> {
-	const contract = new Contract(addresses.SWIFT_EVM_CONTRACT, MayanSwiftArtifact.abi, signer);
-	let vaaHex: string;
-	if (typeof vaa === 'string') {
-		vaaHex = vaa.startsWith('0x') ? vaa : `0x${vaa}`;
-	} else {
-		vaaHex = `0x${Buffer.from(vaa).toString('hex')}`;
-	}
-	if (!overrides) {
-		return contract.unlockOrder(vaaHex);
-	}
-	return contract.unlockOrder(vaaHex, overrides);
 }

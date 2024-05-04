@@ -33,6 +33,7 @@ import {
 	submitTransactionWithRetry,
 } from './utils';
 import { createMctpFromSolanaInstructions } from "./solanaMctp";
+import { createSwiftFromSolanaInstructions } from './solanaSwift';
 
 
 const STATE_SIZE = 420;
@@ -57,7 +58,7 @@ const SwapLayout = struct<any>([
 
 export async function createSwapFromSolanaInstructions(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
-	timeout: number, referrerAddresses: ReferrerAddresses | null | undefined,
+	referrerAddresses: ReferrerAddresses | null | undefined,
 	connection?: Connection,
 ): Promise<{
 	instructions: Array<TransactionInstruction>,
@@ -68,7 +69,10 @@ export async function createSwapFromSolanaInstructions(
 	const referrerAddress = getQuoteSuitableReferrerAddress(quote, referrerAddresses);
 
 	if (quote.type === 'MCTP') {
-		return createMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, timeout, referrerAddress, connection)
+		return createMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection);
+	}
+	if (quote.type === 'SWIFT') {
+		return createSwiftFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection);
 	}
 
 	let instructions: Array<TransactionInstruction> = [];
@@ -194,7 +198,6 @@ export async function createSwapFromSolanaInstructions(
 		{pubkey: SystemProgram.programId, isWritable: false, isSigner: false},
 	];
 
-	const solanaTime = await getCurrentChainTime('solana');
 	const destinationChainId = getWormholeChainIdByName(quote.toChain);
 
 	if (destinationChainId === 1) { //destination address safety check!
@@ -231,7 +234,10 @@ export async function createSwapFromSolanaInstructions(
 		quote.fromToken.contract === ZeroAddress;
 
 
-	const deadline = BigInt(solanaTime + timeout);
+	if (!Number(quote.deadline64)) {
+		throw new Error('Deadline is not valid');
+	}
+	const deadline = BigInt(quote.deadline64);
 
 	const swapData = Buffer.alloc(SwapLayout.span);
 	const swapFields = {
@@ -268,7 +274,7 @@ export async function createSwapFromSolanaInstructions(
 
 export async function swapFromSolana(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
-	timeout: number, referrerAddresses: ReferrerAddresses | null | undefined,
+	referrerAddresses: ReferrerAddresses | null | undefined,
 	signTransaction: SolanaTransactionSigner,
 	connection?: Connection, extraRpcs?: string[], sendOptions?: SendOptions
 ): Promise<{
@@ -284,7 +290,7 @@ export async function swapFromSolana(
 		lookupTables
 	} = await createSwapFromSolanaInstructions(
 		quote, swapperWalletAddress, destinationAddress,
-		timeout, referrerAddresses, connection);
+		referrerAddresses, connection);
 
 	const swapper = new PublicKey(swapperWalletAddress);
 

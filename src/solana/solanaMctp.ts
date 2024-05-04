@@ -419,7 +419,7 @@ type CreateMctpSwapLedgerInstructionParams = {
 	tokenOutDecimals: number,
 	referrerAddress: string,
 	amountOutMin: number,
-	deadline: number,
+	deadline: bigint,
 	feeRateRef: number,
 }
 function createMctpSwapLedgerInstruction(params: CreateMctpSwapLedgerInstructionParams): TransactionInstruction {
@@ -455,7 +455,7 @@ function createMctpSwapLedgerInstruction(params: CreateMctpSwapLedgerInstruction
 	const amountOutMin = getSafeU64Blob(
 		getAmountOfFractionalAmount(params.amountOutMin, Math.min(8, params.tokenOutDecimals))
 	);
-	const deadline = getSafeU64Blob(BigInt(params.deadline));
+	const deadline = getSafeU64Blob(params.deadline);
 
 	const accounts: AccountMeta[] = [
 		{pubkey: user, isWritable: true, isSigner: true},
@@ -495,7 +495,7 @@ function createMctpSwapLedgerInstruction(params: CreateMctpSwapLedgerInstruction
 
 export async function createMctpFromSolanaInstructions(
 	quote: Quote, swapperAddress: string, destinationAddress: string,
-	timeout: number | null | undefined, referrerAddress: string | null | undefined,
+	referrerAddress: string | null | undefined,
 	connection: Connection,
 ): Promise<{
 	instructions: TransactionInstruction[],
@@ -524,8 +524,8 @@ export async function createMctpFromSolanaInstructions(
 	const randomKey = Keypair.generate();
 	signers.push(randomKey);
 
-	const deadline = timeout ? (await getCurrentChainTime(quote.toChain)) + timeout : 0;
-	if (quote.hasAuction && !timeout) {
+	const deadline = quote.deadline64 ? BigInt(quote.deadline64) : BigInt(0);
+	if (quote.hasAuction && !Number(quote.deadline64)) {
 		throw new Error('Swap mode requires a timeout');
 	}
 
@@ -574,7 +574,7 @@ export async function createMctpFromSolanaInstructions(
 				tokenOutDecimals: quote.toToken.decimals,
 				referrerAddress: referrerAddress,
 				amountOutMin: quote.minAmountOut,
-				deadline: deadline,
+				deadline,
 				feeRateRef: quote.referrerBps,
 			}));
 			const {
@@ -658,7 +658,7 @@ export async function createMctpFromSolanaInstructions(
 				tokenOutDecimals: quote.toToken.decimals,
 				referrerAddress: referrerAddress,
 				amountOutMin: quote.minAmountOut,
-				deadline: deadline,
+				deadline,
 				feeRateRef: quote.referrerBps,
 			}));
 		}
@@ -680,49 +680,5 @@ export async function createMctpFromSolanaInstructions(
 	}
 
 	return {instructions, signers, lookupTables};
-}
-
-export async function mctpFromSolana(
-	quote: Quote, swapperAddress: string, destinationAddress: string,
-	timeout: number | null | undefined, referrerAddress: string | null | undefined,
-	signTransaction: SolanaTransactionSigner,
-	connection?: Connection, extraRpcs?: string[], sendOptions?: SendOptions
-): Promise<{
-	signature: string,
-	serializedTrx: Uint8Array,
-}> {
-	const solanaConnection = connection ??
-		new Connection('https://rpc.ankr.com/solana');
-
-	if (quote.type !== 'MCTP') {
-		throw new Error('Unsupported quote type: ' + quote.type);
-	}
-
-	const {
-		instructions,
-		signers,
-		lookupTables
-	} = await createMctpFromSolanaInstructions(
-		quote, swapperAddress, destinationAddress, timeout, referrerAddress, connection
-	);
-
-
-	const {blockhash} = await connection.getLatestBlockhash();
-	const message = MessageV0.compile({
-		instructions,
-		payerKey: new PublicKey(swapperAddress),
-		recentBlockhash: blockhash,
-		addressLookupTableAccounts: lookupTables,
-	});
-	const transaction = new VersionedTransaction(message);
-	transaction.sign(signers);
-	const signedTrx = await signTransaction(transaction);
-	return await submitTransactionWithRetry({
-		trx: signedTrx.serialize(),
-		connection: solanaConnection,
-		extraRpcs: extraRpcs ?? [],
-		errorChance: 2,
-		options: sendOptions,
-	})
 }
 

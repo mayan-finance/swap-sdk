@@ -11,7 +11,6 @@ export const isValidAptosType = (str: string): boolean =>
 
 export function nativeAddressToHexString(
 	address: string, wChainId: number) : string {
-	let padded: string;
 	if (wChainId === 1) {
 		return zeroPadValue(new PublicKey(address).toBytes(), 32);
 	} else if (
@@ -122,7 +121,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [7, 2, 0];
+const sdkVersion = [8, 0, 0];
 
 export function checkSdkVersionSupport(minimumVersion: [number, number, number]): boolean {
 	//major
@@ -196,7 +195,7 @@ export function getQuoteSuitableReferrerAddress(
 	if (quote.type === 'WH') {
 		return referrerAddresses?.solana || null;
 	}
-	if (quote.type === 'MCTP') {
+	if (quote.type === 'MCTP' || quote.type === 'SWIFT') {
 		if (quote.toChain === 'solana') {
 			return referrerAddresses?.solana || null;
 		}

@@ -73,7 +73,7 @@ export async function submitTransactionWithRetry(
 			try {
 				signature = await Promise.any(sendRequests);
 			} catch (err) {
-				console.error('Transaction not submitted, remaining attempts:', rate - i - 1);
+				console.error('Transaction not submitted, remaining attempts:', rate - i - 1, err);
 			}
 		}
 		await wait(500);

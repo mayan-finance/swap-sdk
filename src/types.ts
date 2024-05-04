@@ -50,9 +50,12 @@ export type Quote = {
 	redeemRelayerFee: number;
 	refundRelayerFee: number;
 	solanaRelayerFee: number;
+	refundRelayerFee64: string;
+	cancelRelayerFee64: string;
 	clientRelayerFeeSuccess: number | null;
 	clientRelayerFeeRefund: number | null;
 	eta: number;
+	clientEta: string;
 	fromToken: Token;
 	toToken: Token;
 	fromChain: ChainName;
@@ -76,9 +79,9 @@ export type Quote = {
 		switchText: string;
 	};
 	onlyBridging: boolean;
-
+	deadline64: string;
 	referrerBps?: number;
-
+	whMayanContract: string;
 	cheaperChain: ChainName;
 	mctpInputContract: string;
 	mctpOutputContract: string;
@@ -87,6 +90,10 @@ export type Quote = {
 	evmSwapRouterAddress?: string;
 	evmSwapRouterCalldata?: string;
 	mctpMayanContract?: string;
+	swiftMayanContract?: string;
+	swiftAuctionMode?: number;
+	swiftInputContract: string;
+	swiftInputDecimals: number;
 };
 
 export type QuoteOptions = {
@@ -115,7 +122,7 @@ export type GetSolanaSwapParams = {
 	userWallet: string,
 	userLedger: string,
 	slippageBps: number,
-	depositMode: 'WITH_FEE' | 'LOCK_FEE' | 'SWAP',
+	depositMode: 'WITH_FEE' | 'LOCK_FEE' | 'SWAP' | 'SWIFT',
 }
 
 export type SolanaKeyInfo = {
