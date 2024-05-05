@@ -145,7 +145,7 @@ export async function getSwiftFromEvmTxPayload(
 	const forwarder = new Contract(addresses.MAYAN_FORWARDER_CONTRACT, MayanForwarderArtifact.abi);
 
 	const {
-		tokenIn,
+		tokenIn: swiftTokenIn,
 		amountIn,
 		order,
 		contractAddress: swiftContractAddress
@@ -155,16 +155,14 @@ export async function getSwiftFromEvmTxPayload(
 	const swiftContract = new Contract(swiftContractAddress, MayanSwiftArtifact.abi);
 
 	if (quote.swiftInputContract === ZeroAddress) {
-		console.log('createOrderWithEth', {order});
 		swiftCallData = swiftContract.interface.encodeFunctionData(
 			'createOrderWithEth',
 			[order]
 		);
 	} else {
-		console.log('createOrderWithToken', {tokenIn, amountIn, order})
 		swiftCallData = swiftContract.interface.encodeFunctionData(
 			'createOrderWithToken',
-			[tokenIn, amountIn, order]
+			[swiftTokenIn, amountIn, order]
 		);
 	}
 
@@ -179,11 +177,9 @@ export async function getSwiftFromEvmTxPayload(
 			);
 			value = toBeHex(amountIn);
 		} else {
-			console.log('Swift no swap token');
-			console.log({tokenIn, amountIn, _permit, swiftContractAddress, swiftCallData});
 			data = forwarder.interface.encodeFunctionData(
 				'forwardERC20',
-				[tokenIn, amountIn, _permit, swiftContractAddress, swiftCallData],
+				[swiftTokenIn, amountIn, _permit, swiftContractAddress, swiftCallData],
 			);
 			value = toBeHex(0);
 		}
@@ -192,6 +188,7 @@ export async function getSwiftFromEvmTxPayload(
 		if (!quote.minMiddleAmount || !evmSwapRouterAddress || !evmSwapRouterCalldata) {
 			throw new Error('Swift swap requires middle amount, router address and calldata');
 		}
+		const tokenIn = quote.fromToken.contract;
 
 		const minMiddleAmount = getAmountOfFractionalAmount(quote.minMiddleAmount, quote.swiftInputDecimals);
 
