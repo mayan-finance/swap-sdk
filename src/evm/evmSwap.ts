@@ -255,7 +255,7 @@ export async function swapFromEvm(
 
 	if (overrides?.gasLimit) {
 		transactionRequest.gasLimit = overrides.gasLimit;
-	} else if (quote.type === 'MCTP') {
+	} else if (quote.type === 'MCTP' || quote.type === 'SWIFT') {
 		const estimatedGas = await signer.estimateGas(transactionRequest);
 		transactionRequest.gasLimit = estimatedGas * BigInt(110) / BigInt(100);
 	}
