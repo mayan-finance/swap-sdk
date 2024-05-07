@@ -86,10 +86,21 @@ If you need more control over the transaction and manualy send the trx you can u
 ### Swap from EVM:
 
 ```javascript
-swapTrx = await swapFromEvm(quotes[0], destinationWalletAddress, referrerAddress, provider, signer)
+swapTrx = await swapFromEvm(quotes[0], destinationWalletAddress, referrerAddress, provider, signer, permit?)
 ```
 <br />
 
+The permit param is optional, you can pass the permit object to the function if the input token supports permit standard. The permit object should contain the following fields:
+
+```javascript
+{
+	value: bigint,
+	deadline: number,
+	v: number,
+	r: string,
+	s: string,
+}
+```
 If you need to get the transaction payload and send it manually, you can use `getSwapFromEvmTxPayload` function to build the EVM transaction payload.
 
 >`referrerAddress` must be a Solana wallet address. If you don't want to get referrer fee from users, set "referrerAddress" to ```null``` or `"11111111111111111111111111111111"`
