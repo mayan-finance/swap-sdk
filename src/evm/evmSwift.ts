@@ -5,7 +5,7 @@ import {
 	TransactionRequest
 } from 'ethers';
 import { Keypair, SystemProgram } from '@solana/web3.js';
-import { Erc20Permit, Quote } from '../types';
+import { Erc20Permit, Quote, SwiftEvmOrderTypedData } from '../types';
 import {
 	nativeAddressToHexString,
 	getAmountOfFractionalAmount, getWormholeChainIdByName,
@@ -14,6 +14,7 @@ import {
 import MayanSwiftArtifact from './MayanSwiftArtifact';
 import addresses from '../addresses';
 import MayanForwarderArtifact from './MayanForwarderArtifact';
+import { createSwiftOrderHash } from '../solana/solanaSwift';
 
 
 export type SwiftOrderParams = {
@@ -39,10 +40,10 @@ export type EvmSwiftParams = {
 	order: SwiftOrderParams;
 };
 
-export async function getEvmSwiftParams(
+export function getEvmSwiftParams(
 	quote: Quote, swapperAddress: string, destinationAddress: string,
 	referrerAddress: string | null | undefined, signerChainId: string | number
-): Promise<EvmSwiftParams> {
+): EvmSwiftParams {
 	const signerWormholeChainId = getWormholeChainIdById(Number(signerChainId));
 	const sourceChainId = getWormholeChainIdByName(quote.fromChain);
 	const destChainId = getWormholeChainIdByName(quote.toChain);
@@ -82,8 +83,7 @@ export async function getEvmSwiftParams(
 		);
 	}
 
-	const randomKey = nativeAddressToHexString(Keypair.generate().publicKey.toString(), 1);
-	const destEmitter = nativeAddressToHexString(SystemProgram.programId.toString(), 1);
+	const random = nativeAddressToHexString(Keypair.generate().publicKey.toString(), 1);
 
 	const tokenOut = quote.toToken.contract === ZeroAddress ?
 		nativeAddressToHexString(SystemProgram.programId.toString(), 1) :
@@ -112,7 +112,7 @@ export async function getEvmSwiftParams(
 		referrerAddr: referrerHex,
 		referrerBps: quote.referrerBps || 0,
 		auctionMode: quote.swiftAuctionMode,
-		random: randomKey,
+		random,
 	};
 
 	return {
@@ -123,10 +123,10 @@ export async function getEvmSwiftParams(
 	};
 }
 
-export async function getSwiftFromEvmTxPayload(
+export function getSwiftFromEvmTxPayload(
 	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
 	signerChainId: number | string, permit: Erc20Permit | null
-): Promise<TransactionRequest>{
+): TransactionRequest {
 	if (quote.type !== 'SWIFT') {
 		throw new Error('Quote type is not SWIFT');
 	}
@@ -149,7 +149,7 @@ export async function getSwiftFromEvmTxPayload(
 		amountIn,
 		order,
 		contractAddress: swiftContractAddress
-	} = await getEvmSwiftParams(quote, swapperAddress, destinationAddress, referrerAddress, signerChainId);
+	} = getEvmSwiftParams(quote, swapperAddress, destinationAddress, referrerAddress, signerChainId);
 
 	let swiftCallData: string;
 	const swiftContract = new Contract(swiftContractAddress, MayanSwiftArtifact.abi);
@@ -229,5 +229,108 @@ export async function getSwiftFromEvmTxPayload(
 		to: addresses.MAYAN_FORWARDER_CONTRACT,
 		value,
 		chainId: signerChainId,
+	};
+}
+
+
+export function getSwiftOrderTypeData(
+	quote: Quote, orderHash: string, signerChainId: number | string
+): SwiftEvmOrderTypedData {
+	if (!Number.isFinite(Number(signerChainId))) {
+		throw new Error('Invalid signer chain id');
+	}
+
+	return {
+		domain: {
+			name: 'Mayan Swift',
+			chainId: Number(signerChainId),
+			verifyingContract: quote.swiftMayanContract,
+		},
+		types: {
+			CreateOrder: [
+				{ name: 'OrderId', type: 'bytes32' },
+				{ name: 'InputAmount', type: 'uint256' },
+			],
+		},
+		value: {
+			OrderId: orderHash,
+			InputAmount: getAmountOfFractionalAmount(quote.effectiveAmountIn, quote.swiftInputDecimals),
+		}
+	}
+}
+
+export type SwiftEvmGasLessParams = {
+	permitParams: Erc20Permit;
+	orderHash: string;
+	orderParams: {
+		trader: string;
+		sourceChainId: number;
+		tokenIn: string;
+		amountIn: bigint;
+		destAddr: string;
+		destChainId: number;
+		tokenOut: string;
+		minAmountOut: bigint;
+		gasDrop: bigint;
+		cancelFee: bigint;
+		refundFee: bigint;
+		deadline: bigint;
+		referrerAddr: string;
+		referrerBps: number;
+		auctionMode: number;
+		random: string;
+	};
+	orderTypedData: SwiftEvmOrderTypedData;
+}
+
+export function getSwiftFromEvmGasLessParams(
+	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
+	signerChainId: number | string, permit: Erc20Permit | null
+): SwiftEvmGasLessParams {
+	if (quote.type !== 'SWIFT') {
+		throw new Error('Quote type is not SWIFT');
+	}
+
+	if (!quote.gasless) {
+		throw new Error('Quote does not support gasless');
+	}
+
+	if (!Number.isFinite(Number(signerChainId))) {
+		throw new Error('Invalid signer chain id');
+	}
+
+	if (!Number(quote.deadline64)) {
+		throw new Error('Swift order requires timeout');
+	}
+
+	if (quote.fromToken.contract !== quote.swiftInputContract) {
+		throw new Error('Swift gasless order creation does not support source swap');
+	}
+
+	const {
+		tokenIn,
+		amountIn,
+		order,
+		contractAddress: swiftContractAddress
+	} = getEvmSwiftParams(
+		quote, swapperAddress, destinationAddress,
+		referrerAddress, Number(signerChainId)
+	);
+	const sourceChainId = getWormholeChainIdByName(quote.fromChain);
+
+	const orderHashBuf = createSwiftOrderHash(quote, swapperAddress, destinationAddress, referrerAddress, order.random);
+	const orderHash = `0x${orderHashBuf.toString('hex')}`
+	const orderTypedData = getSwiftOrderTypeData(quote, orderHash, signerChainId);
+
+	return {
+		permitParams: permit,
+		orderParams: {
+			...order,
+			sourceChainId,
+			amountIn,
+			tokenIn,
+		},
+		orderHash,
+		orderTypedData
 	};
 }

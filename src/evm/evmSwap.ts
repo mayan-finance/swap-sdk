@@ -5,9 +5,9 @@ import {
 	Overrides,
 	ZeroAddress,
 	TransactionResponse,
-	TransactionRequest
+	TransactionRequest, TypedDataEncoder
 } from 'ethers';
-import { PublicKey, SystemProgram } from '@solana/web3.js';
+import { Keypair, PublicKey, SystemProgram } from '@solana/web3.js';
 import type {Erc20Permit, Quote, ReferrerAddresses} from '../types';
 import {
 	getAssociatedTokenAddress,
@@ -21,7 +21,8 @@ import MayanForwarderArtifact from './MayanForwarderArtifact';
 import addresses from '../addresses';
 import { Buffer } from 'buffer';
 import { getMctpFromEvmTxPayload } from './evmMctp';
-import { getSwiftFromEvmTxPayload } from './evmSwift';
+import { getSwiftFromEvmGasLessParams, getSwiftFromEvmTxPayload, getSwiftOrderTypeData } from './evmSwift';
+import { submitSwiftEvmSwap } from '../api';
 
 export type ContractRelayerFees = {
 	swapFee: bigint,
@@ -60,14 +61,14 @@ export type EvmSwapParams = {
 	bridgeFee: bigint,
 }
 
-async function getEvmSwapParams(
+function getEvmSwapParams(
 	quote: Quote, destinationAddress: string,
 	referrerAddress: string | null | undefined,
 	signerAddress: string, signerChainId: string | number,
 	payload?: Uint8Array | Buffer | null
-): Promise<EvmSwapParams> {
+): EvmSwapParams {
 	const mayanProgram = new PublicKey(addresses.MAYAN_PROGRAM_ID);
-	const [mayanMainAccount] = await PublicKey.findProgramAddress(
+	const [mayanMainAccount] = PublicKey.findProgramAddressSync(
 		[Buffer.from('MAIN')], mayanProgram);
 	const recipient = getAssociatedTokenAddress(
 		new PublicKey(quote.fromToken.mint),
@@ -153,13 +154,13 @@ async function getEvmSwapParams(
 	};
 }
 
-export async function getSwapFromEvmTxPayload(
+export function getSwapFromEvmTxPayload(
 	quote: Quote, swapperAddress: string, destinationAddress: string,
 	referrerAddresses: ReferrerAddresses | null | undefined,
 	signerAddress: string, signerChainId: number | string,
 	payload: Uint8Array | Buffer | null | undefined,
 	permit: Erc20Permit | null | undefined
-): Promise<TransactionRequest> {
+): TransactionRequest {
 
 	const signerWormholeChainId = getWormholeChainIdById(Number(signerChainId));
 	const fromChainId = getWormholeChainIdByName(quote.fromChain);
@@ -186,7 +187,7 @@ export async function getSwapFromEvmTxPayload(
 	const {
 		relayerFees, recipient, tokenOut, tokenOutWChainId,
 		criteria, tokenIn, amountIn, contractAddress, bridgeFee
-	} = await getEvmSwapParams(
+	} =  getEvmSwapParams(
 		quote, destinationAddress, referrerAddress,
 		signerAddress, signerChainId, payload
 	);
@@ -209,8 +210,6 @@ export async function getSwapFromEvmTxPayload(
 		)
 		value = toBeHex(amountIn);
 	} else {
-		console.log('mayan wh swap erc20', {relayerFees, recipient, tokenOut, tokenOutWChainId,
-			criteria, tokenIn, amountIn});
 		const mayanCallData = mayanSwap.interface.encodeFunctionData(
 			'swap',
 			[
@@ -238,7 +237,7 @@ export async function swapFromEvm(
 	signer: Signer, permit: Erc20Permit | null | undefined,
 	overrides: Overrides | null | undefined,
 	payload: Uint8Array | Buffer | null | undefined
-): Promise<TransactionResponse> {
+): Promise<TransactionResponse | string> {
 	if (!signer.provider) {
 		throw new Error('No provider found for signer');
 	}
@@ -248,7 +247,21 @@ export async function swapFromEvm(
 	}
 	const signerChainId = Number((await signer.provider.getNetwork()).chainId);
 
-	const transactionRequest = await getSwapFromEvmTxPayload(
+	if (quote.type === 'SWIFT' && quote.gasless) {
+		const referrerAddress = getQuoteSuitableReferrerAddress(quote, referrerAddresses);
+		const gasLessParams = getSwiftFromEvmGasLessParams(
+			quote, swapperAddress, destinationAddress, referrerAddress,
+			signerChainId, permit
+		);
+		const signedOrderHash = await signer.signTypedData(
+			gasLessParams.orderTypedData.domain,
+			gasLessParams.orderTypedData.types,
+			gasLessParams.orderTypedData.value
+		);
+		await submitSwiftEvmSwap(gasLessParams, signedOrderHash);
+		return gasLessParams.orderHash;
+	}
+	const transactionRequest = getSwapFromEvmTxPayload(
 		quote, swapperAddress, destinationAddress, referrerAddresses,
 		signerAddress, signerChainId, payload, permit
 	);

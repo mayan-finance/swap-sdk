@@ -175,10 +175,10 @@ type EvmMctpCreateOrderParams = {
 	contractAddress: string,
 }
 
-async function getEvmMctpCreateOrderParams(
+function getEvmMctpCreateOrderParams(
 	quote: Quote, destinationAddress: string,
 	referrerAddress: string | null | undefined, signerChainId: string | number
-): Promise<EvmMctpCreateOrderParams> {
+): EvmMctpCreateOrderParams {
 	const signerWormholeChainId = getWormholeChainIdById(Number(signerChainId));
 	const sourceChainId = getWormholeChainIdByName(quote.fromChain);
 	const destChainId = getWormholeChainIdByName(quote.toChain);
@@ -265,11 +265,11 @@ async function getEvmMctpCreateOrderParams(
 	};
 }
 
-async function getEvmMctpCreateOrderTxPayload(
+function getEvmMctpCreateOrderTxPayload(
 	quote: Quote, destinationAddress: string,
 	referrerAddress: string | null | undefined, signerChainId: string | number
-): Promise<TransactionRequest & { _params: EvmMctpCreateOrderParams }> {
-	const orderParams = await getEvmMctpCreateOrderParams(
+): TransactionRequest & { _params: EvmMctpCreateOrderParams } {
+	const orderParams = getEvmMctpCreateOrderParams(
 		quote, destinationAddress, referrerAddress, signerChainId
 	);
 	const {
@@ -290,10 +290,10 @@ async function getEvmMctpCreateOrderTxPayload(
 	};
 }
 
-export async function getMctpFromEvmTxPayload(
+export function getMctpFromEvmTxPayload(
 	quote: Quote, destinationAddress: string, referrerAddress: string | null | undefined,
 	signerChainId: number | string, permit: Erc20Permit | null
-): Promise<TransactionRequest>{
+): TransactionRequest {
 
 	if (quote.type !== 'MCTP') {
 		throw new Error('Quote type is not MCTP');
@@ -319,7 +319,7 @@ export async function getMctpFromEvmTxPayload(
 			if (!Number(quote.deadline64)) {
 				throw new Error('MCTP order requires timeout');
 			}
-			const mctpPayloadIx = await getEvmMctpCreateOrderTxPayload(
+			const mctpPayloadIx = getEvmMctpCreateOrderTxPayload(
 				quote, destinationAddress, referrerAddress, signerChainId
 			);
 
@@ -363,7 +363,7 @@ export async function getMctpFromEvmTxPayload(
 			if (!Number(quote.deadline64)) {
 				throw new Error('MCTP order requires timeout');
 			}
-			const mctpPayloadIx = await getEvmMctpCreateOrderTxPayload(
+			const mctpPayloadIx = getEvmMctpCreateOrderTxPayload(
 				quote, destinationAddress, referrerAddress, signerChainId
 			);
 			const minMiddleAmount = getAmountOfFractionalAmount(quote.minMiddleAmount, CCTP_TOKEN_DECIMALS);

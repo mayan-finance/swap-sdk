@@ -81,6 +81,7 @@ export type Quote = {
 	onlyBridging: boolean;
 	deadline64: string;
 	referrerBps?: number;
+	protocolBps?: number;
 	whMayanContract: string;
 	cheaperChain: ChainName;
 	mctpInputContract: string;
@@ -94,11 +95,13 @@ export type Quote = {
 	swiftAuctionMode?: number;
 	swiftInputContract: string;
 	swiftInputDecimals: number;
+	gasless: boolean;
 };
 
 export type QuoteOptions = {
 	swift?: boolean;
 	mctp?: boolean;
+	gasless?: boolean;
 };
 
 export type SolanaTransactionSigner = {
@@ -147,4 +150,22 @@ export type SolanaClientSwap = {
 export type ReferrerAddresses = {
 	solana?: string | null,
 	evm?: string | null,
+}
+
+export type SwiftEvmOrderTypedData = {
+	domain: {
+		name: "Mayan Swift",
+		chainId: number,
+		verifyingContract: string,
+	},
+	types: {
+		CreateOrder: [
+			{ name: 'OrderId', type: 'bytes32' },
+			{ name: 'InputAmount', type: 'uint256' },
+		],
+	},
+	value: {
+		OrderId: string,
+		InputAmount: bigint,
+	}
 }

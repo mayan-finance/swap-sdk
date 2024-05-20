@@ -11,6 +11,7 @@ import {
 } from './types';
 import addresses from './addresses';
 import { checkSdkVersionSupport } from './utils';
+import { SwiftEvmGasLessParams } from './evm/evmSwift';
 
 function toQueryString(params: Record<string, any>): string {
 	return Object.entries(params)
@@ -63,6 +64,7 @@ export async function fetchTokenList(chain: ChainName, nonPortal: boolean = fals
 export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions = {
 	swift: true,
 	mctp: true,
+	gasless: false,
 }): Promise<Quote[]> {
 	const { gasDrop, referrerBps } = params;
 	let slippageBps = params.slippageBps;
@@ -146,4 +148,23 @@ export async function getSwapSolana(params : GetSolanaSwapParams): Promise<Solan
 		throw result;
 	}
 	return result;
+}
+
+export async function submitSwiftEvmSwap(params: SwiftEvmGasLessParams, signature: string): Promise<void> {
+	const res = await fetch(`${addresses.EXPLORER_URL}/submit/evm`, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({
+			...params,
+			signature,
+		}, (_key, value) => {
+			if (typeof value === 'bigint') {
+				return value.toString();
+			}
+			return value;
+		}),
+	});
+	await check5xxError(res);
 }

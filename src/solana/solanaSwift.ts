@@ -24,22 +24,25 @@ import {
 	decentralizeClientSwapInstructions
 } from './utils';
 
-function createOrderHash(
+export function createSwiftOrderHash(
 	quote: Quote, swapperAddress: string, destinationAddress: string,
-	referrerAddress: string | null | undefined, randomKey: PublicKey
+	referrerAddress: string | null | undefined, randomKeyHex: string
 ): Buffer {
 	const orderDataSize = 239;
 	const data = Buffer.alloc(orderDataSize);
 	let offset = 0;
 
-	data.set(new PublicKey(swapperAddress).toBuffer(), 0);
+	const sourceChainId = getWormholeChainIdByName(quote.fromChain);
+	const trader = Buffer.from(hexToUint8Array(nativeAddressToHexString(swapperAddress, sourceChainId)));
+	data.set(trader, 0);
 	offset += 32;
 
-	const sourceChainId = getWormholeChainIdByName(quote.fromChain);
+
 	data.writeUInt16BE(sourceChainId, offset);
 	offset += 2;
 
-	data.set(new PublicKey(quote.swiftInputContract).toBuffer(), offset);
+	const tokenIn = Buffer.from(hexToUint8Array(nativeAddressToHexString(quote.swiftInputContract, sourceChainId)));
+	data.set(tokenIn, offset);
 	offset += 32;
 
 	const destinationChainId = getWormholeChainIdByName(quote.toChain);
@@ -57,7 +60,7 @@ function createOrderHash(
 	data.writeBigUInt64BE(getAmountOfFractionalAmount(quote.minAmountOut, Math.min(quote.toToken.decimals, 8)), offset);
 	offset += 8;
 
-	data.writeBigUInt64BE(getAmountOfFractionalAmount(quote.gasDrop, Math.min(getGasDecimal(quote.toChain), 8)));
+	data.writeBigUInt64BE(getAmountOfFractionalAmount(quote.gasDrop, Math.min(getGasDecimal(quote.toChain), 8)), offset);
 	offset += 8;
 
 	data.writeBigUInt64BE(BigInt(quote.cancelRelayerFee64), offset);
@@ -85,7 +88,8 @@ function createOrderHash(
 	data.writeUInt8(quote.swiftAuctionMode, offset);
 	offset += 1;
 
-	data.set(randomKey.toBuffer(), offset);
+	const _randomKey = Buffer.from(hexToUint8Array(randomKeyHex));
+	data.set(_randomKey, offset);
 	offset += 32;
 
 	if (offset !== orderDataSize) {
@@ -219,7 +223,10 @@ export async function createSwiftFromSolanaInstructions(
 	}
 	const deadline = BigInt(quote.deadline64);
 
-	const hash = createOrderHash(quote, swapperAddress, destinationAddress, referrerAddress, randomKey.publicKey);
+	const hash = createSwiftOrderHash(
+		quote, swapperAddress, destinationAddress,
+		referrerAddress, randomKey.publicKey.toBuffer().toString('hex')
+	);
 	const [state] = PublicKey.findProgramAddressSync(
 		[Buffer.from('STATE'), randomKey.publicKey.toBuffer()],
 		swiftProgram,
