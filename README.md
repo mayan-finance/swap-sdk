@@ -80,7 +80,7 @@ example:
 ```
 <br />
 
-If you need more control over the transaction and manualy send the trx you can use `createSwapFromSolanaInstructions` function to build the solana intruction.
+If you need more control over the transaction and manually send the trx you can use `createSwapFromSolanaInstructions` function to build the solana instruction.
 
 
 ### Swap from EVM:
@@ -88,9 +88,13 @@ If you need more control over the transaction and manualy send the trx you can u
 ```javascript
 swapTrx = await swapFromEvm(quotes[0], destinationWalletAddress, referrerAddress, provider, signer, permit?)
 ```
-<br />
 
-The permit param is optional, you can pass the permit object to the function if the input token supports permit standard. The permit object should contain the following fields:
+#### ERC20 Allowance
+
+* If you want to initiate a swap using an ERC20 token as the input, ensure that you have already approved sufficient allowance for the Mayan Forwarder contract. The Forwarder's address can be accessed via `addresses.MAYAN_FORWARDER_CONTRACT`.
+
+
+* Alternatively, the user can sign a permit message ([EIP-2612](https://eips.ethereum.org/EIPS/eip-2612)). The permit parameter is optional; you can pass the permit object to the function if the input token supports the permit standard. The permit object should contain the following fields:
 
 ```javascript
 {
@@ -101,9 +105,19 @@ The permit param is optional, you can pass the permit object to the function if 
 	s: string,
 }
 ```
+<br />
+
+#### Gasless Transaction:
+> If the selected quote's `gasless` parameter is set to true (`quote.gasless == true`), the return value of the `swapFromEvm` function will be the order hash of the `string` type. This hash can be queried on the Mayan Explorer API, similar to a transaction hash.
+
+
+
+
 If you need to get the transaction payload and send it manually, you can use `getSwapFromEvmTxPayload` function to build the EVM transaction payload.
 
->`referrerAddress` must be a Solana wallet address. If you don't want to get referrer fee from users, set "referrerAddress" to ```null``` or `"11111111111111111111111111111111"`
+#### Contract Level Integration:
+>If you aim to integrate the Mayan protocol at the contract level, you can use the `_forwarder` object returned from the `getSwapFromEvmTxPayload`. It contains the method name and parameters for a contract level method call.
+
 ### Tracking:
 To track the progress of swaps, you can use [Mayan Explorer API](https://explorer-api.mayan.finance/swagger/#/default/SwapDetailsController_getSwapByTrxHash) by passing the transaction hash of the swap transaction.
 

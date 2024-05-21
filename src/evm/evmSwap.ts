@@ -7,8 +7,8 @@ import {
 	TransactionResponse,
 	TransactionRequest, TypedDataEncoder
 } from 'ethers';
-import { Keypair, PublicKey, SystemProgram } from '@solana/web3.js';
-import type {Erc20Permit, Quote, ReferrerAddresses} from '../types';
+import { PublicKey, SystemProgram } from '@solana/web3.js';
+import type {Erc20Permit, Quote, ReferrerAddresses, EvmForwarderParams} from '../types';
 import {
 	getAssociatedTokenAddress,
 	nativeAddressToHexString,
@@ -160,7 +160,7 @@ export function getSwapFromEvmTxPayload(
 	signerAddress: string, signerChainId: number | string,
 	payload: Uint8Array | Buffer | null | undefined,
 	permit: Erc20Permit | null | undefined
-): TransactionRequest {
+): TransactionRequest & { _forwarder: EvmForwarderParams } {
 
 	const signerWormholeChainId = getWormholeChainIdById(Number(signerChainId));
 	const fromChainId = getWormholeChainIdByName(quote.fromChain);
@@ -194,7 +194,9 @@ export function getSwapFromEvmTxPayload(
 
 	const forwarderContract = new Contract(addresses.MAYAN_FORWARDER_CONTRACT, MayanForwarderArtifact.abi);
 	const mayanSwap = new Contract(contractAddress, MayanSwapArtifact.abi);
-	let data: string;
+
+	let forwarderMethod: string;
+	let forwarderParams: any[];
 	let value: string | null;
 
 	const _permit = permit || ZeroPermit;
@@ -204,10 +206,8 @@ export function getSwapFromEvmTxPayload(
 			'wrapAndSwapETH',
 			[relayerFees, recipient, tokenOut, tokenOutWChainId, criteria]
 		);
-		data = forwarderContract.interface.encodeFunctionData(
-			'forwardEth',
-			[contractAddress, mayanCallData],
-		)
+		forwarderMethod = 'forwardEth';
+		forwarderParams = [contractAddress, mayanCallData];
 		value = toBeHex(amountIn);
 	} else {
 		const mayanCallData = mayanSwap.interface.encodeFunctionData(
@@ -218,17 +218,21 @@ export function getSwapFromEvmTxPayload(
 			]
 		);
 
-		data = forwarderContract.interface.encodeFunctionData(
-			'forwardERC20',
-			[tokenIn, amountIn, _permit, contractAddress, mayanCallData]
-		)
+		forwarderMethod = 'forwardERC20';
+		forwarderParams = [tokenIn, amountIn, _permit, contractAddress, mayanCallData];
 		value = toBeHex(bridgeFee);
 	}
+
+	const data = forwarderContract.interface.encodeFunctionData(forwarderMethod, forwarderParams);
 	return {
 		to: addresses.MAYAN_FORWARDER_CONTRACT,
 		data,
 		value,
-		chainId: signerChainId
+		chainId: signerChainId,
+		_forwarder: {
+			method: forwarderMethod,
+			params: forwarderParams,
+		}
 	};
 }
 export async function swapFromEvm(

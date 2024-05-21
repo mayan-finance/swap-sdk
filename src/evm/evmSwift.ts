@@ -5,7 +5,7 @@ import {
 	TransactionRequest
 } from 'ethers';
 import { Keypair, SystemProgram } from '@solana/web3.js';
-import { Erc20Permit, Quote, SwiftEvmOrderTypedData } from '../types';
+import { Erc20Permit, EvmForwarderParams, Quote, SwiftEvmOrderTypedData } from '../types';
 import {
 	nativeAddressToHexString,
 	getAmountOfFractionalAmount, getWormholeChainIdByName,
@@ -126,7 +126,7 @@ export function getEvmSwiftParams(
 export function getSwiftFromEvmTxPayload(
 	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
 	signerChainId: number | string, permit: Erc20Permit | null
-): TransactionRequest {
+): TransactionRequest & { _forwarder: EvmForwarderParams } {
 	if (quote.type !== 'SWIFT') {
 		throw new Error('Quote type is not SWIFT');
 	}
@@ -166,21 +166,18 @@ export function getSwiftFromEvmTxPayload(
 		);
 	}
 
-	let data: string;
+	let forwarderMethod: string;
+	let forwarderParams: any[];
 	let value: string | null;
 
 	if (quote.fromToken.contract === quote.swiftInputContract) {
 		if (quote.fromToken.contract === ZeroAddress) {
-			data = forwarder.interface.encodeFunctionData(
-				'forwardEth',
-				[swiftContractAddress, swiftCallData]
-			);
+			forwarderMethod = 'forwardEth';
+			forwarderParams = [swiftContractAddress, swiftCallData];
 			value = toBeHex(amountIn);
 		} else {
-			data = forwarder.interface.encodeFunctionData(
-				'forwardERC20',
-				[swiftTokenIn, amountIn, _permit, swiftContractAddress, swiftCallData],
-			);
+			forwarderMethod = 'forwardERC20';
+			forwarderParams = [swiftTokenIn, amountIn, _permit, swiftContractAddress, swiftCallData];
 			value = toBeHex(0);
 		}
 	} else {
@@ -193,42 +190,44 @@ export function getSwiftFromEvmTxPayload(
 		const minMiddleAmount = getAmountOfFractionalAmount(quote.minMiddleAmount, quote.swiftInputDecimals);
 
 		if (quote.fromToken.contract === ZeroAddress) {
-			data = forwarder.interface.encodeFunctionData(
-				'swapAndForwardEth',
-				[
-					amountIn,
-					evmSwapRouterAddress,
-					evmSwapRouterCalldata,
-					quote.swiftInputContract,
-					minMiddleAmount,
-					swiftContractAddress,
-					swiftCallData
-				]
-			);
+			forwarderMethod = 'swapAndForwardEth';
+			forwarderParams = [
+				amountIn,
+				evmSwapRouterAddress,
+				evmSwapRouterCalldata,
+				quote.swiftInputContract,
+				minMiddleAmount,
+				swiftContractAddress,
+				swiftCallData
+			];
 			value = toBeHex(amountIn);
 		} else {
-			data = forwarder.interface.encodeFunctionData(
-				'swapAndForwardERC20',
-				[
-					tokenIn,
-					amountIn,
-					_permit,
-					evmSwapRouterAddress,
-					evmSwapRouterCalldata,
-					quote.swiftInputContract,
-					minMiddleAmount,
-					swiftContractAddress,
-					swiftCallData
-				]
-			);
+			forwarderMethod = 'swapAndForwardERC20';
+			forwarderParams = [
+				tokenIn,
+				amountIn,
+				_permit,
+				evmSwapRouterAddress,
+				evmSwapRouterCalldata,
+				quote.swiftInputContract,
+				minMiddleAmount,
+				swiftContractAddress,
+				swiftCallData
+			];
 			value = toBeHex(0);
 		}
 	}
+	const data = forwarder.interface.encodeFunctionData(forwarderMethod, forwarderParams);
+
 	return {
 		data,
 		to: addresses.MAYAN_FORWARDER_CONTRACT,
 		value,
 		chainId: signerChainId,
+		_forwarder: {
+			method: forwarderMethod,
+			params: forwarderParams
+		}
 	};
 }
 

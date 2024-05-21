@@ -169,3 +169,8 @@ export type SwiftEvmOrderTypedData = {
 		InputAmount: bigint,
 	}
 }
+
+export type EvmForwarderParams = {
+	method: string,
+	params: any[],
+}

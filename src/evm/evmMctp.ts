@@ -8,7 +8,7 @@ import {
 	TransactionRequest,
 } from 'ethers';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
-import type { Quote } from '../types';
+import type { EvmForwarderParams, Quote } from '../types';
 import {
 	getAssociatedTokenAddress,
 	nativeAddressToHexString,
@@ -293,7 +293,7 @@ function getEvmMctpCreateOrderTxPayload(
 export function getMctpFromEvmTxPayload(
 	quote: Quote, destinationAddress: string, referrerAddress: string | null | undefined,
 	signerChainId: number | string, permit: Erc20Permit | null
-): TransactionRequest {
+): TransactionRequest & { _forwarder: EvmForwarderParams } {
 
 	if (quote.type !== 'MCTP') {
 		throw new Error('Quote type is not MCTP');
@@ -323,35 +323,47 @@ export function getMctpFromEvmTxPayload(
 				quote, destinationAddress, referrerAddress, signerChainId
 			);
 
-			const data = forwarder.interface.encodeFunctionData('forwardERC20', [
+			const forwarderMethod = 'forwardERC20';
+			const forwarderParams = [
 				quote.fromToken.contract,
 				mctpPayloadIx._params.params.amountIn,
 				_permit,
 				mctpPayloadIx._params.contractAddress,
 				mctpPayloadIx.data,
-			]);
+			];
+			const data = forwarder.interface.encodeFunctionData(forwarderMethod, forwarderParams);
 			return {
 				data,
 				to: addresses.MAYAN_FORWARDER_CONTRACT,
 				value: toBeHex(value),
 				chainId: signerChainId,
+				_forwarder: {
+					method: forwarderMethod,
+					params: forwarderParams,
+				}
 			}
 		} else {
 			const mctpPayloadIx = getEvmMctpBridgeTxPayload(
 				quote, destinationAddress, signerChainId
 			);
-			const data = forwarder.interface.encodeFunctionData('forwardERC20', [
+			const forwarderMethod = 'forwardERC20';
+			const forwarderParams = [
 				quote.fromToken.contract,
 				mctpPayloadIx._params.amountIn,
 				_permit,
 				mctpPayloadIx._params.contractAddress,
 				mctpPayloadIx.data,
-			]);
+			];
+			const data = forwarder.interface.encodeFunctionData(forwarderMethod, forwarderParams);
 			return {
 				data,
 				to: addresses.MAYAN_FORWARDER_CONTRACT,
 				value: toBeHex(value),
 				chainId: signerChainId,
+				_forwarder: {
+					method: forwarderMethod,
+					params: forwarderParams,
+				}
 			}
 		}
 	} else {
@@ -380,7 +392,8 @@ export function getMctpFromEvmTxPayload(
 
 				value = toBeHex(mctpPayloadIx._params.params.amountIn);
 
-				const data = forwarder.interface.encodeFunctionData('swapAndForwardEth', [
+				const forwarderMethod = 'swapAndForwardEth';
+				const forwarderParams = [
 					amountIn,
 					evmSwapRouterAddress,
 					evmSwapRouterCalldata,
@@ -388,15 +401,21 @@ export function getMctpFromEvmTxPayload(
 					minMiddleAmount,
 					mctpPayloadIx._params.contractAddress,
 					mctpPayloadIx.data,
-				]);
+				];
+				const data = forwarder.interface.encodeFunctionData(forwarderMethod, forwarderParams);
 				return {
 					data,
 					to: addresses.MAYAN_FORWARDER_CONTRACT,
 					value: toBeHex(value),
 					chainId: signerChainId,
+					_forwarder: {
+						method: forwarderMethod,
+						params: forwarderParams,
+					}
 				}
 			} else {
-				const data = forwarder.interface.encodeFunctionData('swapAndForwardERC20', [
+				const forwarderMethod = 'swapAndForwardERC20';
+				const forwarderParams = [
 					quote.fromToken.contract,
 					mctpPayloadIx._params.params.amountIn,
 					_permit,
@@ -406,12 +425,17 @@ export function getMctpFromEvmTxPayload(
 					minMiddleAmount,
 					mctpPayloadIx._params.contractAddress,
 					mctpPayloadIx.data,
-				]);
+				];
+				const data = forwarder.interface.encodeFunctionData(forwarderMethod, forwarderParams);
 				return {
 					data,
 					to: addresses.MAYAN_FORWARDER_CONTRACT,
 					value: toBeHex(value),
 					chainId: signerChainId,
+					_forwarder: {
+						method: forwarderMethod,
+						params: forwarderParams,
+					}
 				}
 			}
 		} else {
@@ -429,7 +453,8 @@ export function getMctpFromEvmTxPayload(
 
 				value = toBeHex(mctpPayloadIx._params.amountIn);
 
-				const data = forwarder.interface.encodeFunctionData('swapAndForwardEth', [
+				const forwarderMethod = 'swapAndForwardEth';
+				const forwarderParams = [
 					amountIn,
 					evmSwapRouterAddress,
 					evmSwapRouterCalldata,
@@ -437,15 +462,21 @@ export function getMctpFromEvmTxPayload(
 					minMiddleAmount,
 					mctpPayloadIx._params.contractAddress,
 					mctpPayloadIx.data,
-				]);
+				];
+				const data = forwarder.interface.encodeFunctionData(forwarderMethod, forwarderParams);
 				return {
 					data,
 					to: addresses.MAYAN_FORWARDER_CONTRACT,
 					value: toBeHex(value),
 					chainId: signerChainId,
+					_forwarder: {
+						method: forwarderMethod,
+						params: forwarderParams,
+					}
 				}
 			} else {
-				const data = forwarder.interface.encodeFunctionData('swapAndForwardERC20', [
+				const forwarderMethod = 'swapAndForwardERC20';
+				const forwarderParams = [
 					quote.fromToken.contract,
 					mctpPayloadIx._params.amountIn,
 					_permit,
@@ -455,12 +486,17 @@ export function getMctpFromEvmTxPayload(
 					minMiddleAmount,
 					mctpPayloadIx._params.contractAddress,
 					mctpPayloadIx.data,
-				]);
+				]
+				const data = forwarder.interface.encodeFunctionData(forwarderMethod, forwarderParams);
 				return {
 					data,
 					to: addresses.MAYAN_FORWARDER_CONTRACT,
 					value: toBeHex(value),
 					chainId: signerChainId,
+					_forwarder: {
+						method: forwarderMethod,
+						params: forwarderParams,
+					}
 				}
 			}
 		}
