@@ -41,7 +41,10 @@ export function createSwiftOrderHash(
 	data.writeUInt16BE(sourceChainId, offset);
 	offset += 2;
 
-	const tokenIn = Buffer.from(hexToUint8Array(nativeAddressToHexString(quote.swiftInputContract, sourceChainId)));
+	const _tokenIn = quote.swiftInputContract === ZeroAddress ?
+		nativeAddressToHexString(SystemProgram.programId.toString(), getWormholeChainIdByName('solana')) :
+		nativeAddressToHexString(quote.swiftInputContract, sourceChainId);
+	const tokenIn = Buffer.from(hexToUint8Array(_tokenIn));
 	data.set(tokenIn, offset);
 	offset += 32;
 
@@ -53,7 +56,11 @@ export function createSwiftOrderHash(
 	data.writeUInt16BE(destinationChainId, offset);
 	offset += 2;
 
-	const tokenOut = Buffer.from(hexToUint8Array(nativeAddressToHexString(quote.toToken.contract, destinationChainId)));
+	const _tokenOut =
+		quote.toToken.contract === ZeroAddress ?
+			nativeAddressToHexString(SystemProgram.programId.toString(), getWormholeChainIdByName('solana')) :
+			nativeAddressToHexString(quote.toToken.contract, destinationChainId);
+	const tokenOut = Buffer.from(hexToUint8Array(_tokenOut));
 	data.set(tokenOut, offset);
 	offset += 32;
 
