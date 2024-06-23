@@ -294,16 +294,21 @@ export async function swapFromSolana(
 
 	const swapper = new PublicKey(swapperWalletAddress);
 
+	const feePayer = quote.gasless ? new PublicKey(quote.relayer) : swapper;
+
 	const {blockhash} = await connection.getLatestBlockhash();
 	const message = MessageV0.compile({
 		instructions,
-		payerKey: swapper,
+		payerKey: feePayer,
 		recentBlockhash: blockhash,
 		addressLookupTableAccounts: lookupTables,
 	});
 	const transaction = new VersionedTransaction(message);
 	transaction.sign(signers);
 	const signedTrx = await signTransaction(transaction);
+	if (quote.gasless) {
+		throw new Error("NOT IMPLEMENTED YET!");
+	}
 	return await submitTransactionWithRetry({
 		trx: signedTrx.serialize(),
 		connection: solanaConnection,

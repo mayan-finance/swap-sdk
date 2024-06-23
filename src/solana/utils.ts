@@ -15,6 +15,7 @@ import {InstructionInfo, SolanaClientSwap, SolanaTransactionSigner} from '../typ
 import addresses from "../addresses";
 import {Buffer} from "buffer";
 import {blob, struct, u8} from "@solana/buffer-layout";
+import { sha256 } from 'js-sha256';
 
 const cachedConnections: Record<string, Connection> = {};
 
@@ -212,7 +213,7 @@ export function createSplTransferInstruction(
 	return new TransactionInstruction({keys, programId, data});
 }
 
-const solMint = new PublicKey('So11111111111111111111111111111111111111112');
+export const solMint = new PublicKey('So11111111111111111111111111111111111111112');
 
 export async function wrapSol(
 	owner: PublicKey, amount: number,
@@ -363,3 +364,9 @@ export async  function decentralizeClientSwapInstructions(params: SolanaClientSw
 		addressLookupTableAccounts,
 	};
 }
+
+export function getAnchorInstructionData(name: string): Buffer {
+	let preimage = `global:${name}`;
+	return Buffer.from(sha256.digest(preimage)).slice(0, 8);
+}
+

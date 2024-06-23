@@ -20,8 +20,8 @@ import { ethers, ZeroAddress } from 'ethers';
 import { getSwapSolana } from '../api';
 import {
 	createAssociatedTokenAccountInstruction,
-	createSplTransferInstruction,
-	decentralizeClientSwapInstructions
+	createSplTransferInstruction, createSyncNativeInstruction,
+	decentralizeClientSwapInstructions, getAnchorInstructionData, solMint
 } from './utils';
 
 export function createSwiftOrderHash(
@@ -111,7 +111,9 @@ type CreateInitSwiftInstructionParams = {
 	quote: Quote,
 	state: PublicKey,
 	trader: PublicKey,
+	relayer: PublicKey,
 	stateAccount: PublicKey,
+	relayerAccount: PublicKey,
 	randomKey: PublicKey,
 	destinationAddress: string,
 	deadline: bigint,
@@ -119,9 +121,10 @@ type CreateInitSwiftInstructionParams = {
 }
 
 const InitSwiftLayout = struct<any>([
-	u8('instruction'),
+	blob(8, 'instruction'),
 	blob(8, 'amountInMin'),
 	u8('nativeInput'),
+	blob(8, 'feeSubmit'),
 	blob(32, 'destAddress'),
 	u16('destinationChain'),
 	blob(32, 'tokenOut'),
@@ -132,33 +135,34 @@ const InitSwiftLayout = struct<any>([
 	blob(8, 'deadline'),
 	blob(32, 'refAddress'),
 	u8('feeRateRef'),
+	u8('feeRateMayan'),
 	u8('auctionMode'),
+	blob(32, 'randomKey'),
 ]);
 
 function createSwiftInitInstruction(
 	params: CreateInitSwiftInstructionParams,
 ): TransactionInstruction {
 	const { quote } = params;
-	const mint = new PublicKey(params.quote.swiftInputContract);
-	const [ mayanFee ] = PublicKey.findProgramAddressSync(
-		[Buffer.from('MAYANFEE')],
-		new PublicKey(addresses.MAYAN_PROGRAM_ID),
-	);
+	const mint = quote.swiftInputContract === ZeroAddress ?
+		solMint : new PublicKey(quote.swiftInputContract);
 	const destinationChainId = getWormholeChainIdByName(quote.toChain);
 
 	if (destinationChainId !== quote.toToken.wChainId) {
 		throw new Error(`Destination chain ID mismatch: ${destinationChainId} != ${quote.toToken.wChainId}`);
 	}
 	const accounts: AccountMeta[] = [
+		{ pubkey: params.trader, isWritable: false, isSigner: true },
+		{ pubkey: params.relayer, isWritable: true, isSigner: true },
 		{ pubkey: params.state, isWritable: true, isSigner: false },
-		{ pubkey: params.trader, isWritable: true, isSigner: true },
 		{ pubkey: params.stateAccount, isWritable: true, isSigner: false },
+		{ pubkey: params.relayerAccount, isWritable: true, isSigner: false },
 		{ pubkey: mint, isWritable: false, isSigner: false },
-		{ pubkey: params.randomKey, isWritable: true, isSigner: true },
-		{ pubkey: mayanFee, isWritable: false, isSigner: true },
-		{ pubkey: SYSVAR_RENT_PUBKEY, isWritable: false, isSigner: false },
+		{ pubkey: new PublicKey(addresses.FEE_MANAGER_PROGRAM_ID), isWritable: false, isSigner: false },
+		{ pubkey: new PublicKey(addresses.TOKEN_PROGRAM_ID), isWritable: false, isSigner: false },
 		{ pubkey: SystemProgram.programId, isWritable: false, isSigner: false },
 	];
+
 	const data = Buffer.alloc(InitSwiftLayout.span);
 
 	const refAddress = params.referrerAddress ?
@@ -168,9 +172,10 @@ function createSwiftInitInstruction(
 	const minMiddleAmount = quote.fromToken.contract === quote.swiftInputContract ? quote.effectiveAmountIn : quote.minMiddleAmount;
 
 	InitSwiftLayout.encode({
-		instruction: 10,
+		instruction: getAnchorInstructionData('init_order'),
 		amountInMin: getSafeU64Blob(getAmountOfFractionalAmount(minMiddleAmount, quote.swiftInputDecimals)),
 		nativeInput: quote.swiftInputContract === ZeroAddress ? 1 : 0,
+		feeSubmit: getSafeU64Blob(BigInt(quote.submitRelayerFee64)),
 		destAddress: Buffer.from(hexToUint8Array(nativeAddressToHexString(params.destinationAddress, destinationChainId))),
 		destinationChain: destinationChainId,
 		tokenOut: Buffer.from(hexToUint8Array(nativeAddressToHexString(quote.toToken.contract, destinationChainId))),
@@ -181,7 +186,9 @@ function createSwiftInitInstruction(
 		deadline: getSafeU64Blob(params.deadline),
 		refAddress: refAddress,
 		feeRateRef: quote.referrerBps,
+		feeRateMayan: quote.protocolBps,
 		auctionMode: quote.swiftAuctionMode,
+		randomKey: params.randomKey.toBuffer(),
 	}, data);
 
 	return new TransactionInstruction({
@@ -190,6 +197,7 @@ function createSwiftInitInstruction(
 		programId: new PublicKey(addresses.SWIFT_PROGRAM_ID)
 	});
 }
+
 export async function createSwiftFromSolanaInstructions(
 	quote: Quote, swapperAddress: string, destinationAddress: string,
 	referrerAddress: string | null | undefined,
@@ -199,7 +207,8 @@ export async function createSwiftFromSolanaInstructions(
 	signers: Keypair[],
 	lookupTables:  AddressLookupTableAccount[],
 }> {
-	throw new Error('swift from solana not available in this version of sdk');
+
+	throw new Error('Unsupported yet: Swift from Solana');
 	if (quote.type !== 'SWIFT') {
 		throw new Error('Unsupported quote type for Swift: ' + quote.type);
 	}
@@ -208,7 +217,6 @@ export async function createSwiftFromSolanaInstructions(
 	}
 
 	let instructions: TransactionInstruction[] = [];
-	let signers: Keypair[] = [];
 	let lookupTables: AddressLookupTableAccount[] = [];
 
 	const mayanLookupTable = await connection.getAddressLookupTable(
@@ -223,7 +231,6 @@ export async function createSwiftFromSolanaInstructions(
 	const trader = new PublicKey(swapperAddress);
 
 	const randomKey = Keypair.generate();
-	signers.push(randomKey);
 
 	if (!Number(quote.deadline64)) {
 		throw new Error('Swift mode requires a timeout');
@@ -235,7 +242,7 @@ export async function createSwiftFromSolanaInstructions(
 		referrerAddress, randomKey.publicKey.toBuffer().toString('hex')
 	);
 	const [state] = PublicKey.findProgramAddressSync(
-		[Buffer.from('STATE'), randomKey.publicKey.toBuffer()],
+		[Buffer.from('STATE_SOURCE'), hash],
 		swiftProgram,
 	);
 
@@ -243,6 +250,9 @@ export async function createSwiftFromSolanaInstructions(
 		new PublicKey(quote.swiftInputContract), state, true
 	);
 
+	const swiftInputMint = quote.swiftInputContract === ZeroAddress ? solMint : new PublicKey(quote.swiftInputContract);
+	const relayer = quote.gasless ? new PublicKey(quote.relayer) : trader;
+	const relayerAccount = getAssociatedTokenAddress(swiftInputMint, relayer, false);
 	if (quote.fromToken.contract === quote.swiftInputContract) {
 		if (quote.suggestedPriorityFee > 0) {
 			instructions.push(ComputeBudgetProgram.setComputeUnitPrice({
@@ -250,18 +260,29 @@ export async function createSwiftFromSolanaInstructions(
 			}))
 		}
 		instructions.push(
-			createAssociatedTokenAccountInstruction(trader, stateAccount, state, new PublicKey(quote.swiftInputContract))
+			createAssociatedTokenAccountInstruction(relayer, stateAccount, state, swiftInputMint)
 		);
-		instructions.push(
-			createSplTransferInstruction(
-				getAssociatedTokenAddress(
-					new PublicKey(quote.swiftInputContract), trader, false
-				),
-				stateAccount,
-				trader,
-				getAmountOfFractionalAmount(quote.effectiveAmountIn, quote.fromToken.decimals),
-			)
-		);
+		if (quote.swiftInputContract === ZeroAddress) {
+			instructions.push(
+				SystemProgram.transfer({
+					fromPubkey: trader,
+					toPubkey: stateAccount,
+					lamports: getAmountOfFractionalAmount(quote.effectiveAmountIn, quote.fromToken.decimals),
+				}),
+				createSyncNativeInstruction(stateAccount),
+			);
+		} else {
+			instructions.push(
+				createSplTransferInstruction(
+					getAssociatedTokenAddress(
+						swiftInputMint, trader, false
+					),
+					stateAccount,
+					trader,
+					getAmountOfFractionalAmount(quote.effectiveAmountIn, quote.fromToken.decimals),
+				)
+			);
+		}
 	} else {
 		const clientSwapRaw = await getSwapSolana({
 			minMiddleAmount: quote.minMiddleAmount,
@@ -271,7 +292,7 @@ export async function createSwiftFromSolanaInstructions(
 			slippageBps: quote.slippageBps,
 			fromToken: quote.fromToken.contract,
 			amountIn: quote.effectiveAmountIn,
-			depositMode: 'SWIFT',
+			depositMode: quote.gasless ? 'SWIFT_GASLESS' : 'SWIFT',
 		});
 		const clientSwap = await decentralizeClientSwapInstructions(clientSwapRaw, connection);
 		instructions.push(...clientSwap.computeBudgetInstructions);
@@ -290,11 +311,13 @@ export async function createSwiftFromSolanaInstructions(
 		trader,
 		stateAccount,
 		randomKey: randomKey.publicKey,
+		relayerAccount,
+		relayer,
 		destinationAddress,
 		deadline,
 		referrerAddress,
 	}));
-	return {instructions, signers, lookupTables};
+	return {instructions, signers: [], lookupTables};
 }
 
 
