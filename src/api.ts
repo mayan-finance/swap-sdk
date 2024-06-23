@@ -65,14 +65,21 @@ export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions
 	swift: true,
 	mctp: true,
 	gasless: false,
+	onlyDirect: false,
 }): Promise<Quote[]> {
 	const { gasDrop, referrerBps } = params;
 	let slippageBps = params.slippageBps;
 	if (!Number.isFinite(slippageBps)) {
 		slippageBps = params.slippage * 100;
 	}
+	const _quoteOptions: QuoteOptions = {
+		swift: quoteOptions.swift !== false, // default to true
+		mctp: quoteOptions.mctp !== false, // default to true
+		gasless: quoteOptions.gasless === true, // default to false
+		onlyDirect: quoteOptions.onlyDirect === true, // default to false
+	}
 	const queryParams: Record<string, any> = {
-		...quoteOptions,
+		..._quoteOptions,
 		solanaProgram: addresses.MAYAN_PROGRAM_ID,
 		forwarderAddress: addresses.MAYAN_FORWARDER_CONTRACT,
 		amountIn: Number.isFinite(params.amount) ? params.amount : undefined,

@@ -52,6 +52,7 @@ export type Quote = {
 	solanaRelayerFee: number;
 	refundRelayerFee64: string;
 	cancelRelayerFee64: string;
+	submitRelayerFee64: string;
 	clientRelayerFeeSuccess: number | null;
 	clientRelayerFeeRefund: number | null;
 	eta: number;
@@ -96,12 +97,16 @@ export type Quote = {
 	swiftInputContract: string;
 	swiftInputDecimals: number;
 	gasless: boolean;
+	relayer: string;
+	sendTransactionCost: number;
+	maxUserGasDrop: number;
 };
 
 export type QuoteOptions = {
 	swift?: boolean;
 	mctp?: boolean;
 	gasless?: boolean;
+	onlyDirect?: boolean;
 };
 
 export type SolanaTransactionSigner = {
@@ -125,7 +130,7 @@ export type GetSolanaSwapParams = {
 	userWallet: string,
 	userLedger: string,
 	slippageBps: number,
-	depositMode: 'WITH_FEE' | 'LOCK_FEE' | 'SWAP' | 'SWIFT',
+	depositMode: 'WITH_FEE' | 'LOCK_FEE' | 'SWAP' | 'SWIFT' | 'SWIFT_GASLESS',
 }
 
 export type SolanaKeyInfo = {
