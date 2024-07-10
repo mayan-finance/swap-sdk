@@ -69,8 +69,8 @@ export async function submitTransactionWithRetry(
 				console.error(err)
 			}
 		}
-		const sendRequests = connections.map((c) => c.sendRawTransaction(trx, options));
 		if (!signature) {
+			const sendRequests = connections.map((c) => c.sendRawTransaction(trx, options));
 			try {
 				signature = await Promise.any(sendRequests);
 			} catch (err) {
