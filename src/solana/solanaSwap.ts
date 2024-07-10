@@ -276,7 +276,7 @@ export async function swapFromSolana(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
 	referrerAddresses: ReferrerAddresses | null | undefined,
 	signTransaction: SolanaTransactionSigner,
-	connection?: Connection, extraRpcs?: string[], sendOptions?: SendOptions
+	connection?: Connection, extraRpcs?: string[], sendOptions?: SendOptions & { singleSubmit?: boolean }
 ): Promise<{
 	signature: string,
 	serializedTrx: Uint8Array,
@@ -309,13 +309,23 @@ export async function swapFromSolana(
 	if (quote.gasless) {
 		throw new Error("NOT IMPLEMENTED YET!");
 	}
-	return await submitTransactionWithRetry({
-		trx: signedTrx.serialize(),
-		connection: solanaConnection,
-		extraRpcs: extraRpcs ?? [],
-		errorChance: 2,
-		options: sendOptions,
-	});
+
+	if (sendOptions && sendOptions.singleSubmit) {
+		const serializedTrx = signedTrx.serialize();
+		const signature =  await connection.sendRawTransaction(serializedTrx, sendOptions);
+		return {
+			signature,
+			serializedTrx,
+		}
+	} else {
+		return await submitTransactionWithRetry({
+			trx: signedTrx.serialize(),
+			connection: solanaConnection,
+			extraRpcs: extraRpcs ?? [],
+			errorChance: 2,
+			options: sendOptions,
+		});
+	}
 }
 
 
