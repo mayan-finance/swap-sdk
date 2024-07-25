@@ -280,3 +280,24 @@ export async function swapFromEvm(
 	return signer.sendTransaction(transactionRequest);
 }
 
+export async function estimateQuoteRequiredGas(
+	quote: Quote, swapperAddress: string,
+	signer: Signer, permit: Erc20Permit | null | undefined,
+	payload: Uint8Array | Buffer | null | undefined
+): Promise<bigint> {
+	const signerAddress = await signer.getAddress();
+	const sampleDestinationAddress: string = quote.toChain === 'solana' ? 'ENsytooJVSZyNHbxvueUeX8Am8gcNqPivVVE8USCBiy5' : '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
+	const signerChainId = Number((await signer.provider.getNetwork()).chainId);
+	if (quote.type === 'SWIFT' && quote.gasless) {
+		return BigInt(0);
+	}
+	const transactionRequest = getSwapFromEvmTxPayload(
+		quote, swapperAddress, sampleDestinationAddress, null,
+		signerAddress, signerChainId, payload, permit
+	);
+	const baseGas = await signer.estimateGas(transactionRequest);
+	if (quote.type === 'MCTP' || quote.type === 'SWIFT') {
+		return baseGas * BigInt(110) / BigInt(100);
+	}
+	return baseGas;
+}
