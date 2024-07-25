@@ -10,7 +10,7 @@ import {
 	GetSolanaSwapParams
 } from './types';
 import addresses from './addresses';
-import { checkSdkVersionSupport } from './utils';
+import { checkSdkVersionSupport, getSdkVersion } from './utils';
 import { SwiftEvmGasLessParams } from './evm/evmSwift';
 
 function toQueryString(params: Record<string, any>): string {
@@ -91,6 +91,7 @@ export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions
 		referrer: params.referrer,
 		referrerBps: Number.isFinite(referrerBps) ? referrerBps : undefined,
 		gasDrop: Number.isFinite(gasDrop) ? gasDrop : undefined,
+		sdkVersion: getSdkVersion(),
 	};
 	const baseUrl = `${addresses.PRICE_URL}/quote?`;
 	const queryString = toQueryString(queryParams);
@@ -174,4 +175,22 @@ export async function submitSwiftEvmSwap(params: SwiftEvmGasLessParams, signatur
 		}),
 	});
 	await check5xxError(res);
+}
+
+export async function submitSwiftSolanaSwap(signedTx: string): Promise<{ orderHash: string }> {
+	const res = await fetch(`${addresses.EXPLORER_URL}/submit/solana`, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({
+			signedTx,
+		}),
+	});
+	await check5xxError(res);
+	const result = await res.json();
+	if (res.status !== 200 && res.status !== 201) {
+		throw result;
+	}
+	return result;
 }
