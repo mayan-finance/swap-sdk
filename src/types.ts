@@ -100,6 +100,7 @@ export type Quote = {
 	relayer: string;
 	sendTransactionCost: number;
 	maxUserGasDrop: number;
+	rentCost?: bigint;
 };
 
 export type QuoteOptions = {
@@ -122,16 +123,26 @@ export type Erc20Permit = {
 	s: string,
 }
 
-export type GetSolanaSwapParams = {
+type BaseGetSolanaSwapParams = {
 	amountIn: number,
 	fromToken: string,
 	minMiddleAmount: number,
 	middleToken: string,
 	userWallet: string,
-	userLedger: string,
 	slippageBps: number,
-	depositMode: 'WITH_FEE' | 'LOCK_FEE' | 'SWAP' | 'SWIFT' | 'SWIFT_GASLESS',
 }
+
+type MctpGetSolanaSwapParams = BaseGetSolanaSwapParams & {
+	userLedger: string,
+	depositMode: 'WITH_FEE' | 'LOCK_FEE' | 'SWAP',
+}
+
+type SwiftGetSolanaSwapParams = BaseGetSolanaSwapParams & {
+	orderHash: string,
+	depositMode: 'SWIFT' | 'SWIFT_GASLESS',
+}
+
+export type GetSolanaSwapParams = MctpGetSolanaSwapParams | SwiftGetSolanaSwapParams;
 
 export type SolanaKeyInfo = {
 	pubkey: string,
@@ -167,11 +178,13 @@ export type SwiftEvmOrderTypedData = {
 		CreateOrder: [
 			{ name: 'OrderId', type: 'bytes32' },
 			{ name: 'InputAmount', type: 'uint256' },
+			{ name: 'SubmissionFee', type: 'uint256' },
 		],
 	},
 	value: {
 		OrderId: string,
 		InputAmount: bigint,
+		SubmissionFee: bigint,
 	}
 }
 
