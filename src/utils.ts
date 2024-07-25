@@ -69,7 +69,14 @@ export function getAmountOfFractionalAmount(
 	if (!Number.isFinite(Number(amount))) {
 		throw new Error('getAmountOfFractionalAmount: Amount is not a number');
 	}
-	const fixedAmount = Number(amount).toFixed(Math.min(8, Number(decimals)));
+	const cutFactor = Math.min(8, Number(decimals));
+	const numStr = Number(amount).toFixed(cutFactor + 1);
+	const reg = new RegExp(`^-?\\d+(?:\\.\\d{0,${cutFactor}})?`);
+	const matchResult = numStr.match(reg);
+	if (!matchResult) {
+		throw new Error('getAmountOfFractionalAmount: fixedAmount is null');
+	}
+	const fixedAmount = matchResult[0];
 	return parseUnits(fixedAmount, Number(decimals))
 }
 
@@ -121,7 +128,11 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [8, 6, 0];
+const sdkVersion = [9, 0, 0];
+
+export function getSdkVersion(): string {
+	return sdkVersion.join('_');
+}
 
 export function checkSdkVersionSupport(minimumVersion: [number, number, number]): boolean {
 	//major
