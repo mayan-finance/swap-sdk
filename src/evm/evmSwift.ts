@@ -239,6 +239,8 @@ export function getSwiftOrderTypeData(
 		throw new Error('Invalid signer chain id');
 	}
 
+	const totalAmountIn = getAmountOfFractionalAmount(quote.effectiveAmountIn, quote.swiftInputDecimals);
+	const submitFee = BigInt(quote.submitRelayerFee64);
 	return {
 		domain: {
 			name: 'Mayan Swift',
@@ -249,11 +251,13 @@ export function getSwiftOrderTypeData(
 			CreateOrder: [
 				{ name: 'OrderId', type: 'bytes32' },
 				{ name: 'InputAmount', type: 'uint256' },
+				{ name: 'SubmissionFee', type: 'uint256' },
 			],
 		},
 		value: {
 			OrderId: orderHash,
-			InputAmount: getAmountOfFractionalAmount(quote.effectiveAmountIn, quote.swiftInputDecimals),
+			InputAmount:  totalAmountIn - submitFee,
+			SubmissionFee: submitFee,
 		}
 	}
 }
@@ -278,6 +282,7 @@ export type SwiftEvmGasLessParams = {
 		referrerBps: number;
 		auctionMode: number;
 		random: string;
+		submissionFee: bigint;
 	};
 	orderTypedData: SwiftEvmOrderTypedData;
 }
@@ -328,6 +333,7 @@ export function getSwiftFromEvmGasLessParams(
 			sourceChainId,
 			amountIn,
 			tokenIn,
+			submissionFee: BigInt(quote.submitRelayerFee64),
 		},
 		orderHash,
 		orderTypedData
