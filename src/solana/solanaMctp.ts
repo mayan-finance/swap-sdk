@@ -327,7 +327,8 @@ type CreateMctpBridgeLedgerInstructionParams = {
 	feeSolana: number | null,
 	feeRedeem: number,
 	gasDrop: number,
-	amountInMin: number
+	amountInMin: number,
+	referrerAddress?: string | null | undefined,
 	mode: 'WITH_FEE' | 'LOCK_FEE',
 }
 function createMctpBridgeLedgerInstruction(params: CreateMctpBridgeLedgerInstructionParams): TransactionInstruction {
@@ -356,6 +357,12 @@ function createMctpBridgeLedgerInstruction(params: CreateMctpBridgeLedgerInstruc
 	const feeSolana = getSafeU64Blob(
 		getAmountOfFractionalAmount(params.feeSolana || 0, CCTP_TOKEN_DECIMALS)
 	);
+
+	const refAddress = params.referrerAddress ?
+		Buffer.from(hexToUint8Array(
+			nativeAddressToHexString(params.referrerAddress, destinationChainId)
+		)) : SystemProgram.programId.toBuffer();
+
 	const accounts: AccountMeta[] = [
 		{pubkey: user, isWritable: true, isSigner: true},
 		{pubkey: params.ledger, isWritable: true, isSigner: false},
@@ -364,6 +371,7 @@ function createMctpBridgeLedgerInstruction(params: CreateMctpBridgeLedgerInstruc
 		{pubkey: params.randomKey, isWritable: false, isSigner: true},
 		{pubkey: SYSVAR_RENT_PUBKEY, isWritable: false, isSigner: false},
 		{pubkey: SystemProgram.programId, isWritable: false, isSigner: false},
+		{pubkey: new PublicKey(refAddress), isWritable: false, isSigner: false},
 	];
 	const data = Buffer.alloc(MctpBridgeLedgerLayout.span);
 	MctpBridgeLedgerLayout.encode(
@@ -599,6 +607,7 @@ export async function createMctpFromSolanaInstructions(
 				gasDrop: quote.gasDrop,
 				amountInMin: quote.effectiveAmountIn,
 				mode,
+				referrerAddress,
 			}));
 			if (mode === 'WITH_FEE') {
 				const {
@@ -675,6 +684,7 @@ export async function createMctpFromSolanaInstructions(
 				gasDrop: quote.gasDrop,
 				amountInMin: quote.minMiddleAmount,
 				mode,
+				referrerAddress,
 			}));
 		}
 	}
