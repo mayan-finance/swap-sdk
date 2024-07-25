@@ -25,7 +25,7 @@ import {
 import {Buffer} from 'buffer';
 import addresses from '../addresses'
 import {ZeroAddress} from 'ethers';
-import {getCurrentChainTime, getSuggestedRelayer} from '../api';
+import { getCurrentChainTime, getSuggestedRelayer, submitSwiftSolanaSwap } from '../api';
 import {
 	createAssociatedTokenAccountInstruction,
 	createSyncNativeInstruction,
@@ -279,7 +279,7 @@ export async function swapFromSolana(
 	connection?: Connection, extraRpcs?: string[], sendOptions?: SendOptions
 ): Promise<{
 	signature: string,
-	serializedTrx: Uint8Array,
+	serializedTrx: Uint8Array | null,
 }> {
 	const solanaConnection = connection ??
 		new Connection('https://rpc.ankr.com/solana');
@@ -307,8 +307,11 @@ export async function swapFromSolana(
 	transaction.sign(signers);
 	const signedTrx = await signTransaction(transaction);
 	if (quote.gasless) {
-		throw new Error("NOT IMPLEMENTED YET!");
+		const serializedTrx = Buffer.from(signedTrx.serialize()).toString('base64');
+		const { orderHash } = await submitSwiftSolanaSwap(serializedTrx);
+		return { signature: orderHash, serializedTrx: null };
 	}
+
 	return await submitTransactionWithRetry({
 		trx: signedTrx.serialize(),
 		connection: solanaConnection,

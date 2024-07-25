@@ -88,7 +88,7 @@ export function createSwiftOrderHash(
 	data.writeUInt8(quote.referrerBps, offset);
 	offset += 1;
 
-	const feeRateMayan = quote.referrerBps;
+	const feeRateMayan = quote.protocolBps;
 	data.writeUInt8(feeRateMayan, offset);
 	offset += 1;
 
@@ -208,7 +208,6 @@ export async function createSwiftFromSolanaInstructions(
 	lookupTables:  AddressLookupTableAccount[],
 }> {
 
-	throw new Error('Unsupported yet: Swift from Solana');
 	if (quote.type !== 'SWIFT') {
 		throw new Error('Unsupported quote type for Swift: ' + quote.type);
 	}
@@ -288,12 +287,13 @@ export async function createSwiftFromSolanaInstructions(
 			minMiddleAmount: quote.minMiddleAmount,
 			middleToken: quote.swiftInputContract,
 			userWallet: swapperAddress,
-			userLedger: stateAccount.toString(),
 			slippageBps: quote.slippageBps,
 			fromToken: quote.fromToken.contract,
 			amountIn: quote.effectiveAmountIn,
 			depositMode: quote.gasless ? 'SWIFT_GASLESS' : 'SWIFT',
+			orderHash: `0x${hash.toString('hex')}`,
 		});
+
 		const clientSwap = await decentralizeClientSwapInstructions(clientSwapRaw, connection);
 		instructions.push(...clientSwap.computeBudgetInstructions);
 		if (clientSwap.setupInstructions) {
