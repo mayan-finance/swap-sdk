@@ -61,12 +61,12 @@ export async function fetchTokenList(chain: ChainName, nonPortal: boolean = fals
 	throw new Error('Cannot fetch Mayan tokens!');
 }
 
-export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions = {
+export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOptions = {
 	swift: true,
 	mctp: true,
 	gasless: false,
 	onlyDirect: false,
-}): Promise<Quote[]> {
+}): string {
 	const { gasDrop, referrerBps } = params;
 	let slippageBps = params.slippageBps;
 	if (!Number.isFinite(slippageBps)) {
@@ -95,7 +95,15 @@ export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions
 	};
 	const baseUrl = `${addresses.PRICE_URL}/quote?`;
 	const queryString = toQueryString(queryParams);
-	const url = baseUrl + queryString;
+	return (baseUrl + queryString);
+}
+export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions = {
+	swift: true,
+	mctp: true,
+	gasless: false,
+	onlyDirect: false,
+}): Promise<Quote[]> {
+	const url = generateFetchQuoteUrl(params, quoteOptions);
 	const res = await fetch(url, {
 		method: 'GET',
 		redirect: 'follow',
