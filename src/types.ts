@@ -56,6 +56,7 @@ export type Quote = {
 	clientRelayerFeeSuccess: number | null;
 	clientRelayerFeeRefund: number | null;
 	eta: number;
+	etaSeconds: number;
 	clientEta: string;
 	fromToken: Token;
 	toToken: Token;
