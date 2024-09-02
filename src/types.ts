@@ -26,7 +26,7 @@ export type QuoteParams = {
 	toChain: ChainName;
 	//@deprecated
 	slippage?: number;
-	slippageBps: number;
+	slippageBps: 'auto' | number;
 	gasDrop?: number;
 	referrer?: string;
 	referrerBps?: number;

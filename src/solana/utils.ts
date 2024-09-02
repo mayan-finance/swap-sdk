@@ -77,7 +77,7 @@ export async function submitTransactionWithRetry(
 				console.error('Transaction not submitted, remaining attempts:', rate - i - 1, err);
 			}
 		}
-		await wait(500);
+		await wait(1000);
 	}
 
 	if (!signature) {

@@ -69,7 +69,7 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 }): string {
 	const { gasDrop, referrerBps } = params;
 	let slippageBps = params.slippageBps;
-	if (!Number.isFinite(slippageBps)) {
+	if (slippageBps !== 'auto' && !Number.isFinite(slippageBps)) {
 		slippageBps = params.slippage * 100;
 	}
 	const _quoteOptions: QuoteOptions = {
