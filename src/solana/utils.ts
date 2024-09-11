@@ -16,6 +16,7 @@ import addresses from "../addresses";
 import {Buffer} from "buffer";
 import {blob, struct, u8} from "@solana/buffer-layout";
 import { sha256 } from 'js-sha256';
+import { getSuggestedRelayer } from '../api';
 
 const cachedConnections: Record<string, Connection> = {};
 
@@ -344,7 +345,7 @@ export async function getAddressLookupTableAccounts(
 }
 
 
-export async  function decentralizeClientSwapInstructions(params: SolanaClientSwap, connection: Connection) {
+export function decentralizeClientSwapInstructions(params: SolanaClientSwap, connection: Connection) {
 	const swapInstruction = deserializeInstructionInfo(params.swapInstruction);
 	const cleanupInstruction = params.cleanupInstruction ?
 		deserializeInstructionInfo(params.cleanupInstruction) : null;
@@ -352,16 +353,13 @@ export async  function decentralizeClientSwapInstructions(params: SolanaClientSw
 		params.computeBudgetInstructions.map(deserializeInstructionInfo) : [];
 	const setupInstructions = params.setupInstructions ?
 		params.setupInstructions.map(deserializeInstructionInfo) : [];
-	const addressLookupTableAccounts = await getAddressLookupTableAccounts(
-		params.addressLookupTableAddresses, connection
-	);
 
 	return {
 		swapInstruction,
 		cleanupInstruction,
 		computeBudgetInstructions,
 		setupInstructions,
-		addressLookupTableAccounts,
+		addressLookupTableAddresses: params.addressLookupTableAddresses,
 	};
 }
 
@@ -370,3 +368,14 @@ export function getAnchorInstructionData(name: string): Buffer {
 	return Buffer.from(sha256.digest(preimage)).slice(0, 8);
 }
 
+export async function decideRelayer(): Promise<PublicKey> {
+	let relayer: PublicKey;
+	try {
+		const suggestedRelayer = await getSuggestedRelayer();
+		relayer = new PublicKey(suggestedRelayer);
+	} catch (err) {
+		console.log('Relayer not found, using system program');
+		relayer = SystemProgram.programId;
+	}
+	return relayer;
+}
