@@ -21,7 +21,7 @@ import { getSwapSolana } from '../api';
 import {
 	createAssociatedTokenAccountInstruction,
 	createSplTransferInstruction, createSyncNativeInstruction,
-	decentralizeClientSwapInstructions, getAnchorInstructionData, solMint
+	decentralizeClientSwapInstructions, getAddressLookupTableAccounts, getAnchorInstructionData, solMint
 } from './utils';
 
 export function createSwiftOrderHash(
@@ -218,13 +218,10 @@ export async function createSwiftFromSolanaInstructions(
 	let instructions: TransactionInstruction[] = [];
 	let lookupTables: AddressLookupTableAccount[] = [];
 
-	const mayanLookupTable = await connection.getAddressLookupTable(
-		new PublicKey(addresses.LOOKUP_TABLE)
-	);
-	if (!mayanLookupTable || !mayanLookupTable.value) {
-		throw new Error('Address lookup table not found');
-	}
-	lookupTables.push(mayanLookupTable.value);
+	let _lookupTablesAddress: string[] = [];
+
+	_lookupTablesAddress.push(addresses.LOOKUP_TABLE);
+
 
 	const swiftProgram = new PublicKey(addresses.SWIFT_PROGRAM_ID);
 	const trader = new PublicKey(swapperAddress);
@@ -294,7 +291,7 @@ export async function createSwiftFromSolanaInstructions(
 			orderHash: `0x${hash.toString('hex')}`,
 		});
 
-		const clientSwap = await decentralizeClientSwapInstructions(clientSwapRaw, connection);
+		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection);
 		instructions.push(...clientSwap.computeBudgetInstructions);
 		if (clientSwap.setupInstructions) {
 			instructions.push(...clientSwap.setupInstructions);
@@ -303,7 +300,7 @@ export async function createSwiftFromSolanaInstructions(
 		if (clientSwap.cleanupInstruction) {
 			instructions.push(clientSwap.cleanupInstruction);
 		}
-		lookupTables.push(...clientSwap.addressLookupTableAccounts);
+		_lookupTablesAddress.push(...clientSwap.addressLookupTableAddresses);
 	}
 	instructions.push(createSwiftInitInstruction({
 		quote,
@@ -317,6 +314,9 @@ export async function createSwiftFromSolanaInstructions(
 		deadline,
 		referrerAddress,
 	}));
+
+	lookupTables = await getAddressLookupTableAccounts(_lookupTablesAddress, connection)
+
 	return {instructions, signers: [], lookupTables};
 }
 

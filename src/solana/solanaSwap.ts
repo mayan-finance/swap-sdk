@@ -30,7 +30,7 @@ import {
 	createAssociatedTokenAccountInstruction,
 	createSyncNativeInstruction,
 	createApproveInstruction,
-	submitTransactionWithRetry,
+	submitTransactionWithRetry, decideRelayer
 } from './utils';
 import { createMctpFromSolanaInstructions } from "./solanaMctp";
 import { createSwiftFromSolanaInstructions } from './solanaSwift';
@@ -124,17 +124,23 @@ export async function createSwapFromSolanaInstructions(
 	const fromAccount = getAssociatedTokenAddress(fromMint, swapper);
 	const toAccount = getAssociatedTokenAddress(fromMint, state, true);
 
+	const [
+		[fromAccountData, toAccountData],
+		stateRent,
+		relayer,
+	] = await Promise.all([
+		solanaConnection.getMultipleAccountsInfo([fromAccount, toAccount], 'finalized'),
+		solanaConnection.getMinimumBalanceForRentExemption(STATE_SIZE),
+		decideRelayer(),
+	])
 
-	const fromAccountData = await solanaConnection.getAccountInfo(
-		fromAccount, 'finalized');
 	if (!fromAccountData || fromAccountData.data.length === 0) {
 		instructions.push(createAssociatedTokenAccountInstruction(
 			swapper, fromAccount, swapper, fromMint
 		));
 	}
 
-	const toAccountData = await solanaConnection.getAccountInfo(
-		toAccount, 'finalized');
+
 	if (!toAccountData || toAccountData.data.length === 0) {
 		instructions.push(createAssociatedTokenAccountInstruction(
 			swapper, toAccount, state, fromMint
@@ -159,22 +165,12 @@ export async function createSwapFromSolanaInstructions(
 		fromAccount, delegate.publicKey, swapper, amount
 	));
 
-	const stateRent =
-		await solanaConnection.getMinimumBalanceForRentExemption(STATE_SIZE);
+
 	instructions.push(SystemProgram.transfer({
 		fromPubkey: swapper,
 		toPubkey: delegate.publicKey,
 		lamports: stateRent,
 	}));
-
-	let relayer: PublicKey;
-	try {
-		const suggestedRelayer = await getSuggestedRelayer();
-		relayer = new PublicKey(suggestedRelayer);
-	} catch (err) {
-		console.log('Relayer not found, using system program');
-		relayer = SystemProgram.programId;
-	}
 
 	const swapKeys: Array<AccountMeta> = [
 		{pubkey: delegate.publicKey, isWritable: false, isSigner: true},
