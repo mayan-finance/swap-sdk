@@ -1,27 +1,32 @@
 import {
 	Contract,
+	ethers,
+	Overrides,
 	Signer,
 	toBeHex,
-	Overrides,
-	ZeroAddress,
+	TransactionRequest,
 	TransactionResponse,
-	TransactionRequest, TypedDataEncoder
+	ZeroAddress
 } from 'ethers';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
-import type {Erc20Permit, Quote, ReferrerAddresses, EvmForwarderParams} from '../types';
+import type { Erc20Permit, EvmForwarderParams, Quote, ReferrerAddresses } from '../types';
 import {
+	getAmountOfFractionalAmount,
 	getAssociatedTokenAddress,
+	getEvmChainIdByName,
+	getGasDecimal,
+	getQuoteSuitableReferrerAddress,
+	getWormholeChainIdById,
+	getWormholeChainIdByName,
 	nativeAddressToHexString,
-	getAmountOfFractionalAmount, getWormholeChainIdByName,
-	getWormholeChainIdById, getGasDecimal, getEvmChainIdByName,
-	getQuoteSuitableReferrerAddress, ZeroPermit
+	ZeroPermit
 } from '../utils';
 import MayanSwapArtifact from './MayanSwapArtifact';
 import MayanForwarderArtifact from './MayanForwarderArtifact';
 import addresses from '../addresses';
 import { Buffer } from 'buffer';
 import { getMctpFromEvmTxPayload } from './evmMctp';
-import { getSwiftFromEvmGasLessParams, getSwiftFromEvmTxPayload, getSwiftOrderTypeData } from './evmSwift';
+import { getSwiftFromEvmGasLessParams, getSwiftFromEvmTxPayload } from './evmSwift';
 import { submitSwiftEvmSwap } from '../api';
 
 export type ContractRelayerFees = {
@@ -300,4 +305,23 @@ export async function estimateQuoteRequiredGas(
 		return baseGas * BigInt(110) / BigInt(100);
 	}
 	return baseGas;
+}
+
+export async function estimateQuoteRequiredGasAprox(
+	quote: Quote,
+	provider: ethers.JsonRpcProvider,
+	permit: Erc20Permit | null | undefined,
+	payload: Uint8Array | Buffer | null | undefined
+): Promise<bigint> {
+	const signerAddress = '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
+	const sampleDestinationAddress: string = quote.toChain === 'solana' ? 'ENsytooJVSZyNHbxvueUeX8Am8gcNqPivVVE8USCBiy5' : '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
+	const signerChainId = quote?.fromToken?.chainId;
+	if (quote.type === 'SWIFT' && quote.gasless) {
+		return BigInt(0);
+	}
+	const transactionRequest = getSwapFromEvmTxPayload(
+		quote, signerAddress, sampleDestinationAddress, null,
+		signerAddress, signerChainId, payload, permit
+	);
+	return provider.estimateGas(transactionRequest);
 }
