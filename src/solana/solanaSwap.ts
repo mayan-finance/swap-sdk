@@ -59,7 +59,10 @@ const SwapLayout = struct<any>([
 export async function createSwapFromSolanaInstructions(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
 	referrerAddresses: ReferrerAddresses | null | undefined,
-	connection?: Connection,
+	connection?: Connection, options: {
+		allowSwapperOffCurve?: boolean,
+		forceSkipCctpInstructions?: boolean,
+	} = {}
 ): Promise<{
 	instructions: Array<TransactionInstruction>,
 	signers: Array<Keypair>,
@@ -69,7 +72,7 @@ export async function createSwapFromSolanaInstructions(
 	const referrerAddress = getQuoteSuitableReferrerAddress(quote, referrerAddresses);
 
 	if (quote.type === 'MCTP') {
-		return createMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection);
+		return createMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
 	}
 	if (quote.type === 'SWIFT') {
 		return createSwiftFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection);

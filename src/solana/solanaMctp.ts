@@ -37,7 +37,7 @@ const MCTPBridgeWithFeeLayout = struct<any>([
 
 function createMctpBridgeWithFeeInstruction(
 	ledger: PublicKey, toChain: ChainName, mintAddress: string,
-	relayerAddress: string, feeSolana: number | null,
+	relayerAddress: string, feeSolana: bigint,
 ): {
 	instruction: TransactionInstruction;
 	signers: Keypair[];
@@ -57,7 +57,7 @@ function createMctpBridgeWithFeeInstruction(
 	);
 
 	let relayerAccount: PublicKey;
-	if (feeSolana && feeSolana > 0) {
+	if (feeSolana && feeSolana > BigInt(0)) {
 		relayerAccount = getAssociatedTokenAddress(mint, relayer, false);
 	} else {
 		relayerAccount = ledger;
@@ -126,7 +126,7 @@ const MctpBridgeLockFeeLayout = struct<any>([
 
 function createMctpBridgeLockFeeInstruction(
 	ledger: PublicKey, toChain: ChainName, mintAddress: string,
-	relayerAddress: string, feeSolana: number | null,
+	relayerAddress: string, feeSolana: bigint,
 ): {
 	instructions: TransactionInstruction[];
 	signer: Keypair;
@@ -156,7 +156,7 @@ function createMctpBridgeLockFeeInstruction(
 	);
 
 	let relayerAccount: PublicKey;
-	if (feeSolana && feeSolana > 0) {
+	if (feeSolana && feeSolana > BigInt(0)) {
 		relayerAccount = getAssociatedTokenAddress(mint, relayer, false);
 	} else {
 		relayerAccount = ledger;
@@ -221,7 +221,7 @@ const MctpInitSwapLayout = struct<any>([
 ]);
 function createMctpInitSwapInstruction(
 	ledger: PublicKey, toChain: ChainName, mintAddress: string,
-	relayerAddress: string, feeSolana: number | null,
+	relayerAddress: string, feeSolana: bigint,
 ): {
 	instruction: TransactionInstruction;
 	signer: Keypair;
@@ -255,7 +255,7 @@ function createMctpInitSwapInstruction(
 	);
 
 	let relayerAccount: PublicKey;
-	if (feeSolana && feeSolana > 0) {
+	if (feeSolana && feeSolana > BigInt(0)) {
 		relayerAccount = getAssociatedTokenAddress(mint, relayer, false);
 	} else {
 		relayerAccount = ledger;
@@ -324,7 +324,7 @@ type CreateMctpBridgeLedgerInstructionParams = {
 	randomKey: PublicKey,
 	toChain: ChainName,
 	destinationAddress: string,
-	feeSolana: number | null,
+	feeSolana: bigint,
 	feeRedeem: number,
 	gasDrop: number,
 	amountInMin: number,
@@ -354,9 +354,7 @@ function createMctpBridgeLedgerInstruction(params: CreateMctpBridgeLedgerInstruc
 	const feeRedeem = getSafeU64Blob(
 		getAmountOfFractionalAmount(params.feeRedeem, CCTP_TOKEN_DECIMALS)
 	);
-	const feeSolana = getSafeU64Blob(
-		getAmountOfFractionalAmount(params.feeSolana || 0, CCTP_TOKEN_DECIMALS)
-	);
+	const feeSolana = getSafeU64Blob(params.feeSolana);
 
 	const refAddress = params.referrerAddress ?
 		Buffer.from(hexToUint8Array(
@@ -368,7 +366,7 @@ function createMctpBridgeLedgerInstruction(params: CreateMctpBridgeLedgerInstruc
 		{pubkey: params.ledger, isWritable: true, isSigner: false},
 		{pubkey: ledgerAccount, isWritable: false, isSigner: false},
 		{pubkey: mint, isWritable: false, isSigner: false},
-		{pubkey: params.randomKey, isWritable: false, isSigner: true},
+		{pubkey: params.randomKey, isWritable: false, isSigner: false},
 		{pubkey: SYSVAR_RENT_PUBKEY, isWritable: false, isSigner: false},
 		{pubkey: SystemProgram.programId, isWritable: false, isSigner: false},
 		{pubkey: new PublicKey(refAddress), isWritable: false, isSigner: false},
@@ -419,7 +417,7 @@ type CreateMctpSwapLedgerInstructionParams = {
 	randomKey: PublicKey,
 	toChain: ChainName,
 	destinationAddress: string,
-	feeSolana: number | null,
+	feeSolana: bigint,
 	feeRedeem: number,
 	gasDrop: number,
 	amountInMin: number,
@@ -450,9 +448,8 @@ function createMctpSwapLedgerInstruction(params: CreateMctpSwapLedgerInstruction
 	const feeRedeem = getSafeU64Blob(
 		getAmountOfFractionalAmount(params.feeRedeem, CCTP_TOKEN_DECIMALS)
 	);
-	const feeSolana = getSafeU64Blob(
-		getAmountOfFractionalAmount(params.feeSolana || 0, CCTP_TOKEN_DECIMALS)
-	);
+	const feeSolana = getSafeU64Blob(params.feeSolana);
+
 	const tokenOut = Buffer.from(hexToUint8Array(
 		nativeAddressToHexString(params.tokenOut, destinationChainId)
 	));
@@ -470,7 +467,7 @@ function createMctpSwapLedgerInstruction(params: CreateMctpSwapLedgerInstruction
 		{pubkey: params.ledger, isWritable: true, isSigner: false},
 		{pubkey: ledgerAccount, isWritable: false, isSigner: false},
 		{pubkey: mint, isWritable: false, isSigner: false},
-		{pubkey: params.randomKey, isWritable: false, isSigner: true},
+		{pubkey: params.randomKey, isWritable: false, isSigner: false},
 		{pubkey: SYSVAR_RENT_PUBKEY, isWritable: false, isSigner: false},
 		{pubkey: SystemProgram.programId, isWritable: false, isSigner: false},
 	];
@@ -504,12 +501,19 @@ function createMctpSwapLedgerInstruction(params: CreateMctpSwapLedgerInstruction
 export async function createMctpFromSolanaInstructions(
 	quote: Quote, swapperAddress: string, destinationAddress: string,
 	referrerAddress: string | null | undefined,
-	connection: Connection,
+	connection: Connection, options: {
+		allowSwapperOffCurve?: boolean,
+		forceSkipCctpInstructions?: boolean,
+	} = {}
 ): Promise<{
 	instructions: TransactionInstruction[],
 	signers: Keypair[],
 	lookupTables:  AddressLookupTableAccount[],
 }> {
+
+	const forceSkipCctpInstructions = options?.forceSkipCctpInstructions || false;
+	const allowSwapperOffCurve = options?.allowSwapperOffCurve || false;
+
 	if (quote.toChain === 'solana') {
 		throw new Error('Unsupported destination chain: ' + quote.toChain);
 	}
@@ -526,7 +530,6 @@ export async function createMctpFromSolanaInstructions(
 	const user = new PublicKey(swapperAddress);
 
 	const randomKey = Keypair.generate();
-	signers.push(randomKey);
 
 	const deadline = quote.deadline64 ? BigInt(quote.deadline64) : BigInt(0);
 	if (quote.hasAuction && !Number(quote.deadline64)) {
@@ -544,6 +547,8 @@ export async function createMctpFromSolanaInstructions(
 	const mode = quote.cheaperChain === 'solana' ? 'LOCK_FEE' : 'WITH_FEE';
 
 	if (quote.fromToken.contract === quote.mctpInputContract) {
+		// If forceSkip is false then user will execute the cctp instructions by themselves
+		const feeSolana: bigint = forceSkipCctpInstructions ? BigInt(quote.solanaRelayerFee64) : BigInt(0);
 		if (quote.suggestedPriorityFee > 0) {
 			instructions.push(ComputeBudgetProgram.setComputeUnitPrice({
 				microLamports: quote.suggestedPriorityFee,
@@ -555,7 +560,7 @@ export async function createMctpFromSolanaInstructions(
 		instructions.push(
 			createSplTransferInstruction(
 				getAssociatedTokenAddress(
-					new PublicKey(quote.mctpInputContract), user, false
+					new PublicKey(quote.mctpInputContract), user, allowSwapperOffCurve
 				),
 				ledgerAccount,
 				user,
@@ -570,7 +575,7 @@ export async function createMctpFromSolanaInstructions(
 				randomKey: randomKey.publicKey,
 				toChain: quote.toChain,
 				destinationAddress,
-				feeSolana: quote.solanaRelayerFee,
+				feeSolana,
 				feeRedeem: quote.redeemRelayerFee,
 				gasDrop: quote.gasDrop,
 				amountInMin: quote.effectiveAmountIn,
@@ -581,14 +586,16 @@ export async function createMctpFromSolanaInstructions(
 				deadline,
 				feeRateRef: quote.referrerBps,
 			}));
-			const {
-				instruction: _instruction,
-				signer: _signer
-			} = createMctpInitSwapInstruction(
-				ledger, quote.toChain, quote.mctpInputContract, swapperAddress, quote.solanaRelayerFee
-			);
-			instructions.push(_instruction);
-			signers.push(_signer);
+			if (!forceSkipCctpInstructions) {
+				const {
+					instruction: _instruction,
+					signer: _signer
+				} = createMctpInitSwapInstruction(
+					ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
+				);
+				instructions.push(_instruction);
+				signers.push(_signer);
+			}
 		}
 		else {
 			instructions.push(createMctpBridgeLedgerInstruction({
@@ -598,35 +605,38 @@ export async function createMctpFromSolanaInstructions(
 				randomKey: randomKey.publicKey,
 				toChain: quote.toChain,
 				destinationAddress,
-				feeSolana: quote.solanaRelayerFee,
+				feeSolana,
 				feeRedeem: quote.redeemRelayerFee,
 				gasDrop: quote.gasDrop,
 				amountInMin: quote.effectiveAmountIn,
 				mode,
 				referrerAddress,
 			}));
-			if (mode === 'WITH_FEE') {
-				const {
-					instruction: _instruction,
-					signers: _signers
-				} = createMctpBridgeWithFeeInstruction(
-					ledger, quote.toChain, quote.mctpInputContract, swapperAddress, quote.solanaRelayerFee
-				);
-				instructions.push(_instruction);
-				signers.push(..._signers);
-			} else {
-				const {
-					instructions: _instructions,
-					signer: _signer
-				} = createMctpBridgeLockFeeInstruction(
-					ledger, quote.toChain, quote.mctpInputContract, swapperAddress, quote.solanaRelayerFee
-				);
-				instructions.push(..._instructions);
-				signers.push(_signer);
+			if (!forceSkipCctpInstructions) {
+				if (mode === 'WITH_FEE') {
+					const {
+						instruction: _instruction,
+						signers: _signers
+					} = createMctpBridgeWithFeeInstruction(
+						ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
+					);
+					instructions.push(_instruction);
+					signers.push(..._signers);
+				} else {
+					const {
+						instructions: _instructions,
+						signer: _signer
+					} = createMctpBridgeLockFeeInstruction(
+						ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
+					);
+					instructions.push(..._instructions);
+					signers.push(_signer);
+				}
 			}
 		}
 	}
 	else {
+		const feeSolana: bigint = BigInt(quote.solanaRelayerFee64);
 		const clientSwapRaw = await getSwapSolana({
 			minMiddleAmount: quote.minMiddleAmount,
 			middleToken: quote.mctpInputContract,
@@ -655,7 +665,7 @@ export async function createMctpFromSolanaInstructions(
 				randomKey: randomKey.publicKey,
 				toChain: quote.toChain,
 				destinationAddress,
-				feeSolana: quote.solanaRelayerFee,
+				feeSolana,
 				feeRedeem: quote.redeemRelayerFee,
 				gasDrop: quote.gasDrop,
 				amountInMin: quote.minMiddleAmount,
@@ -675,7 +685,7 @@ export async function createMctpFromSolanaInstructions(
 				randomKey: randomKey.publicKey,
 				toChain: quote.toChain,
 				destinationAddress,
-				feeSolana: quote.solanaRelayerFee,
+				feeSolana,
 				feeRedeem: quote.redeemRelayerFee,
 				gasDrop: quote.gasDrop,
 				amountInMin: quote.minMiddleAmount,
