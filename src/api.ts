@@ -7,7 +7,7 @@ import {
 	QuoteOptions,
 	QuoteError,
 	SolanaClientSwap,
-	GetSolanaSwapParams
+	GetSolanaSwapParams, TokenStandard
 } from './types';
 import addresses from './addresses';
 import { checkSdkVersionSupport, getSdkVersion } from './utils';
@@ -38,8 +38,9 @@ async function check5xxError(res: Response): Promise<void> {
 	}
 }
 
-export async function fetchAllTokenList(): Promise<{[index: string]: Token[]}> {
-	const res = await fetch(`${addresses.PRICE_URL}/tokens`, {
+export async function fetchAllTokenList(tokenStandards?: TokenStandard[]): Promise<{[index: string]: Token[]}> {
+	const query = tokenStandards ? `?standard=${tokenStandards.join(',')}` : '';
+	const res = await fetch(`${addresses.PRICE_URL}/tokens${query}`, {
 		method: 'GET',
 		redirect: 'follow',
 	});
@@ -51,8 +52,13 @@ export async function fetchAllTokenList(): Promise<{[index: string]: Token[]}> {
 	throw new Error('Cannot fetch Mayan tokens!');
 }
 
-export async function fetchTokenList(chain: ChainName, nonPortal: boolean = false): Promise<Token[]> {
-	const res = await fetch(`${addresses.PRICE_URL}/tokens?chain=${chain}${nonPortal ? '&nonPortal=true' : ''}`);
+export async function fetchTokenList(chain: ChainName, nonPortal: boolean = false, tokenStandards?: TokenStandard[]): Promise<Token[]> {
+	const queryParams = {
+		chain,
+		nonPortal,
+		standard: tokenStandards ? tokenStandards?.join(',') : undefined,
+	};
+	const res = await fetch(`${addresses.PRICE_URL}/tokens?${toQueryString(queryParams)}`);
 	await check5xxError(res);
 	if (res.status === 200) {
 		const result = await res.json();

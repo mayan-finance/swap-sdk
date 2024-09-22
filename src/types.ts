@@ -3,6 +3,8 @@ import { Transaction, VersionedTransaction } from '@solana/web3.js';
 export type ChainName = 'solana'
 	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' | 'base' | 'aptos';
 
+export type TokenStandard = 'native' | 'erc20' | 'spl' | 'spl2022';
+
 export type Token = {
 	name: string,
 	symbol: string,
@@ -16,6 +18,7 @@ export type Token = {
 	realOriginChainId?: number,
 	realOriginContractAddress?: string,
 	supportsPermit: boolean,
+	standard: TokenStandard,
 };
 
 export type QuoteParams = {
@@ -53,6 +56,7 @@ export type Quote = {
 	refundRelayerFee64: string;
 	cancelRelayerFee64: string;
 	submitRelayerFee64: string;
+	solanaRelayerFee64: string;
 	clientRelayerFeeSuccess: number | null;
 	clientRelayerFeeRefund: number | null;
 	eta: number;
