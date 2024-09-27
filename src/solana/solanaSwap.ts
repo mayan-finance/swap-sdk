@@ -12,7 +12,7 @@ import {
 	ComputeBudgetProgram, AddressLookupTableAccount, MessageV0, VersionedTransaction
 } from '@solana/web3.js';
 import {blob, struct, u16, u8} from '@solana/buffer-layout';
-import { Quote, ReferrerAddresses, SolanaTransactionSigner } from '../types';
+import { Quote, ReferrerAddresses, SolanaTransactionSigner, JitoBundleOptions } from '../types';
 import {
 	getAmountOfFractionalAmount,
 	getAssociatedTokenAddress, getGasDecimalsInSolana,
@@ -30,7 +30,7 @@ import {
 	createAssociatedTokenAccountInstruction,
 	createSyncNativeInstruction,
 	createApproveInstruction,
-	submitTransactionWithRetry, decideRelayer
+	submitTransactionWithRetry, decideRelayer, getJitoTipTransfer, sendJitoBundle
 } from './utils';
 import { createMctpFromSolanaInstructions } from "./solanaMctp";
 import { createSwiftFromSolanaInstructions } from './solanaSwift';
@@ -75,7 +75,7 @@ export async function createSwapFromSolanaInstructions(
 		return createMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
 	}
 	if (quote.type === 'SWIFT') {
-		return createSwiftFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection);
+		return createSwiftFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
 	}
 
 	let instructions: Array<TransactionInstruction> = [];
@@ -275,7 +275,7 @@ export async function swapFromSolana(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
 	referrerAddresses: ReferrerAddresses | null | undefined,
 	signTransaction: SolanaTransactionSigner,
-	connection?: Connection, extraRpcs?: string[], sendOptions?: SendOptions
+	connection?: Connection, extraRpcs?: string[], sendOptions?: SendOptions, jitoOptions?: JitoBundleOptions
 ): Promise<{
 	signature: string,
 	serializedTrx: Uint8Array | null,
@@ -295,7 +295,7 @@ export async function swapFromSolana(
 
 	const feePayer = quote.gasless ? new PublicKey(quote.relayer) : swapper;
 
-	const {blockhash} = await connection.getLatestBlockhash();
+	const {blockhash, lastValidBlockHeight} = await connection.getLatestBlockhash();
 	const message = MessageV0.compile({
 		instructions,
 		payerKey: feePayer,
@@ -304,7 +304,20 @@ export async function swapFromSolana(
 	});
 	const transaction = new VersionedTransaction(message);
 	transaction.sign(signers);
-	const signedTrx = await signTransaction(transaction);
+	let signedTrx;
+	if (
+		!quote.gasless &&
+		jitoOptions &&
+		jitoOptions.tipLamports > 0  &&
+		jitoOptions.signAllTransactions
+	) {
+		const jitoTipTransfer = getJitoTipTransfer(swapperWalletAddress, blockhash, lastValidBlockHeight, jitoOptions);
+		const signedTrxs = await jitoOptions.signAllTransactions([transaction, jitoTipTransfer]);
+		signedTrx = signedTrxs[0];
+		sendJitoBundle(signedTrxs, jitoOptions);
+	} else {
+		signedTrx = await signTransaction(transaction);
+	}
 	if (quote.gasless) {
 		const serializedTrx = Buffer.from(signedTrx.serialize()).toString('base64');
 		const { orderHash } = await submitSwiftSolanaSwap(serializedTrx);
@@ -319,8 +332,4 @@ export async function swapFromSolana(
 		options: sendOptions,
 	});
 }
-
-
-
-
 

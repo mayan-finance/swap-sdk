@@ -8,14 +8,16 @@ import {
 	SYSVAR_RENT_PUBKEY,
 	Transaction,
 	TransactionInstruction,
-	AddressLookupTableAccount
-} from "@solana/web3.js";
+	AddressLookupTableAccount,
+	VersionedTransaction,
+} from '@solana/web3.js';
 import {getAmountOfFractionalAmount, getAssociatedTokenAddress, getSafeU64Blob, wait} from '../utils';
-import {InstructionInfo, SolanaClientSwap, SolanaTransactionSigner} from '../types';
+import {InstructionInfo, SolanaClientSwap, SolanaTransactionSigner, JitoBundleOptions} from '../types';
 import addresses from "../addresses";
 import {Buffer} from "buffer";
 import {blob, struct, u8} from "@solana/buffer-layout";
 import { sha256 } from 'js-sha256';
+import bs58 from 'bs58';
 import { getSuggestedRelayer } from '../api';
 
 const cachedConnections: Record<string, Connection> = {};
@@ -378,4 +380,50 @@ export async function decideRelayer(): Promise<PublicKey> {
 		relayer = SystemProgram.programId;
 	}
 	return relayer;
+}
+
+export function getJitoTipTransfer(
+	swapper: string,
+	blockhash: string,
+	lastValidBlockHeight: number,
+	options: JitoBundleOptions
+): Transaction {
+	const jitoAccount = options.jitoAccount || 'Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMzpKw6QNghXLvLkY';
+	return new Transaction({
+		feePayer: new PublicKey(swapper),
+		blockhash,
+		lastValidBlockHeight,
+	}).add(SystemProgram.transfer({
+		fromPubkey: new PublicKey(swapper),
+		toPubkey: new PublicKey(jitoAccount),
+		lamports: options.tipLamports,
+	}));
+}
+
+export async function sendJitoBundle(
+	singedTrxs: Array<Transaction | VersionedTransaction>,
+	options: JitoBundleOptions
+) {
+	try {
+		let signedTrxs: Uint8Array[] = [];
+		for (let trx of singedTrxs) {
+			signedTrxs.push(trx.serialize());
+		}
+		const bundle = {
+			jsonrpc: '2.0',
+			id: 1,
+			method: 'sendBundle',
+			params: [signedTrxs.map((trx) => bs58.encode(trx))],
+		};
+		await fetch(options.jitoSendUrl || 'https://mainnet.block-engine.jito.wtf/api/v1/bundles', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify(bundle),
+		});
+		console.log('Send Jito bundle success');
+	} catch (err) {
+		console.error('Send Jito bundle failed', err);
+	}
 }

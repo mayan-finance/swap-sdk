@@ -201,7 +201,9 @@ function createSwiftInitInstruction(
 export async function createSwiftFromSolanaInstructions(
 	quote: Quote, swapperAddress: string, destinationAddress: string,
 	referrerAddress: string | null | undefined,
-	connection: Connection,
+	connection: Connection, options: {
+		allowSwapperOffCurve?: boolean,
+	} = {}
 ): Promise<{
 	instructions: TransactionInstruction[],
 	signers: Keypair[],
@@ -214,6 +216,8 @@ export async function createSwiftFromSolanaInstructions(
 	if (quote.toChain === 'solana') {
 		throw new Error('Unsupported destination chain: ' + quote.toChain);
 	}
+
+	const allowSwapperOffCurve = options.allowSwapperOffCurve || false;
 
 	let instructions: TransactionInstruction[] = [];
 	let lookupTables: AddressLookupTableAccount[] = [];
@@ -271,7 +275,7 @@ export async function createSwiftFromSolanaInstructions(
 			instructions.push(
 				createSplTransferInstruction(
 					getAssociatedTokenAddress(
-						swiftInputMint, trader, false
+						swiftInputMint, trader, allowSwapperOffCurve
 					),
 					stateAccount,
 					trader,

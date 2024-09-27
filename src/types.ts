@@ -197,3 +197,10 @@ export type EvmForwarderParams = {
 	method: string,
 	params: any[],
 }
+
+export type JitoBundleOptions = {
+	tipLamports: number,
+	signAllTransactions: <T extends Transaction | VersionedTransaction>(transactions: T[]) => Promise<T[]>
+	jitoAccount?: string,
+	jitoSendUrl?: string,
+}
