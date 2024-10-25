@@ -1,5 +1,5 @@
 
-# Mayan Swap SDK
+# Mayan Cross-Chain Swap SDK
 A minimal package for sending cross-chain swap transactions
 
 ## Installation:
