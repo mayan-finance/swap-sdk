@@ -274,12 +274,14 @@ export async function swapFromEvm(
 		quote, swapperAddress, destinationAddress, referrerAddresses,
 		signerAddress, signerChainId, payload, permit
 	);
+	delete transactionRequest._forwarder;
 
 	if (overrides?.gasLimit) {
 		transactionRequest.gasLimit = overrides.gasLimit;
 	} else if (quote.type === 'MCTP' || quote.type === 'SWIFT') {
 		const estimatedGas = await signer.estimateGas(transactionRequest);
-		transactionRequest.gasLimit = estimatedGas * BigInt(110) / BigInt(100);
+		// convert gasLimit to string for support ethers.js v5
+		transactionRequest.gasLimit = String(BigInt(String(estimatedGas)) * BigInt(110) / BigInt(100));
 	}
 	transactionRequest.chainId = getEvmChainIdByName(quote.fromChain);
 	return signer.sendTransaction(transactionRequest);
@@ -300,7 +302,11 @@ export async function estimateQuoteRequiredGas(
 		quote, swapperAddress, sampleDestinationAddress, null,
 		signerAddress, signerChainId, payload, permit
 	);
-	const baseGas = await signer.estimateGas(transactionRequest);
+	delete transactionRequest._forwarder;
+
+	let baseGas = await signer.estimateGas(transactionRequest);
+	// make sure about baseGas type (ethers 5)
+	baseGas = BigInt(String(baseGas));
 	if (quote.type === 'MCTP' || quote.type === 'SWIFT') {
 		return baseGas * BigInt(110) / BigInt(100);
 	}
@@ -323,5 +329,7 @@ export async function estimateQuoteRequiredGasAprox(
 		quote, signerAddress, sampleDestinationAddress, null,
 		signerAddress, signerChainId, payload, permit
 	);
+	delete transactionRequest._forwarder;
+
 	return provider.estimateGas(transactionRequest);
 }
