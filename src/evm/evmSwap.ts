@@ -276,6 +276,16 @@ export async function swapFromEvm(
 	);
 	delete transactionRequest._forwarder;
 
+	if (overrides?.gasPrice) {
+		transactionRequest.gasPrice = overrides.gasPrice;
+	}
+	if (overrides?.maxFeePerGas) {
+		transactionRequest.maxFeePerGas = overrides.maxFeePerGas;
+	}
+	if (overrides?.maxPriorityFeePerGas) {
+		transactionRequest.maxPriorityFeePerGas = overrides.maxPriorityFeePerGas;
+	}
+
 	if (overrides?.gasLimit) {
 		transactionRequest.gasLimit = overrides.gasLimit;
 	} else if (quote.type === 'MCTP' || quote.type === 'SWIFT') {
