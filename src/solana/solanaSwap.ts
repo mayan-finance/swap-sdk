@@ -68,19 +68,18 @@ export async function createSwapFromSolanaInstructions(
 	signers: Array<Keypair>,
 	lookupTables: Array<AddressLookupTableAccount>,
 }> {
-
 	const referrerAddress = getQuoteSuitableReferrerAddress(quote, referrerAddresses);
+	const solanaConnection = connection ??
+		new Connection('https://rpc.ankr.com/solana');
 
 	if (quote.type === 'MCTP') {
-		return createMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
+		return createMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, solanaConnection, options);
 	}
 	if (quote.type === 'SWIFT') {
-		return createSwiftFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
+		return createSwiftFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, solanaConnection, options);
 	}
 
 	let instructions: Array<TransactionInstruction> = [];
-	const solanaConnection = connection ??
-		new Connection('https://rpc.ankr.com/solana');
 	const mayanProgram = new PublicKey(addresses.MAYAN_PROGRAM_ID);
 	const tokenProgram = new PublicKey(addresses.TOKEN_PROGRAM_ID);
 	const swapper = new PublicKey(swapperWalletAddress);
@@ -296,7 +295,7 @@ export async function swapFromSolana(
 		lookupTables
 	} = await createSwapFromSolanaInstructions(
 		quote, swapperWalletAddress, destinationAddress,
-		referrerAddresses, connection, instructionOptions
+		referrerAddresses, solanaConnection, instructionOptions
 	);
 
 	const swapper = new PublicKey(swapperWalletAddress);
