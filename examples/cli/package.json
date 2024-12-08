@@ -1,0 +1,16 @@
+{
+  "name": "cli",
+  "module": "main.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@mayanfinance/swap-sdk": "^9.8.0",
+    "@solana/web3.js": "^1.95.8",
+    "ethers": "^6.13.4"
+  }
+}
