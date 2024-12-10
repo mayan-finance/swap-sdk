@@ -2,7 +2,7 @@ import { fetchQuote } from '@mayanfinance/swap-sdk';
 import { swapSolana } from './solana';
 import { swapEVM } from './evm';
 
-// or for example 'polygon' for evm (note to change the amount)
+// or for example 'polygon' to swap from evm chain (note to change the amount)
 const fromChain = 'solana';
 const fromToken = '0x0000000000000000000000000000000000000000';
 const toChain = 'base';
