@@ -36,6 +36,11 @@ export default {
 					"type": "bytes32"
 				},
 				{
+					"internalType": "bytes32",
+					"name": "_suiEmitter",
+					"type": "bytes32"
+				},
+				{
 					"internalType": "uint8",
 					"name": "_consistencyLevel",
 					"type": "uint8"
@@ -46,12 +51,22 @@ export default {
 		},
 		{
 			"inputs": [],
+			"name": "CallerNotSet",
+			"type": "error"
+		},
+		{
+			"inputs": [],
 			"name": "CctpReceiveFailed",
 			"type": "error"
 		},
 		{
 			"inputs": [],
 			"name": "InvalidAction",
+			"type": "error"
+		},
+		{
+			"inputs": [],
+			"name": "InvalidDestAddr",
 			"type": "error"
 		},
 		{
@@ -71,12 +86,32 @@ export default {
 		},
 		{
 			"inputs": [],
+			"name": "InvalidMintRecipient",
+			"type": "error"
+		},
+		{
+			"inputs": [],
 			"name": "InvalidNonce",
 			"type": "error"
 		},
 		{
 			"inputs": [],
 			"name": "InvalidOrder",
+			"type": "error"
+		},
+		{
+			"inputs": [],
+			"name": "InvalidPayload",
+			"type": "error"
+		},
+		{
+			"inputs": [],
+			"name": "InvalidRedeemFee",
+			"type": "error"
+		},
+		{
+			"inputs": [],
+			"name": "MintRecepientNotSet",
 			"type": "error"
 		},
 		{
@@ -88,6 +123,56 @@ export default {
 			"inputs": [],
 			"name": "Unauthorized",
 			"type": "error"
+		},
+		{
+			"anonymous": false,
+			"inputs": [
+				{
+					"indexed": false,
+					"internalType": "uint32",
+					"name": "sourceDomain",
+					"type": "uint32"
+				},
+				{
+					"indexed": false,
+					"internalType": "uint64",
+					"name": "sourceNonce",
+					"type": "uint64"
+				},
+				{
+					"indexed": false,
+					"internalType": "uint256",
+					"name": "amount",
+					"type": "uint256"
+				}
+			],
+			"name": "OrderFulfilled",
+			"type": "event"
+		},
+		{
+			"anonymous": false,
+			"inputs": [
+				{
+					"indexed": false,
+					"internalType": "uint32",
+					"name": "sourceDomain",
+					"type": "uint32"
+				},
+				{
+					"indexed": false,
+					"internalType": "uint64",
+					"name": "sourceNonce",
+					"type": "uint64"
+				},
+				{
+					"indexed": false,
+					"internalType": "uint256",
+					"name": "amount",
+					"type": "uint256"
+				}
+			],
+			"name": "OrderRefunded",
+			"type": "event"
 		},
 		{
 			"inputs": [],
@@ -143,26 +228,19 @@ export default {
 					"type": "bytes32"
 				},
 				{
-					"components": [
-						{
-							"internalType": "uint32",
-							"name": "destDomain",
-							"type": "uint32"
-						},
-						{
-							"internalType": "bytes32",
-							"name": "mintRecipient",
-							"type": "bytes32"
-						},
-						{
-							"internalType": "bytes32",
-							"name": "callerAddr",
-							"type": "bytes32"
-						}
-					],
-					"internalType": "struct MayanCircle.CctpRecipient",
-					"name": "recipient",
-					"type": "tuple"
+					"internalType": "uint32",
+					"name": "destDomain",
+					"type": "uint32"
+				},
+				{
+					"internalType": "uint8",
+					"name": "payloadType",
+					"type": "uint8"
+				},
+				{
+					"internalType": "bytes",
+					"name": "customPayload",
+					"type": "bytes"
 				}
 			],
 			"name": "bridgeWithFee",
@@ -199,26 +277,14 @@ export default {
 					"type": "uint256"
 				},
 				{
-					"components": [
-						{
-							"internalType": "uint32",
-							"name": "destDomain",
-							"type": "uint32"
-						},
-						{
-							"internalType": "bytes32",
-							"name": "mintRecipient",
-							"type": "bytes32"
-						},
-						{
-							"internalType": "bytes32",
-							"name": "callerAddr",
-							"type": "bytes32"
-						}
-					],
-					"internalType": "struct MayanCircle.CctpRecipient",
-					"name": "recipient",
-					"type": "tuple"
+					"internalType": "uint32",
+					"name": "destDomain",
+					"type": "uint32"
+				},
+				{
+					"internalType": "bytes32",
+					"name": "destAddr",
+					"type": "bytes32"
 				}
 			],
 			"name": "bridgeWithLockedFee",
@@ -343,31 +409,33 @@ export default {
 					"type": "tuple"
 				},
 				{
-					"components": [
-						{
-							"internalType": "uint32",
-							"name": "destDomain",
-							"type": "uint32"
-						},
-						{
-							"internalType": "bytes32",
-							"name": "mintRecipient",
-							"type": "bytes32"
-						},
-						{
-							"internalType": "bytes32",
-							"name": "callerAddr",
-							"type": "bytes32"
-						}
-					],
-					"internalType": "struct MayanCircle.CctpRecipient",
-					"name": "recipient",
-					"type": "tuple"
+					"internalType": "uint32",
+					"name": "destDomain",
+					"type": "uint32"
 				}
 			],
 			"name": "createOrder",
 			"outputs": [],
 			"stateMutability": "payable",
+			"type": "function"
+		},
+		{
+			"inputs": [
+				{
+					"internalType": "uint32",
+					"name": "",
+					"type": "uint32"
+				}
+			],
+			"name": "domainToCaller",
+			"outputs": [
+				{
+					"internalType": "bytes32",
+					"name": "",
+					"type": "bytes32"
+				}
+			],
+			"stateMutability": "view",
 			"type": "function"
 		},
 		{
@@ -435,6 +503,68 @@ export default {
 					"type": "bytes"
 				},
 				{
+					"components": [
+						{
+							"internalType": "bytes32",
+							"name": "destAddr",
+							"type": "bytes32"
+						},
+						{
+							"internalType": "uint16",
+							"name": "destChainId",
+							"type": "uint16"
+						},
+						{
+							"internalType": "bytes32",
+							"name": "tokenOut",
+							"type": "bytes32"
+						},
+						{
+							"internalType": "uint64",
+							"name": "promisedAmount",
+							"type": "uint64"
+						},
+						{
+							"internalType": "uint64",
+							"name": "gasDrop",
+							"type": "uint64"
+						},
+						{
+							"internalType": "uint64",
+							"name": "redeemFee",
+							"type": "uint64"
+						},
+						{
+							"internalType": "uint64",
+							"name": "deadline",
+							"type": "uint64"
+						},
+						{
+							"internalType": "bytes32",
+							"name": "referrerAddr",
+							"type": "bytes32"
+						},
+						{
+							"internalType": "uint8",
+							"name": "referrerBps",
+							"type": "uint8"
+						},
+						{
+							"internalType": "uint8",
+							"name": "protocolBps",
+							"type": "uint8"
+						},
+						{
+							"internalType": "bytes32",
+							"name": "driver",
+							"type": "bytes32"
+						}
+					],
+					"internalType": "struct MayanCircle.FulfillParams",
+					"name": "params",
+					"type": "tuple"
+				},
+				{
 					"internalType": "address",
 					"name": "swapProtocol",
 					"type": "address"
@@ -477,6 +607,25 @@ export default {
 			"type": "function"
 		},
 		{
+			"inputs": [
+				{
+					"internalType": "bytes32",
+					"name": "",
+					"type": "bytes32"
+				}
+			],
+			"name": "keyToMintRecipient",
+			"outputs": [
+				{
+					"internalType": "bytes32",
+					"name": "",
+					"type": "bytes32"
+				}
+			],
+			"stateMutability": "view",
+			"type": "function"
+		},
+		{
 			"inputs": [],
 			"name": "localDomain",
 			"outputs": [
@@ -487,102 +636,6 @@ export default {
 				}
 			],
 			"stateMutability": "view",
-			"type": "function"
-		},
-		{
-			"inputs": [
-				{
-					"internalType": "bytes",
-					"name": "encoded",
-					"type": "bytes"
-				}
-			],
-			"name": "parseFulfillMsg",
-			"outputs": [
-				{
-					"components": [
-						{
-							"internalType": "uint8",
-							"name": "action",
-							"type": "uint8"
-						},
-						{
-							"internalType": "uint8",
-							"name": "payloadId",
-							"type": "uint8"
-						},
-						{
-							"internalType": "uint16",
-							"name": "destChainId",
-							"type": "uint16"
-						},
-						{
-							"internalType": "bytes32",
-							"name": "destAddr",
-							"type": "bytes32"
-						},
-						{
-							"internalType": "bytes32",
-							"name": "driver",
-							"type": "bytes32"
-						},
-						{
-							"internalType": "bytes32",
-							"name": "tokenOut",
-							"type": "bytes32"
-						},
-						{
-							"internalType": "uint64",
-							"name": "promisedAmount",
-							"type": "uint64"
-						},
-						{
-							"internalType": "uint64",
-							"name": "gasDrop",
-							"type": "uint64"
-						},
-						{
-							"internalType": "bytes32",
-							"name": "referrerAddr",
-							"type": "bytes32"
-						},
-						{
-							"internalType": "uint8",
-							"name": "referrerBps",
-							"type": "uint8"
-						},
-						{
-							"internalType": "uint8",
-							"name": "protocolBps",
-							"type": "uint8"
-						},
-						{
-							"internalType": "uint64",
-							"name": "deadline",
-							"type": "uint64"
-						},
-						{
-							"internalType": "uint64",
-							"name": "redeemFee",
-							"type": "uint64"
-						},
-						{
-							"internalType": "uint32",
-							"name": "cctpDomain",
-							"type": "uint32"
-						},
-						{
-							"internalType": "uint64",
-							"name": "cctpNonce",
-							"type": "uint64"
-						}
-					],
-					"internalType": "struct MayanCircle.FulfillMsg",
-					"name": "fulfillMsg",
-					"type": "tuple"
-				}
-			],
-			"stateMutability": "pure",
 			"type": "function"
 		},
 		{
@@ -614,6 +667,48 @@ export default {
 					"internalType": "bytes",
 					"name": "encodedVm",
 					"type": "bytes"
+				},
+				{
+					"components": [
+						{
+							"internalType": "uint8",
+							"name": "payloadType",
+							"type": "uint8"
+						},
+						{
+							"internalType": "bytes32",
+							"name": "destAddr",
+							"type": "bytes32"
+						},
+						{
+							"internalType": "uint64",
+							"name": "gasDrop",
+							"type": "uint64"
+						},
+						{
+							"internalType": "uint64",
+							"name": "redeemFee",
+							"type": "uint64"
+						},
+						{
+							"internalType": "uint64",
+							"name": "burnAmount",
+							"type": "uint64"
+						},
+						{
+							"internalType": "bytes32",
+							"name": "burnToken",
+							"type": "bytes32"
+						},
+						{
+							"internalType": "bytes32",
+							"name": "customPayload",
+							"type": "bytes32"
+						}
+					],
+					"internalType": "struct MayanCircle.BridgeWithFeeParams",
+					"name": "bridgeParams",
+					"type": "tuple"
 				}
 			],
 			"name": "redeemWithFee",
@@ -848,12 +943,53 @@ export default {
 		{
 			"inputs": [
 				{
+					"internalType": "uint32",
+					"name": "domain",
+					"type": "uint32"
+				},
+				{
+					"internalType": "bytes32",
+					"name": "caller",
+					"type": "bytes32"
+				}
+			],
+			"name": "setDomainCaller",
+			"outputs": [],
+			"stateMutability": "nonpayable",
+			"type": "function"
+		},
+		{
+			"inputs": [
+				{
 					"internalType": "address",
 					"name": "_feeManager",
 					"type": "address"
 				}
 			],
 			"name": "setFeeManager",
+			"outputs": [],
+			"stateMutability": "nonpayable",
+			"type": "function"
+		},
+		{
+			"inputs": [
+				{
+					"internalType": "uint32",
+					"name": "destDomain",
+					"type": "uint32"
+				},
+				{
+					"internalType": "address",
+					"name": "tokenIn",
+					"type": "address"
+				},
+				{
+					"internalType": "bytes32",
+					"name": "mintRecipient",
+					"type": "bytes32"
+				}
+			],
+			"name": "setMintRecipient",
 			"outputs": [],
 			"stateMutability": "nonpayable",
 			"type": "function"
@@ -885,11 +1021,61 @@ export default {
 			"type": "function"
 		},
 		{
+			"inputs": [],
+			"name": "suiEmitter",
+			"outputs": [
+				{
+					"internalType": "bytes32",
+					"name": "",
+					"type": "bytes32"
+				}
+			],
+			"stateMutability": "view",
+			"type": "function"
+		},
+		{
 			"inputs": [
 				{
 					"internalType": "bytes",
 					"name": "encodedVm",
 					"type": "bytes"
+				},
+				{
+					"components": [
+						{
+							"internalType": "uint8",
+							"name": "action",
+							"type": "uint8"
+						},
+						{
+							"internalType": "uint8",
+							"name": "payloadType",
+							"type": "uint8"
+						},
+						{
+							"internalType": "uint64",
+							"name": "cctpNonce",
+							"type": "uint64"
+						},
+						{
+							"internalType": "uint32",
+							"name": "cctpDomain",
+							"type": "uint32"
+						},
+						{
+							"internalType": "bytes32",
+							"name": "unlockerAddr",
+							"type": "bytes32"
+						},
+						{
+							"internalType": "uint64",
+							"name": "gasDrop",
+							"type": "uint64"
+						}
+					],
+					"internalType": "struct MayanCircle.UnlockFeeMsg",
+					"name": "unlockMsg",
+					"type": "tuple"
 				}
 			],
 			"name": "unlockFee",
@@ -908,6 +1094,85 @@ export default {
 					"internalType": "bytes",
 					"name": "encodedVm2",
 					"type": "bytes"
+				},
+				{
+					"components": [
+						{
+							"internalType": "uint8",
+							"name": "action",
+							"type": "uint8"
+						},
+						{
+							"internalType": "uint8",
+							"name": "payloadType",
+							"type": "uint8"
+						},
+						{
+							"internalType": "uint64",
+							"name": "cctpNonce",
+							"type": "uint64"
+						},
+						{
+							"internalType": "uint32",
+							"name": "cctpDomain",
+							"type": "uint32"
+						},
+						{
+							"internalType": "bytes32",
+							"name": "unlockerAddr",
+							"type": "bytes32"
+						},
+						{
+							"internalType": "uint64",
+							"name": "gasDrop",
+							"type": "uint64"
+						}
+					],
+					"internalType": "struct MayanCircle.UnlockFeeMsg",
+					"name": "unlockMsg",
+					"type": "tuple"
+				},
+				{
+					"components": [
+						{
+							"internalType": "uint8",
+							"name": "action",
+							"type": "uint8"
+						},
+						{
+							"internalType": "uint8",
+							"name": "payloadType",
+							"type": "uint8"
+						},
+						{
+							"internalType": "uint64",
+							"name": "cctpNonce",
+							"type": "uint64"
+						},
+						{
+							"internalType": "uint32",
+							"name": "cctpDomain",
+							"type": "uint32"
+						},
+						{
+							"internalType": "bytes32",
+							"name": "unlockerAddr",
+							"type": "bytes32"
+						},
+						{
+							"internalType": "uint64",
+							"name": "gasDrop",
+							"type": "uint64"
+						},
+						{
+							"internalType": "bytes32",
+							"name": "destAddr",
+							"type": "bytes32"
+						}
+					],
+					"internalType": "struct MayanCircle.UnlockRefinedFeeMsg",
+					"name": "refinedMsg",
+					"type": "tuple"
 				}
 			],
 			"name": "unlockFeeRefined",

@@ -176,7 +176,7 @@ export function getSwapFromEvmTxPayload(
 	const referrerAddress = getQuoteSuitableReferrerAddress(quote, referrerAddresses);
 
 	if (quote.type === 'MCTP') {
-		return getMctpFromEvmTxPayload(quote, destinationAddress, referrerAddress, signerChainId, permit);
+		return getMctpFromEvmTxPayload(quote, destinationAddress, referrerAddress, signerChainId, permit, payload);
 	}
 	if (quote.type === 'SWIFT') {
 		return getSwiftFromEvmTxPayload(quote, swapperAddress, destinationAddress, referrerAddress, signerChainId, permit);
