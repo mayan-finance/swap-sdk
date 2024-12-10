@@ -68,18 +68,19 @@ export async function createSwapFromSolanaInstructions(
 	signers: Array<Keypair>,
 	lookupTables: Array<AddressLookupTableAccount>,
 }> {
+
 	const referrerAddress = getQuoteSuitableReferrerAddress(quote, referrerAddresses);
-	const solanaConnection = connection ??
-		new Connection('https://rpc.ankr.com/solana');
 
 	if (quote.type === 'MCTP') {
-		return createMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, solanaConnection, options);
+		return createMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
 	}
 	if (quote.type === 'SWIFT') {
-		return createSwiftFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, solanaConnection, options);
+		return createSwiftFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
 	}
 
 	let instructions: Array<TransactionInstruction> = [];
+	const solanaConnection = connection ??
+		new Connection('https://rpc.ankr.com/solana');
 	const mayanProgram = new PublicKey(addresses.MAYAN_PROGRAM_ID);
 	const tokenProgram = new PublicKey(addresses.TOKEN_PROGRAM_ID);
 	const swapper = new PublicKey(swapperWalletAddress);
@@ -274,14 +275,7 @@ export async function swapFromSolana(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
 	referrerAddresses: ReferrerAddresses | null | undefined,
 	signTransaction: SolanaTransactionSigner,
-	connection?: Connection,
-	extraRpcs?: string[],
-	sendOptions?: SendOptions,
-	jitoOptions?: JitoBundleOptions,
-	instructionOptions?: {
-		allowSwapperOffCurve?: boolean,
-		forceSkipCctpInstructions?: boolean,
-	}
+	connection?: Connection, extraRpcs?: string[], sendOptions?: SendOptions, jitoOptions?: JitoBundleOptions
 ): Promise<{
 	signature: string,
 	serializedTrx: Uint8Array | null,
@@ -295,8 +289,7 @@ export async function swapFromSolana(
 		lookupTables
 	} = await createSwapFromSolanaInstructions(
 		quote, swapperWalletAddress, destinationAddress,
-		referrerAddresses, solanaConnection, instructionOptions
-	);
+		referrerAddresses, connection);
 
 	const swapper = new PublicKey(swapperWalletAddress);
 

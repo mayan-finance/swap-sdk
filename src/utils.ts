@@ -95,6 +95,7 @@ const chains: { [index in ChainName]: number }  = {
 	optimism: 24,
 	base: 30,
 	aptos: 22,
+	sui: 21,
 };
 
 export function getWormholeChainIdByName(chain: string) : number | null {
@@ -128,7 +129,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [9, 8, 0];
+const sdkVersion = [10, 0, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -214,3 +215,8 @@ export function getQuoteSuitableReferrerAddress(
 	}
 	return null;
 }
+
+export const MCTP_PAYLOAD_TYPE_DEFAULT = 1;
+export const MCTP_PAYLOAD_TYPE_CUSTOM_PAYLOAD = 2;
+export const MCTP_INIT_ORDER_PAYLOAD_ID = 1;
+
