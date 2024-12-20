@@ -81,6 +81,7 @@ export async function createMctpFromSuiMoveCalls(
 			middleCoinType: quote.mctpInputContract,
 			userWallet: swapperAddress,
 			withWhFee: quote.hasAuction || quote.cheaperChain !== 'sui',
+			referrerAddress,
 		});
 		tx = Transaction.from(serializedTx);
 		inputCoin = outCoin;
@@ -133,6 +134,20 @@ export async function createMctpFromSuiMoveCalls(
 			);
 		}
 	}
+	// Log initial coin and amount
+	const amountIn = getAmountOfFractionalAmount(quote.effectiveAmountIn, quote.fromToken.decimals);
+	const _payload = payload ? Uint8Array.from(payload) : Uint8Array.from([]);
+	tx.moveCall({
+		package: mctpPackageId,
+		module: 'init_order',
+		function: 'log_initialize_mctp',
+		typeArguments: [quote.fromToken.contract],
+		arguments: [
+			tx.pure.u64(amountIn),
+			tx.object(quote.fromToken.verifiedAddress),
+			tx.pure.vector('u8', _payload),
+		]
+	});
 	return tx;
 }
 

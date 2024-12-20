@@ -275,7 +275,14 @@ export async function swapFromSolana(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
 	referrerAddresses: ReferrerAddresses | null | undefined,
 	signTransaction: SolanaTransactionSigner,
-	connection?: Connection, extraRpcs?: string[], sendOptions?: SendOptions, jitoOptions?: JitoBundleOptions
+	connection?: Connection,
+	extraRpcs?: string[],
+	sendOptions?: SendOptions,
+	jitoOptions?: JitoBundleOptions,
+	instructionOptions?: {
+		allowSwapperOffCurve?: boolean,
+		forceSkipCctpInstructions?: boolean,
+	}
 ): Promise<{
 	signature: string,
 	serializedTrx: Uint8Array | null,
@@ -289,7 +296,8 @@ export async function swapFromSolana(
 		lookupTables
 	} = await createSwapFromSolanaInstructions(
 		quote, swapperWalletAddress, destinationAddress,
-		referrerAddresses, connection);
+		referrerAddresses, connection, instructionOptions
+	);
 
 	const swapper = new PublicKey(swapperWalletAddress);
 

@@ -44,7 +44,7 @@ export type QuoteError = {
 }
 
 export type Quote = {
-	type: 'WH' | 'SWIFT' | 'MCTP';
+	type: 'WH' | 'SWIFT' | 'MCTP' | 'SWAP_LAYER';
 	effectiveAmountIn: number;
 	expectedAmountOut: number;
 	priceImpact: number;
@@ -101,6 +101,7 @@ export type Quote = {
 	evmSwapRouterCalldata?: string;
 	mctpMayanContract?: string;
 	swiftMayanContract?: string;
+	swapLayerContract?: string;
 	swiftAuctionMode?: number;
 	swiftInputContract: string;
 	swiftInputDecimals: number;
@@ -109,6 +110,15 @@ export type Quote = {
 	sendTransactionCost: number;
 	maxUserGasDrop: number;
 	rentCost?: bigint;
+	swapLayerParams : {
+		maxLLFee: string;
+		maxRelayingFee: string;
+		fastTransferDeadline: number;
+		hasDestSwap: boolean
+		path: string;
+	}
+	swapLayerInputContract: string;
+	swapLayerInputDecimals: number;
 
 
 
@@ -117,8 +127,10 @@ export type Quote = {
 };
 
 export type QuoteOptions = {
+	wormhole?: boolean;
 	swift?: boolean;
 	mctp?: boolean;
+	swapLayer?: boolean;
 	gasless?: boolean;
 	onlyDirect?: boolean;
 };
@@ -143,6 +155,7 @@ type BaseGetSolanaSwapParams = {
 	middleToken: string,
 	userWallet: string,
 	slippageBps: number,
+	referrerAddress?: string,
 }
 
 type MctpGetSolanaSwapParams = BaseGetSolanaSwapParams & {
@@ -162,6 +175,7 @@ type BaseGetSuiSwapParams = {
 	inputCoinType: string,
 	middleCoinType: string,
 	userWallet: string,
+	referrerAddress?: string,
 }
 
 type MctpGetSuiSwapParams = BaseGetSuiSwapParams & {

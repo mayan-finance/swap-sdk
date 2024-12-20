@@ -68,8 +68,10 @@ export async function fetchTokenList(chain: ChainName, nonPortal: boolean = fals
 }
 
 export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOptions = {
+	wormhole: true,
 	swift: true,
 	mctp: true,
+	swapLayer: true,
 	gasless: false,
 	onlyDirect: false,
 }): string {
@@ -79,8 +81,10 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		slippageBps = params.slippage * 100;
 	}
 	const _quoteOptions: QuoteOptions = {
+		wormhole: quoteOptions.wormhole !== false, // default to true
 		swift: quoteOptions.swift !== false, // default to true
 		mctp: quoteOptions.mctp !== false, // default to true
+		swapLayer: quoteOptions.swapLayer !== false, // default to true
 		gasless: quoteOptions.gasless === true, // default to false
 		onlyDirect: quoteOptions.onlyDirect === true, // default to false
 	}

@@ -28,6 +28,7 @@ import { Buffer } from 'buffer';
 import { getMctpFromEvmTxPayload } from './evmMctp';
 import { getSwiftFromEvmGasLessParams, getSwiftFromEvmTxPayload } from './evmSwift';
 import { submitSwiftEvmSwap } from '../api';
+import { getSwapLayerFromEvmTxPayload } from './evmSwapLayer';
 
 export type ContractRelayerFees = {
 	swapFee: bigint,
@@ -180,6 +181,9 @@ export function getSwapFromEvmTxPayload(
 	}
 	if (quote.type === 'SWIFT') {
 		return getSwiftFromEvmTxPayload(quote, swapperAddress, destinationAddress, referrerAddress, signerChainId, permit);
+	}
+	if (quote.type === 'SWAP_LAYER') {
+		return getSwapLayerFromEvmTxPayload(quote, destinationAddress, signerChainId, permit);
 	}
 
 	if (quote.type != 'WH') {

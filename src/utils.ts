@@ -14,13 +14,19 @@ export function nativeAddressToHexString(
 	if (wChainId === 1) {
 		return zeroPadValue(new PublicKey(address).toBytes(), 32);
 	} else if (
-		wChainId === 2 || wChainId === 4 || wChainId === 5 ||
-		wChainId === 6  || wChainId === 23 || wChainId === 24 ||
-		wChainId === 30
+		wChainId === chains.ethereum || wChainId === chains.bsc || wChainId === chains.polygon ||
+		wChainId === chains.avalanche  || wChainId === chains.arbitrum || wChainId === chains.optimism ||
+		wChainId === chains.base
 	) {
 		return zeroPadValue(address, 32);
-	} else if (wChainId === 22 && isValidAptosType(address)) {
+	} else if (wChainId === chains.aptos && isValidAptosType(address)) {
 		return `0x${sha3_256(address)}`
+	} else if (wChainId === chains.sui) {
+		let addressStr = address.startsWith('0x') ? address.substring(2) : address;
+		if (Buffer.from(addressStr, 'hex').length !== 32) {
+			throw new Error('Invalid sui address: ' + address);
+		}
+		return zeroPadValue(address, 32);
 	} else {
 		console.log(`Unsupported chain id: ${wChainId}`, address);
 		throw new Error('Unsupported token chain');

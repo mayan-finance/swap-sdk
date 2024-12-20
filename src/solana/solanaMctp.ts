@@ -539,6 +539,7 @@ export async function createMctpFromSolanaInstructions(
 	);
 
 	const mode = quote.cheaperChain === 'solana' ? 'LOCK_FEE' : 'WITH_FEE';
+	const tokenOut = quote.toChain === 'sui' ? quote.toToken.verifiedAddress : quote.toToken.contract;
 
 	if (quote.fromToken.contract === quote.mctpInputContract) {
 		// If forceSkip is false then user will execute the cctp instructions by themselves
@@ -573,7 +574,7 @@ export async function createMctpFromSolanaInstructions(
 				feeRedeem: quote.redeemRelayerFee,
 				gasDrop: quote.gasDrop,
 				amountInMin: quote.effectiveAmountIn,
-				tokenOut: quote.toToken.contract,
+				tokenOut,
 				tokenOutDecimals: quote.toToken.decimals,
 				referrerAddress: referrerAddress,
 				amountOutMin: quote.minAmountOut,
@@ -663,7 +664,7 @@ export async function createMctpFromSolanaInstructions(
 				feeRedeem: quote.redeemRelayerFee,
 				gasDrop: quote.gasDrop,
 				amountInMin: quote.minMiddleAmount,
-				tokenOut: quote.toToken.contract,
+				tokenOut,
 				tokenOutDecimals: quote.toToken.decimals,
 				referrerAddress: referrerAddress,
 				amountOutMin: quote.minAmountOut,
