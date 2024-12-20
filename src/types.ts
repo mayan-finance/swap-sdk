@@ -1,9 +1,10 @@
 import { Transaction, VersionedTransaction } from '@solana/web3.js';
+import { Transaction as SuiTransaction, TransactionResult as SuiTransactionResult } from '@mysten/sui/transactions';
 
 export type ChainName = 'solana'
-	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' | 'base' | 'aptos';
+	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' | 'base' | 'aptos' | 'sui';
 
-export type TokenStandard = 'native' | 'erc20' | 'spl' | 'spl2022';
+export type TokenStandard = 'native' | 'erc20' | 'spl' | 'spl2022' | 'suicoin';
 
 export type Token = {
 	name: string,
@@ -18,7 +19,9 @@ export type Token = {
 	realOriginChainId?: number,
 	realOriginContractAddress?: string,
 	supportsPermit: boolean,
+	verified: boolean;
 	standard: TokenStandard,
+	verifiedAddress: string,
 };
 
 export type QuoteParams = {
@@ -41,7 +44,7 @@ export type QuoteError = {
 }
 
 export type Quote = {
-	type: 'WH' | 'SWIFT' | 'MCTP';
+	type: 'WH' | 'SWIFT' | 'MCTP' | 'SWAP_LAYER';
 	effectiveAmountIn: number;
 	expectedAmountOut: number;
 	priceImpact: number;
@@ -98,6 +101,7 @@ export type Quote = {
 	evmSwapRouterCalldata?: string;
 	mctpMayanContract?: string;
 	swiftMayanContract?: string;
+	swapLayerContract?: string;
 	swiftAuctionMode?: number;
 	swiftInputContract: string;
 	swiftInputDecimals: number;
@@ -106,11 +110,27 @@ export type Quote = {
 	sendTransactionCost: number;
 	maxUserGasDrop: number;
 	rentCost?: bigint;
+	swapLayerParams : {
+		maxLLFee: string;
+		maxRelayingFee: string;
+		fastTransferDeadline: number;
+		hasDestSwap: boolean
+		path: string;
+	}
+	swapLayerInputContract: string;
+	swapLayerInputDecimals: number;
+
+
+
+	mctpVerifiedInputAddress: string;
+	mctpInputTreasury: string;
 };
 
 export type QuoteOptions = {
+	wormhole?: boolean;
 	swift?: boolean;
 	mctp?: boolean;
+	swapLayer?: boolean;
 	gasless?: boolean;
 	onlyDirect?: boolean;
 };
@@ -135,6 +155,7 @@ type BaseGetSolanaSwapParams = {
 	middleToken: string,
 	userWallet: string,
 	slippageBps: number,
+	referrerAddress?: string,
 }
 
 type MctpGetSolanaSwapParams = BaseGetSolanaSwapParams & {
@@ -148,6 +169,20 @@ type SwiftGetSolanaSwapParams = BaseGetSolanaSwapParams & {
 }
 
 export type GetSolanaSwapParams = MctpGetSolanaSwapParams | SwiftGetSolanaSwapParams;
+
+type BaseGetSuiSwapParams = {
+	amountIn: number,
+	inputCoinType: string,
+	middleCoinType: string,
+	userWallet: string,
+	referrerAddress?: string,
+}
+
+type MctpGetSuiSwapParams = BaseGetSuiSwapParams & {
+	withWhFee: boolean
+}
+
+export type GetSuiSwapParams = MctpGetSuiSwapParams;
 
 export type SolanaKeyInfo = {
 	pubkey: string,
@@ -166,6 +201,30 @@ export type SolanaClientSwap = {
 	swapInstruction: InstructionInfo,
 	cleanupInstruction: InstructionInfo,
 	addressLookupTableAddresses: string[],
+}
+
+export type SuiFunctionNestedResult = {
+	$kind: 'NestedResult';
+	NestedResult: [number, number];
+};
+
+export type SuiFunctionParameter =
+	| {
+	result:
+		| SuiTransactionResult
+		| SuiFunctionNestedResult
+		| { $kind: 'Input'; Input: number; type?: 'object' };
+	objectId?: undefined | null;
+}
+	| {
+	result?: undefined | null;
+	objectId: string;
+};
+
+export type SuiClientSwap = {
+	tx: string,
+	outCoin: SuiTransactionResult,
+	whFeeCoin?: SuiTransactionResult | SuiFunctionNestedResult,
 }
 
 export type ReferrerAddresses = {
@@ -204,3 +263,9 @@ export type JitoBundleOptions = {
 	jitoAccount?: string,
 	jitoSendUrl?: string,
 }
+
+export type ComposableSuiMoveCallsOptions = {
+	builtTransaction?: SuiTransaction;
+	inputCoin?: SuiFunctionParameter;
+	whFeeCoin?: SuiFunctionParameter;
+};

@@ -7,7 +7,7 @@ import {
 	QuoteOptions,
 	QuoteError,
 	SolanaClientSwap,
-	GetSolanaSwapParams, TokenStandard
+	GetSolanaSwapParams, TokenStandard, GetSuiSwapParams, SuiClientSwap
 } from './types';
 import addresses from './addresses';
 import { checkSdkVersionSupport, getSdkVersion } from './utils';
@@ -68,8 +68,10 @@ export async function fetchTokenList(chain: ChainName, nonPortal: boolean = fals
 }
 
 export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOptions = {
+	wormhole: true,
 	swift: true,
 	mctp: true,
+	swapLayer: true,
 	gasless: false,
 	onlyDirect: false,
 }): string {
@@ -79,8 +81,10 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		slippageBps = params.slippage * 100;
 	}
 	const _quoteOptions: QuoteOptions = {
+		wormhole: quoteOptions.wormhole !== false, // default to true
 		swift: quoteOptions.swift !== false, // default to true
 		mctp: quoteOptions.mctp !== false, // default to true
+		swapLayer: quoteOptions.swapLayer !== false, // default to true
 		gasless: quoteOptions.gasless === true, // default to false
 		onlyDirect: quoteOptions.onlyDirect === true, // default to false
 	}
@@ -110,6 +114,7 @@ export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions
 	onlyDirect: false,
 }): Promise<Quote[]> {
 	const url = generateFetchQuoteUrl(params, quoteOptions);
+	console.log('url', url);
 	const res = await fetch(url, {
 		method: 'GET',
 		redirect: 'follow',
@@ -161,6 +166,20 @@ export async function getSuggestedRelayer(): Promise<string> {
 export async function getSwapSolana(params : GetSolanaSwapParams): Promise<SolanaClientSwap> {
 	const query = toQueryString(params);
 	const res = await fetch(`${addresses.PRICE_URL}/get-swap/solana?${query}`, {
+		method: 'GET',
+		redirect: 'follow',
+	});
+	await check5xxError(res);
+	const result = await res.json();
+	if (res.status !== 200 && res.status !== 201) {
+		throw result;
+	}
+	return result;
+}
+
+export async function getSwapSui(params : GetSuiSwapParams): Promise<SuiClientSwap> {
+	const query = toQueryString(params);
+	const res = await fetch(`${addresses.PRICE_URL}/get-swap/sui?${query}`, {
 		method: 'GET',
 		redirect: 'follow',
 	});
