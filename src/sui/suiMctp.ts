@@ -26,6 +26,7 @@ import { Buffer } from 'buffer';
 import { CCTP_TOKEN_DECIMALS, getCCTPDomain } from '../cctp';
 import { SystemProgram } from '@solana/web3.js';
 import { getSwapSui } from '../api';
+import { ZeroAddress } from 'ethers';
 
 export async function createMctpFromSuiMoveCalls(
 	quote: Quote,
@@ -391,10 +392,11 @@ export async function addInitOrderMoveCalls(
 		),
 	]);
 
-	const tokenOut = nativeAddressToHexString(
-		quote.toToken.contract,
-		destChainId
-	);
+	const tokenOut =
+		quote.toToken.contract === ZeroAddress ?
+			nativeAddressToHexString(SystemProgram.programId.toString(), getWormholeChainIdByName('solana')) :
+			nativeAddressToHexString(quote.toToken.contract, quote.toToken.wChainId);
+
 	const amountOutMin = getAmountOfFractionalAmount(
 		quote.minAmountOut,
 		quote.toToken.decimals
