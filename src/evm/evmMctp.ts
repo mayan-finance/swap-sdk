@@ -136,7 +136,6 @@ type EvmMctpCreateOrderParams = {
 		referrerAddr: string,
 		referrerBps: number,
 	},
-	destDomain: number,
 	bridgeFee: bigint,
 	contractAddress: string,
 }
@@ -155,8 +154,6 @@ function getEvmMctpCreateOrderParams(
 		throw new Error('MCTP contract address is missing');
 	}
 	const contractAddress = quote.mctpMayanContract;
-
-	const destDomain = getCCTPDomain(quote.toChain);
 
 	const destinationAddressHex = nativeAddressToHexString(destinationAddress, destChainId);
 	let referrerHex: string;
@@ -183,7 +180,10 @@ function getEvmMctpCreateOrderParams(
 	const tokenOut =
 		quote.toToken.contract === ZeroAddress ?
 			nativeAddressToHexString(SystemProgram.programId.toString(), getWormholeChainIdByName('solana')) :
-			nativeAddressToHexString(quote.toToken.contract, quote.toToken.wChainId);
+			nativeAddressToHexString(
+				quote.toChain === 'sui' ? quote.toToken.verifiedAddress : quote.toToken.contract,
+				quote.toToken.wChainId,
+			);
 
 	return {
 		params: {
@@ -199,7 +199,6 @@ function getEvmMctpCreateOrderParams(
 			referrerAddr: referrerHex,
 			referrerBps: quote.referrerBps || 0
 		},
-		destDomain,
 		bridgeFee: getAmountOfFractionalAmount(quote.bridgeFee, getGasDecimal(quote.fromChain)),
 		contractAddress,
 	};
@@ -213,12 +212,12 @@ function getEvmMctpCreateOrderTxPayload(
 		quote, destinationAddress, referrerAddress, signerChainId
 	);
 	const {
-		contractAddress, params, bridgeFee, destDomain
+		contractAddress, params, bridgeFee
 	} = orderParams;
 	const mctpContract = new Contract(contractAddress, MayanCircleArtifact.abi);
 	const data = mctpContract.interface.encodeFunctionData(
 		'createOrder',
-		[params, destDomain]
+		[params]
 	);
 	const value = toBeHex(bridgeFee);
 

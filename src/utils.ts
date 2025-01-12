@@ -217,6 +217,9 @@ export function getQuoteSuitableReferrerAddress(
 		if (quote.toChain === 'solana') {
 			return referrerAddresses?.solana || null;
 		}
+		if (quote.toChain === 'sui') {
+			return referrerAddresses?.sui || null;
+		}
 		return referrerAddresses?.evm || null;
 	}
 	return null;

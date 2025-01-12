@@ -44,7 +44,7 @@ export type QuoteError = {
 }
 
 export type Quote = {
-	type: 'WH' | 'SWIFT' | 'MCTP' | 'SWAP_LAYER';
+	type: 'WH' | 'SWIFT' | 'MCTP' | 'SHUTTLE';
 	effectiveAmountIn: number;
 	expectedAmountOut: number;
 	priceImpact: number;
@@ -101,7 +101,7 @@ export type Quote = {
 	evmSwapRouterCalldata?: string;
 	mctpMayanContract?: string;
 	swiftMayanContract?: string;
-	swapLayerContract?: string;
+	shuttleContract?: string;
 	swiftAuctionMode?: number;
 	swiftInputContract: string;
 	swiftInputDecimals: number;
@@ -110,15 +110,15 @@ export type Quote = {
 	sendTransactionCost: number;
 	maxUserGasDrop: number;
 	rentCost?: bigint;
-	swapLayerParams : {
+	shuttleParams : {
 		maxLLFee: string;
 		maxRelayingFee: string;
 		fastTransferDeadline: number;
 		hasDestSwap: boolean
 		path: string;
 	}
-	swapLayerInputContract: string;
-	swapLayerInputDecimals: number;
+	shuttleInputContract: string;
+	shuttleInputDecimals: number;
 
 
 
@@ -130,7 +130,7 @@ export type QuoteOptions = {
 	wormhole?: boolean;
 	swift?: boolean;
 	mctp?: boolean;
-	swapLayer?: boolean;
+	shuttle?: boolean;
 	gasless?: boolean;
 	onlyDirect?: boolean;
 };
@@ -230,6 +230,7 @@ export type SuiClientSwap = {
 export type ReferrerAddresses = {
 	solana?: string | null,
 	evm?: string | null,
+	sui?: string | null,
 }
 
 export type SwiftEvmOrderTypedData = {

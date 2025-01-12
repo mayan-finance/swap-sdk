@@ -346,7 +346,7 @@ export async function addBridgeLockedFeeMoveCalls(
 		typeArguments: [quote.mctpInputContract],
 		arguments: [
 			tx.object(addresses.SUI_MCTP_STATE),
-			tx.object(quote.mctpInputTreasury),
+			tx.object(quote.mctpVerifiedInputAddress),
 			burnRequest,
 			cctpMessage,
 		],
@@ -398,9 +398,9 @@ export async function addInitOrderMoveCalls(
 			nativeAddressToHexString(quote.toToken.contract, quote.toToken.wChainId);
 
 	const amountOutMin = getAmountOfFractionalAmount(
-		quote.minAmountOut,
-		quote.toToken.decimals
+		quote.minAmountOut, Math.min(8, quote.toToken.decimals)
 	);
+
 	const addrDest = nativeAddressToHexString(destinationAddress, destChainId);
 	const domainDest = getCCTPDomain(quote.toChain);
 	const gasDrop = getAmountOfFractionalAmount(

@@ -6,11 +6,10 @@ import {
 	SystemProgram,
 	SYSVAR_CLOCK_PUBKEY,
 	SYSVAR_RENT_PUBKEY,
-	SendOptions,
-	TransactionInstruction, ComputeBudgetProgram, MessageV0, VersionedTransaction, AddressLookupTableAccount
+	TransactionInstruction, ComputeBudgetProgram, AddressLookupTableAccount
 } from '@solana/web3.js';
-import {blob, struct, u32, u16, u8} from '@solana/buffer-layout';
-import {Quote, SolanaTransactionSigner, ChainName} from '../types';
+import {blob, struct, u16, u8} from '@solana/buffer-layout';
+import {Quote, ChainName} from '../types';
 import {
 	getAmountOfFractionalAmount,
 	getAssociatedTokenAddress,
@@ -21,12 +20,11 @@ import {
 } from '../utils';
 import {Buffer} from 'buffer';
 import addresses from '../addresses'
-import {getCurrentChainTime, getSwapSolana} from '../api';
+import { getSwapSolana } from '../api';
 import {getWormholePDAs} from '../wormhole';
-import {getCCTPBridgePDAs, getCCTPDomain, CCTP_TOKEN_DECIMALS} from "../cctp";
+import {getCCTPBridgePDAs, CCTP_TOKEN_DECIMALS} from "../cctp";
 import {
 	createAssociatedTokenAccountInstruction,
-	submitTransactionWithRetry,
 	createSplTransferInstruction,
 	decentralizeClientSwapInstructions,
 	getAddressLookupTableAccounts,
@@ -303,7 +301,6 @@ const MctpBridgeLedgerLayout = struct<any>([
 	blob(8, 'gasDrop'),
 	blob(8, 'feeRedeem'),
 	blob(8, 'feeSolana'),
-	u32('destinationDomain'),
 	u16('destinationChain'),
 	blob(32, 'keyRnd'),
 	u8('mode'),
@@ -331,7 +328,6 @@ function createMctpBridgeLedgerInstruction(params: CreateMctpBridgeLedgerInstruc
 	const user = new PublicKey(params.swapperAddress);
 	const mint = new PublicKey(params.mintAddress);
 	const ledgerAccount = getAssociatedTokenAddress(mint, params.ledger, true);
-	const destinationDomain = getCCTPDomain(params.toChain);
 	const destinationChainId = getWormholeChainIdByName(params.toChain);
 	const destAddress = Buffer.from(
 		hexToUint8Array(
@@ -372,7 +368,6 @@ function createMctpBridgeLedgerInstruction(params: CreateMctpBridgeLedgerInstruc
 			gasDrop,
 			feeRedeem,
 			feeSolana,
-			destinationDomain,
 			destinationChain: destinationChainId,
 			keyRnd: params.randomKey.toBuffer(),
 			mode: params.mode === 'WITH_FEE' ? 1 : 2,
@@ -393,7 +388,6 @@ const MctpSwapLedgerLayout = struct<any>([
 	blob(8, 'gasDrop'),
 	blob(8, 'feeRedeem'),
 	blob(8, 'feeSolana'),
-	u32('destinationDomain'),
 	u16('destinationChain'),
 	blob(32, 'keyRnd'),
 	u8('mode'),
@@ -426,7 +420,6 @@ function createMctpSwapLedgerInstruction(params: CreateMctpSwapLedgerInstruction
 	const user = new PublicKey(params.swapperAddress);
 	const mint = new PublicKey(params.mintAddress);
 	const ledgerAccount = getAssociatedTokenAddress(mint, params.ledger, true);
-	const destinationDomain = getCCTPDomain(params.toChain);
 	const destinationChainId = getWormholeChainIdByName(params.toChain);
 	const destAddress = Buffer.from(
 		hexToUint8Array(
@@ -472,7 +465,6 @@ function createMctpSwapLedgerInstruction(params: CreateMctpSwapLedgerInstruction
 			gasDrop,
 			feeRedeem,
 			feeSolana,
-			destinationDomain,
 			destinationChain: destinationChainId,
 			keyRnd: params.randomKey.toBuffer(),
 			mode: 3,
