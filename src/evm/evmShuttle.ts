@@ -13,10 +13,10 @@ import {
 import addresses from '../addresses';
 import MayanForwarderArtifact from './MayanForwarderArtifact';
 import { Buffer } from 'buffer';
-import SwapLayerArtifact from './SwapLayerArtifact';
+import ShuttleArtifact from './ShuttleArtifact';
 
 
-const swapLayerConstants = {
+const shuttleConstants = {
 	FAST_MODE_FLAG: 1,
 	RELAY_REDEEM_MODE: 2,
 	EXACT_IN_FLAG: 1,
@@ -44,7 +44,7 @@ function writeBigIntTo16BytesBuffer(value: bigint): Buffer {
 	return buffer;
 }
 
-export function getSwapLayerParams(
+export function getShuttleParams(
 	quote: Quote, destinationAddress: string, signerChainId: string | number
 ): {
 	destAddr: string;
@@ -54,8 +54,8 @@ export function getSwapLayerParams(
 	amountIn: bigint;
 	bridgeFee: bigint;
 } {
-	const { swapLayerParams } = quote;
-	if (!swapLayerParams) {
+	const { shuttleParams } = quote;
+	if (!shuttleParams) {
 		throw new Error('Swap layer params are missing in quote response');
 	}
 	const signerWormholeChainId = getWormholeChainIdById(Number(signerChainId));
@@ -67,18 +67,18 @@ export function getSwapLayerParams(
 
 	let bytes = [];
 
-	bytes.push(swapLayerConstants.FAST_MODE_FLAG); // [0]
+	bytes.push(shuttleConstants.FAST_MODE_FLAG); // [0]
 
 	const maxLLFeeBuffer8Bytes = Buffer.alloc(8);
-	maxLLFeeBuffer8Bytes.writeBigUInt64BE(BigInt(swapLayerParams.maxLLFee));
+	maxLLFeeBuffer8Bytes.writeBigUInt64BE(BigInt(shuttleParams.maxLLFee));
 	const maxLLFeeBytes = maxLLFeeBuffer8Bytes.subarray(2);
 	bytes.push(...maxLLFeeBytes); // [1..6]
 
 	const deadLineBuffer = Buffer.alloc(4);
-	deadLineBuffer.writeUInt32BE(swapLayerParams.fastTransferDeadline);
+	deadLineBuffer.writeUInt32BE(shuttleParams.fastTransferDeadline);
 	bytes.push(...deadLineBuffer); // [7..10]
 
-	bytes.push(swapLayerConstants.RELAY_REDEEM_MODE); // [11]
+	bytes.push(shuttleConstants.RELAY_REDEEM_MODE); // [11]
 
 	const gasDrop = getAmountOfFractionalAmount(
 		quote.gasDrop,
@@ -90,12 +90,12 @@ export function getSwapLayerParams(
 	bytes.push(...gasDropBytes); // [12..15]
 
 	const maxRelayerFeeBuffer8Bytes = Buffer.alloc(8);
-	maxRelayerFeeBuffer8Bytes.writeBigUInt64BE(BigInt(swapLayerParams.maxRelayingFee));
+	maxRelayerFeeBuffer8Bytes.writeBigUInt64BE(BigInt(shuttleParams.maxRelayingFee));
 	const maxRelayerFeeBytes = maxRelayerFeeBuffer8Bytes.subarray(2);
 	bytes.push(...maxRelayerFeeBytes); // [16..21]
 
-	bytes.push(swapLayerConstants.EXACT_IN_FLAG); // [22]
-	bytes.push(swapLayerConstants.USDC_INPUT_TOKEN_TYPE); // [23]
+	bytes.push(shuttleConstants.EXACT_IN_FLAG); // [22]
+	bytes.push(shuttleConstants.USDC_INPUT_TOKEN_TYPE); // [23]
 
 	// <input amount> we are sure because of the input token is USDC the amount in will be fit in 8 bytes
 	bytes.push(0, 0, 0, 0, 0, 0, 0, 0); // offset of amount_in (8 bytes)
@@ -105,13 +105,13 @@ export function getSwapLayerParams(
 	bytes.push(...amountInBuffer);
 	// <input amount />
 
-	bytes.push(swapLayerConstants.PRE_APPROVED_ACQUIRE_MODE);
+	bytes.push(shuttleConstants.PRE_APPROVED_ACQUIRE_MODE);
 
-	if (swapLayerParams.hasDestSwap) {
+	if (shuttleParams.hasDestSwap) {
 		if (quote.toToken.contract === ZeroAddress) {
-			bytes.push(swapLayerConstants.OUTPUT_NATIVE_MODE);
+			bytes.push(shuttleConstants.OUTPUT_NATIVE_MODE);
 		} else {
-			bytes.push(swapLayerConstants.OUTPUT_OTHER_MODE);
+			bytes.push(shuttleConstants.OUTPUT_OTHER_MODE);
 			const tokenOut = Buffer.from(nativeAddressToHexString(quote.toToken.contract, destChainId).slice(2), 'hex');
 			bytes.push(...tokenOut);
 		}
@@ -129,11 +129,11 @@ export function getSwapLayerParams(
 			const minAmountOutBuffer = writeBigIntTo16BytesBuffer(minAmountOut);
 			bytes.push(...minAmountOutBuffer);
 		}
-		const swapPath = Buffer.from(swapLayerParams.path.slice(2), 'hex');
+		const swapPath = Buffer.from(shuttleParams.path.slice(2), 'hex');
 		bytes.push(...swapPath);
 
 	} else {
-		bytes.push(swapLayerConstants.OUTPUT_USDC_MODE);
+		bytes.push(shuttleConstants.OUTPUT_USDC_MODE);
 	}
 
 	const destinationAddressHex = nativeAddressToHexString(destinationAddress, destChainId);
@@ -142,18 +142,18 @@ export function getSwapLayerParams(
 		destAddr: destinationAddressHex,
 		destChainId,
 		serializedParams: `0x${Buffer.from(bytes).toString('hex')}`,
-		contractAddress: quote.swapLayerContract,
+		contractAddress: quote.shuttleContract,
 		amountIn,
 		bridgeFee: getAmountOfFractionalAmount(quote.bridgeFee, getGasDecimal(quote.fromChain)),
 	}
 }
 
-export function getSwapLayerFromEvmTxPayload(
+export function getShuttleFromEvmTxPayload(
 	quote: Quote, destinationAddress: string,
 	signerChainId: number | string, permit: Erc20Permit | null
 ): TransactionRequest & { _forwarder: EvmForwarderParams } {
-	if (quote.type !== 'SWAP_LAYER') {
-		throw new Error('Quote type is not SWAP_LAYER');
+	if (quote.type !== 'SHUTTLE') {
+		throw new Error('Quote type is not SHUTTLE');
 	}
 
 	if (!Number.isFinite(Number(signerChainId))) {
@@ -169,15 +169,15 @@ export function getSwapLayerFromEvmTxPayload(
 		destAddr,
 		destChainId,
 		serializedParams,
-		contractAddress: swapLayerContractAddress,
+		contractAddress: shuttleContractAddress,
 		amountIn,
 		bridgeFee,
-	} = getSwapLayerParams(quote, destinationAddress, signerChainId);
+	} = getShuttleParams(quote, destinationAddress, signerChainId);
 
-	let swapLayerCallData: string;
-	const swapLayerContract = new Contract(swapLayerContractAddress, SwapLayerArtifact.abi);
+	let shuttleCallData: string;
+	const shuttleContract = new Contract(shuttleContractAddress, ShuttleArtifact.abi);
 
-	swapLayerCallData = swapLayerContract.interface.encodeFunctionData(
+	shuttleCallData = shuttleContract.interface.encodeFunctionData(
 		'initiate',
 		[destAddr, amountIn, destChainId, serializedParams]
 	);
@@ -186,18 +186,18 @@ export function getSwapLayerFromEvmTxPayload(
 	let forwarderParams: any[];
 	let value: string | null;
 
-	if (quote.fromToken.contract === quote.swapLayerInputContract) {
+	if (quote.fromToken.contract === quote.shuttleInputContract) {
 		forwarderMethod = 'forwardERC20';
-		forwarderParams = [quote.swapLayerInputContract, amountIn, _permit, swapLayerContractAddress, swapLayerCallData];
+		forwarderParams = [quote.shuttleInputContract, amountIn, _permit, shuttleContractAddress, shuttleCallData];
 		value = toBeHex(bridgeFee);
 	} else {
 		const { evmSwapRouterAddress, evmSwapRouterCalldata } = quote;
 		if (!quote.minMiddleAmount || !evmSwapRouterAddress || !evmSwapRouterCalldata) {
-			throw new Error('SwapLayer swap requires middle amount, router address and calldata');
+			throw new Error('Shuttle source chain swap requires middle amount, router address and calldata');
 		}
 		const tokenIn = quote.fromToken.contract;
 
-		const minMiddleAmount = getAmountOfFractionalAmount(quote.minMiddleAmount, quote.swapLayerInputDecimals);
+		const minMiddleAmount = getAmountOfFractionalAmount(quote.minMiddleAmount, quote.shuttleInputDecimals);
 
 		if (quote.fromToken.contract === ZeroAddress) {
 			forwarderMethod = 'swapAndForwardEth';
@@ -205,10 +205,10 @@ export function getSwapLayerFromEvmTxPayload(
 				amountIn,
 				evmSwapRouterAddress,
 				evmSwapRouterCalldata,
-				quote.swapLayerInputContract,
+				quote.shuttleInputContract,
 				minMiddleAmount,
-				swapLayerContractAddress,
-				swapLayerCallData,
+				shuttleContractAddress,
+				shuttleCallData,
 			];
 			value = toBeHex(amountIn);
 		} else {
@@ -219,10 +219,10 @@ export function getSwapLayerFromEvmTxPayload(
 				_permit,
 				evmSwapRouterAddress,
 				evmSwapRouterCalldata,
-				quote.swapLayerInputContract,
+				quote.shuttleInputContract,
 				minMiddleAmount,
-				swapLayerContractAddress,
-				swapLayerCallData,
+				shuttleContractAddress,
+				shuttleCallData,
 			];
 			value = toBeHex(bridgeFee);
 		}

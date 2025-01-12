@@ -71,7 +71,7 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 	wormhole: true,
 	swift: true,
 	mctp: true,
-	swapLayer: true,
+	shuttle: true,
 	gasless: false,
 	onlyDirect: false,
 }): string {
@@ -84,7 +84,7 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		wormhole: quoteOptions.wormhole !== false, // default to true
 		swift: quoteOptions.swift !== false, // default to true
 		mctp: quoteOptions.mctp !== false, // default to true
-		swapLayer: quoteOptions.swapLayer !== false, // default to true
+		shuttle: quoteOptions.shuttle !== false, // default to true
 		gasless: quoteOptions.gasless === true, // default to false
 		onlyDirect: quoteOptions.onlyDirect === true, // default to false
 	}
