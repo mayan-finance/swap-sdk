@@ -81,8 +81,7 @@ function getEvmSwapParams(
 		mayanMainAccount,
 		true
 	);
-	const amountIn = getAmountOfFractionalAmount(
-		quote.effectiveAmountIn, quote.fromToken.decimals);
+	const amountIn = BigInt(quote.effectiveAmountIn64);
 	const recipientHex = nativeAddressToHexString(recipient.toString(), 1);
 	const auctionHex = nativeAddressToHexString(
 		addresses.AUCTION_PROGRAM_ID, 1

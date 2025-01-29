@@ -367,7 +367,7 @@ export function decentralizeClientSwapInstructions(params: SolanaClientSwap, con
 
 export function getAnchorInstructionData(name: string): Buffer {
 	let preimage = `global:${name}`;
-	return Buffer.from(sha256.digest(preimage)).slice(0, 8);
+	return Buffer.from(sha256.digest(preimage)).subarray(0, 8);
 }
 
 export async function decideRelayer(): Promise<PublicKey> {
@@ -402,7 +402,8 @@ export function getJitoTipTransfer(
 
 export async function sendJitoBundle(
 	singedTrxs: Array<Transaction | VersionedTransaction>,
-	options: JitoBundleOptions
+	options: JitoBundleOptions,
+	forceToBeSubmitted = false
 ) {
 	try {
 		let signedTrxs: Uint8Array[] = [];
@@ -415,15 +416,110 @@ export async function sendJitoBundle(
 			method: 'sendBundle',
 			params: [signedTrxs.map((trx) => bs58.encode(trx))],
 		};
-		await fetch(options.jitoSendUrl || 'https://mainnet.block-engine.jito.wtf/api/v1/bundles', {
+		const res = await fetch(options.jitoSendUrl || 'https://mainnet.block-engine.jito.wtf/api/v1/bundles', {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
 			},
 			body: JSON.stringify(bundle),
 		});
-		console.log('Send Jito bundle success');
+		if (res.status !== 200 && res.status !== 201) {
+				throw new Error('Send Jito bundle failed');
+		} else {
+			const result = await res.json();
+			return result.result;
+		}
 	} catch (err) {
 		console.error('Send Jito bundle failed', err);
+		if (forceToBeSubmitted) {
+			throw err;
+		}
+	}
+}
+
+async function getJitoBundleStatuses(bundleIds: string[], jitoApiUrl: string) {
+	const maxRetries = 5;
+	let attempt = 0;
+
+	while (attempt < maxRetries) {
+		try {
+			const response = await fetch(jitoApiUrl, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					jsonrpc: '2.0',
+					id: 1,
+					method: 'getBundleStatuses',
+					params: [bundleIds],
+				}),
+			});
+
+			if (!response.ok) {
+				throw new Error(`HTTP error! Status: ${response.status}`);
+			}
+
+			const data = await response.json();
+
+			if (data.error) {
+				throw new Error(`Error getting bundle statuses: ${JSON.stringify(data.error, null, 2)}`);
+			}
+
+			return data.result;
+		} catch (error) {
+			attempt++;
+			await wait(400);
+			if (attempt >= maxRetries) {
+				throw new Error(`Failed to fetch bundle statuses after ${maxRetries} attempts: ${error.message}`);
+			}
+		}
+	}
+}
+
+
+export async function confirmJitoBundleId(
+	bundleId: string,
+	options: JitoBundleOptions,
+	lastValidBlockHeight: number,
+	mayanTxSignature: string,
+	connection: Connection,
+) {
+	const timeout = 30 * 3000;
+	const startTime = Date.now();
+	while (Date.now() - startTime < timeout && (await connection.getBlockHeight()) <= lastValidBlockHeight) {
+		const bundleStatuses = await getJitoBundleStatuses(
+			[bundleId],
+			options.jitoSendUrl || 'https://mainnet.block-engine.jito.wtf/api/v1/bundles',
+		);
+
+		if (bundleStatuses && bundleStatuses.value && bundleStatuses.value.length > 0) {
+			console.log('===>', bundleStatuses.value[0]);
+			const status = bundleStatuses.value[0].confirmation_status;
+			if (status === 'confirmed' || status === 'finalized') {
+				const tx = await connection.getSignatureStatus(mayanTxSignature);
+				if (!tx || !tx.value) {
+					continue;
+				}
+				if (tx.value?.err) {
+					throw new Error(`Bundle failed with error: ${tx.value.err}`);
+				}
+				return;
+			}
+		}
+	}
+	throw new Error('Bundle not confirmed, timeout');
+}
+
+
+export async function broadcastJitoBundleId(bundleId: string): Promise<void> {
+	try {
+		await fetch("https://explorer-api.mayan.finance/v3/submit/jito-bundle", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ bundleId }),
+		});
+	} catch {
+		// Errors are silently ignored
 	}
 }

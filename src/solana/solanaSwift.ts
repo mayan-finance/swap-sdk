@@ -4,11 +4,10 @@ import {
 	PublicKey,
 	Keypair,
 	SystemProgram,
-	SYSVAR_RENT_PUBKEY,
 	TransactionInstruction, AddressLookupTableAccount, ComputeBudgetProgram
 } from '@solana/web3.js';
 import { blob, struct, u16, u8 } from '@solana/buffer-layout';
-import { Quote } from '../types';
+import { Quote, SwapMessageV0Params } from '../types';
 import {
 	hexToUint8Array,
 	nativeAddressToHexString,
@@ -169,11 +168,14 @@ function createSwiftInitInstruction(
 		Buffer.from(hexToUint8Array(nativeAddressToHexString(params.referrerAddress, destinationChainId))) :
 		SystemProgram.programId.toBuffer();
 
-	const minMiddleAmount = quote.fromToken.contract === quote.swiftInputContract ? quote.effectiveAmountIn : quote.minMiddleAmount;
+	const minMiddleAmount: bigint =
+		quote.fromToken.contract === quote.swiftInputContract ?
+			BigInt(quote.effectiveAmountIn64) :
+			getAmountOfFractionalAmount(quote.minMiddleAmount, quote.swiftInputDecimals);
 
 	InitSwiftLayout.encode({
 		instruction: getAnchorInstructionData('init_order'),
-		amountInMin: getSafeU64Blob(getAmountOfFractionalAmount(minMiddleAmount, quote.swiftInputDecimals)),
+		amountInMin: getSafeU64Blob(minMiddleAmount),
 		nativeInput: quote.swiftInputContract === ZeroAddress ? 1 : 0,
 		feeSubmit: getSafeU64Blob(BigInt(quote.submitRelayerFee64)),
 		destAddress: Buffer.from(hexToUint8Array(nativeAddressToHexString(params.destinationAddress, destinationChainId))),
@@ -203,11 +205,13 @@ export async function createSwiftFromSolanaInstructions(
 	referrerAddress: string | null | undefined,
 	connection: Connection, options: {
 		allowSwapperOffCurve?: boolean,
+		separateSwapTx?: boolean,
 	} = {}
 ): Promise<{
 	instructions: TransactionInstruction[],
 	signers: Keypair[],
 	lookupTables:  AddressLookupTableAccount[],
+	swapMessageV0Params: SwapMessageV0Params | null,
 }> {
 
 	if (quote.type !== 'SWIFT') {
@@ -226,6 +230,10 @@ export async function createSwiftFromSolanaInstructions(
 
 	_lookupTablesAddress.push(addresses.LOOKUP_TABLE);
 
+	// using for the swap via Jito Bundle
+	let _swapAddressLookupTables: string[] = [];
+	let swapInstructions: TransactionInstruction[] = [];
+	let swapMessageV0Params: SwapMessageV0Params | null = null;
 
 	const swiftProgram = new PublicKey(addresses.SWIFT_PROGRAM_ID);
 	const trader = new PublicKey(swapperAddress);
@@ -267,7 +275,7 @@ export async function createSwiftFromSolanaInstructions(
 				SystemProgram.transfer({
 					fromPubkey: trader,
 					toPubkey: stateAccount,
-					lamports: getAmountOfFractionalAmount(quote.effectiveAmountIn, quote.fromToken.decimals),
+					lamports: BigInt(quote.effectiveAmountIn64),
 				}),
 				createSyncNativeInstruction(stateAccount),
 			);
@@ -279,7 +287,7 @@ export async function createSwiftFromSolanaInstructions(
 					),
 					stateAccount,
 					trader,
-					getAmountOfFractionalAmount(quote.effectiveAmountIn, quote.fromToken.decimals),
+					BigInt(quote.effectiveAmountIn64),
 				)
 			);
 		}
@@ -290,22 +298,35 @@ export async function createSwiftFromSolanaInstructions(
 			userWallet: swapperAddress,
 			slippageBps: quote.slippageBps,
 			fromToken: quote.fromToken.contract,
-			amountIn: quote.effectiveAmountIn,
+			amountIn64: quote.effectiveAmountIn64,
 			depositMode: quote.gasless ? 'SWIFT_GASLESS' : 'SWIFT',
 			orderHash: `0x${hash.toString('hex')}`,
+			fillMaxAccounts: options?.separateSwapTx || false,
 		});
-
 		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection);
-		instructions.push(...clientSwap.computeBudgetInstructions);
-		if (clientSwap.setupInstructions) {
-			instructions.push(...clientSwap.setupInstructions);
+		if (options?.separateSwapTx && clientSwapRaw.maxAccountsFilled) {
+			swapInstructions.push(...clientSwap.computeBudgetInstructions);
+			if (clientSwap.setupInstructions) {
+				swapInstructions.push(...clientSwap.setupInstructions);
+			}
+			swapInstructions.push(clientSwap.swapInstruction);
+			if (clientSwap.cleanupInstruction) {
+				swapInstructions.push(clientSwap.cleanupInstruction);
+			}
+			_swapAddressLookupTables.push(...clientSwap.addressLookupTableAddresses);
+		} else {
+			instructions.push(...clientSwap.computeBudgetInstructions);
+			if (clientSwap.setupInstructions) {
+				instructions.push(...clientSwap.setupInstructions);
+			}
+			instructions.push(clientSwap.swapInstruction);
+			if (clientSwap.cleanupInstruction) {
+				instructions.push(clientSwap.cleanupInstruction);
+			}
+			_lookupTablesAddress.push(...clientSwap.addressLookupTableAddresses);
 		}
-		instructions.push(clientSwap.swapInstruction);
-		if (clientSwap.cleanupInstruction) {
-			instructions.push(clientSwap.cleanupInstruction);
-		}
-		_lookupTablesAddress.push(...clientSwap.addressLookupTableAddresses);
 	}
+
 	instructions.push(createSwiftInitInstruction({
 		quote,
 		state,
@@ -319,9 +340,19 @@ export async function createSwiftFromSolanaInstructions(
 		referrerAddress,
 	}));
 
-	lookupTables = await getAddressLookupTableAccounts(_lookupTablesAddress, connection)
+	const totalLookupTables = await getAddressLookupTableAccounts(_lookupTablesAddress.concat(_swapAddressLookupTables), connection);
+	lookupTables = totalLookupTables.slice(0, _lookupTablesAddress.length);
 
-	return {instructions, signers: [], lookupTables};
+	if (swapInstructions.length > 0) {
+		const swapLookupTables = totalLookupTables.slice(_lookupTablesAddress.length);
+		swapMessageV0Params = {
+			payerKey: relayer,
+			instructions: swapInstructions,
+			addressLookupTableAccounts: swapLookupTables,
+		};
+	}
+
+	return { instructions, signers: [], lookupTables, swapMessageV0Params };
 }
 
 

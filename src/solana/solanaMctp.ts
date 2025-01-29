@@ -6,10 +6,12 @@ import {
 	SystemProgram,
 	SYSVAR_CLOCK_PUBKEY,
 	SYSVAR_RENT_PUBKEY,
-	TransactionInstruction, ComputeBudgetProgram, AddressLookupTableAccount
+	TransactionInstruction,
+	ComputeBudgetProgram,
+	AddressLookupTableAccount,
 } from '@solana/web3.js';
 import {blob, struct, u16, u8} from '@solana/buffer-layout';
-import {Quote, ChainName} from '../types';
+import { Quote, ChainName, SwapMessageV0Params } from '../types';
 import {
 	getAmountOfFractionalAmount,
 	getAssociatedTokenAddress,
@@ -316,7 +318,7 @@ type CreateMctpBridgeLedgerInstructionParams = {
 	feeSolana: bigint,
 	feeRedeem: number,
 	gasDrop: number,
-	amountInMin: number,
+	amountInMin64: bigint,
 	referrerAddress?: string | null | undefined,
 	mode: 'WITH_FEE' | 'LOCK_FEE',
 	customPayload?: PublicKey | null,
@@ -334,9 +336,7 @@ function createMctpBridgeLedgerInstruction(params: CreateMctpBridgeLedgerInstruc
 			nativeAddressToHexString(params.destinationAddress, destinationChainId)
 		)
 	);
-	const amountInMin = getSafeU64Blob(
-		getAmountOfFractionalAmount(params.amountInMin, CCTP_TOKEN_DECIMALS)
-	);
+	const amountInMin = getSafeU64Blob(params.amountInMin64);
 	const gasDrop = getSafeU64Blob(
 		getAmountOfFractionalAmount(params.gasDrop, Math.min(getGasDecimal(params.toChain), 8))
 	);
@@ -408,7 +408,7 @@ type CreateMctpSwapLedgerInstructionParams = {
 	feeSolana: bigint,
 	feeRedeem: number,
 	gasDrop: number,
-	amountInMin: number,
+	amountInMin64?: bigint,
 	tokenOut: string,
 	tokenOutDecimals: number,
 	referrerAddress: string,
@@ -426,9 +426,7 @@ function createMctpSwapLedgerInstruction(params: CreateMctpSwapLedgerInstruction
 			nativeAddressToHexString(params.destinationAddress, destinationChainId)
 		)
 	);
-	const amountInMin = getSafeU64Blob(
-		getAmountOfFractionalAmount(params.amountInMin, CCTP_TOKEN_DECIMALS)
-	);
+	const amountInMin = getSafeU64Blob(params.amountInMin64);
 	const gasDrop = getSafeU64Blob(
 		getAmountOfFractionalAmount(params.gasDrop, Math.min(getGasDecimal(params.toChain), 8))
 	);
@@ -489,11 +487,13 @@ export async function createMctpFromSolanaInstructions(
 	connection: Connection, options: {
 		allowSwapperOffCurve?: boolean,
 		forceSkipCctpInstructions?: boolean,
+		separateSwapTx?: boolean,
 	} = {}
 ): Promise<{
 	instructions: TransactionInstruction[],
 	signers: Keypair[],
 	lookupTables:  AddressLookupTableAccount[],
+	swapMessageV0Params: SwapMessageV0Params | null,
 }> {
 
 	const forceSkipCctpInstructions = options?.forceSkipCctpInstructions || false;
@@ -508,6 +508,11 @@ export async function createMctpFromSolanaInstructions(
 	let instructions: TransactionInstruction[] = [];
 	let signers: Keypair[] = [];
 	let lookupTables: AddressLookupTableAccount[] = [];
+
+	// using for the swap via Jito Bundle
+	let _swapAddressLookupTables: string[] = [];
+	let swapInstructions: TransactionInstruction[] = [];
+	let swapMessageV0Params: SwapMessageV0Params | null = null;
 
 	_lookupTablesAddress.push(addresses.LOOKUP_TABLE);
 
@@ -551,7 +556,7 @@ export async function createMctpFromSolanaInstructions(
 				),
 				ledgerAccount,
 				user,
-				getAmountOfFractionalAmount(quote.effectiveAmountIn, CCTP_TOKEN_DECIMALS)
+				BigInt(quote.effectiveAmountIn64),
 			)
 		);
 		if (quote.hasAuction) {
@@ -565,7 +570,7 @@ export async function createMctpFromSolanaInstructions(
 				feeSolana,
 				feeRedeem: quote.redeemRelayerFee,
 				gasDrop: quote.gasDrop,
-				amountInMin: quote.effectiveAmountIn,
+				amountInMin64: BigInt(quote.effectiveAmountIn64),
 				tokenOut,
 				tokenOutDecimals: quote.toToken.decimals,
 				referrerAddress: referrerAddress,
@@ -595,7 +600,7 @@ export async function createMctpFromSolanaInstructions(
 				feeSolana,
 				feeRedeem: quote.redeemRelayerFee,
 				gasDrop: quote.gasDrop,
-				amountInMin: quote.effectiveAmountIn,
+				amountInMin64: BigInt(quote.effectiveAmountIn64),
 				mode,
 				referrerAddress,
 			}));
@@ -623,7 +628,6 @@ export async function createMctpFromSolanaInstructions(
 		}
 	}
 	else {
-		const feeSolana: bigint = BigInt(quote.solanaRelayerFee64);
 		const clientSwapRaw = await getSwapSolana({
 			minMiddleAmount: quote.minMiddleAmount,
 			middleToken: quote.mctpInputContract,
@@ -631,19 +635,37 @@ export async function createMctpFromSolanaInstructions(
 			userLedger: ledger.toString(),
 			slippageBps: quote.slippageBps,
 			fromToken: quote.fromToken.contract,
-			amountIn: quote.effectiveAmountIn,
+			amountIn64: quote.effectiveAmountIn64,
 			depositMode: quote.hasAuction ? 'SWAP' : mode,
+			fillMaxAccounts: options?.separateSwapTx || false,
 		});
-		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection);
-		instructions.push(...clientSwap.computeBudgetInstructions);
-		if (clientSwap.setupInstructions) {
-			instructions.push(...clientSwap.setupInstructions);
+
+		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection);;
+		if (options?.separateSwapTx && clientSwapRaw.maxAccountsFilled) {
+			swapInstructions.push(...clientSwap.computeBudgetInstructions);
+			if (clientSwap.setupInstructions) {
+				swapInstructions.push(...clientSwap.setupInstructions);
+			}
+			swapInstructions.push(clientSwap.swapInstruction);
+			if (clientSwap.cleanupInstruction) {
+				swapInstructions.push(clientSwap.cleanupInstruction);
+			}
+			_swapAddressLookupTables.push(...clientSwap.addressLookupTableAddresses);
+		} else {
+			instructions.push(...clientSwap.computeBudgetInstructions);
+			if (clientSwap.setupInstructions) {
+				instructions.push(...clientSwap.setupInstructions);
+			}
+			instructions.push(clientSwap.swapInstruction);
+			if (clientSwap.cleanupInstruction) {
+				instructions.push(clientSwap.cleanupInstruction);
+			}
+			_lookupTablesAddress.push(...clientSwap.addressLookupTableAddresses);
 		}
-		instructions.push(clientSwap.swapInstruction);
-		if (clientSwap.cleanupInstruction) {
-			instructions.push(clientSwap.cleanupInstruction);
-		}
-		_lookupTablesAddress.push(...clientSwap.addressLookupTableAddresses);
+
+		const feeSolana: bigint = swapInstructions.length > 0 ? BigInt(0) : BigInt(quote.solanaRelayerFee64);
+
+
 		if (quote.hasAuction) {
 			instructions.push(createMctpSwapLedgerInstruction({
 				ledger,
@@ -655,7 +677,7 @@ export async function createMctpFromSolanaInstructions(
 				feeSolana,
 				feeRedeem: quote.redeemRelayerFee,
 				gasDrop: quote.gasDrop,
-				amountInMin: quote.minMiddleAmount,
+				amountInMin64: getAmountOfFractionalAmount(quote.minMiddleAmount, CCTP_TOKEN_DECIMALS),
 				tokenOut,
 				tokenOutDecimals: quote.toToken.decimals,
 				referrerAddress: referrerAddress,
@@ -663,6 +685,16 @@ export async function createMctpFromSolanaInstructions(
 				deadline,
 				feeRateRef: quote.referrerBps,
 			}));
+			if (swapInstructions.length > 0) {
+				const {
+					instruction: _instruction,
+					signer: _signer
+				} = createMctpInitSwapInstruction(
+					ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
+				);
+				instructions.push(_instruction);
+				signers.push(_signer);
+			}
 		}
 		else {
 			instructions.push(createMctpBridgeLedgerInstruction({
@@ -675,14 +707,45 @@ export async function createMctpFromSolanaInstructions(
 				feeSolana,
 				feeRedeem: quote.redeemRelayerFee,
 				gasDrop: quote.gasDrop,
-				amountInMin: quote.minMiddleAmount,
+				amountInMin64: getAmountOfFractionalAmount(quote.minMiddleAmount, CCTP_TOKEN_DECIMALS),
 				mode,
 				referrerAddress,
 			}));
+			if (swapInstructions.length > 0) {
+				if (mode === 'WITH_FEE') {
+					const {
+						instruction: _instruction,
+						signers: _signers
+					} = createMctpBridgeWithFeeInstruction(
+						ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
+					);
+					instructions.push(_instruction);
+					signers.push(..._signers);
+				} else {
+					const {
+						instructions: _instructions,
+						signer: _signer
+					} = createMctpBridgeLockFeeInstruction(
+						ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
+					);
+					instructions.push(..._instructions);
+					signers.push(_signer);
+				}
+			}
 		}
 	}
 
-	lookupTables = await getAddressLookupTableAccounts(_lookupTablesAddress, connection)
-	return {instructions, signers, lookupTables};
+	const totalLookupTables = await getAddressLookupTableAccounts(_lookupTablesAddress.concat(_swapAddressLookupTables), connection);
+	lookupTables = totalLookupTables.slice(0, _lookupTablesAddress.length);
+	if (swapInstructions.length > 0) {
+		const swapLookupTables = totalLookupTables.slice(_lookupTablesAddress.length);
+		swapMessageV0Params = {
+			payerKey: new PublicKey(swapperAddress),
+			instructions: swapInstructions,
+			addressLookupTableAccounts: swapLookupTables,
+		};
+	}
+
+	return { instructions, signers, lookupTables, swapMessageV0Params };
 }
 

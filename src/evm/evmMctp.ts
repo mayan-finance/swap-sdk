@@ -48,7 +48,7 @@ function getEvmMctpBridgeParams(
 	const destinationAddressHex = nativeAddressToHexString(destinationAddress, destChainId);
 	const redeemFee = getAmountOfFractionalAmount(quote.redeemRelayerFee, CCTP_TOKEN_DECIMALS);
 	const gasDrop = getAmountOfFractionalAmount(quote.gasDrop, Math.min(getGasDecimal(quote.toChain), 8));
-	const amountIn = getAmountOfFractionalAmount(quote.effectiveAmountIn, quote.fromToken.decimals);
+	const amountIn = BigInt(quote.effectiveAmountIn64);
 	const destDomain = getCCTPDomain(quote.toChain);
 
 	if (!quote.mctpMayanContract) {
@@ -170,7 +170,7 @@ function getEvmMctpCreateOrderParams(
 	const redeemFee = getAmountOfFractionalAmount(quote.redeemRelayerFee, CCTP_TOKEN_DECIMALS);
 	const gasDrop = getAmountOfFractionalAmount(quote.gasDrop, Math.min(getGasDecimal(quote.toChain), 8));
 
-	let amountIn = getAmountOfFractionalAmount(quote.effectiveAmountIn, quote.fromToken.decimals);
+	let amountIn = BigInt(quote.effectiveAmountIn64);
 	const minAmountOut = getAmountOfFractionalAmount(
 		quote.minAmountOut, Math.min(8, quote.toToken.decimals)
 	);

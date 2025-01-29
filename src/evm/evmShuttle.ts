@@ -99,7 +99,7 @@ export function getShuttleParams(
 
 	// <input amount> we are sure because of the input token is USDC the amount in will be fit in 8 bytes
 	bytes.push(0, 0, 0, 0, 0, 0, 0, 0); // offset of amount_in (8 bytes)
-	const amountIn = getAmountOfFractionalAmount(quote.effectiveAmountIn, quote.fromToken.decimals);
+	const amountIn = BigInt(quote.effectiveAmountIn64);
 	const amountInBuffer = Buffer.alloc(8);
 	amountInBuffer.writeBigUInt64BE(amountIn);
 	bytes.push(...amountInBuffer);

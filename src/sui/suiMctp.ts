@@ -77,7 +77,7 @@ export async function createMctpFromSuiMoveCalls(
 			outCoin,
 			whFeeCoin: suiSplitViaSwap,
 		} = await getSwapSui({
-			amountIn: quote.effectiveAmountIn,
+			amountIn64: quote.effectiveAmountIn64,
 			inputCoinType: quote.fromToken.contract,
 			middleCoinType: quote.mctpInputContract,
 			userWallet: swapperAddress,
@@ -136,7 +136,7 @@ export async function createMctpFromSuiMoveCalls(
 		}
 	}
 	// Log initial coin and amount
-	const amountIn = getAmountOfFractionalAmount(quote.effectiveAmountIn, quote.fromToken.decimals);
+	const amountIn = BigInt(quote.effectiveAmountIn64);
 	const _payload = payload ? Uint8Array.from(payload) : Uint8Array.from([]);
 	tx.moveCall({
 		package: mctpPackageId,

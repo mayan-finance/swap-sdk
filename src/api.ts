@@ -84,7 +84,7 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		wormhole: quoteOptions.wormhole !== false, // default to true
 		swift: quoteOptions.swift !== false, // default to true
 		mctp: quoteOptions.mctp !== false, // default to true
-		shuttle: quoteOptions.shuttle !== false, // default to true
+		shuttle: quoteOptions.shuttle === true, // default to false
 		gasless: quoteOptions.gasless === true, // default to false
 		onlyDirect: quoteOptions.onlyDirect === true, // default to false
 	}
@@ -92,7 +92,8 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		..._quoteOptions,
 		solanaProgram: addresses.MAYAN_PROGRAM_ID,
 		forwarderAddress: addresses.MAYAN_FORWARDER_CONTRACT,
-		amountIn: Number.isFinite(params.amount) ? params.amount : undefined,
+		amountIn: !params.amountIn64 && Number.isFinite(params.amount) ? params.amount : undefined,
+		amountIn64: params.amountIn64,
 		fromToken: params.fromToken,
 		fromChain: params.fromChain,
 		toToken: params.toToken,
@@ -124,7 +125,7 @@ export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions
 	if (res.status !== 200 && res.status !== 201) {
 		throw {
 			code: result?.code || 0,
-			message: result?.msg || 'Route not found',
+			message: result?.msg || result?.message || 'Route not found',
 		} as QuoteError
 	}
 	if (!checkSdkVersionSupport(result.minimumSdkVersion)) {

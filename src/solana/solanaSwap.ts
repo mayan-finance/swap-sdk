@@ -12,7 +12,7 @@ import {
 	ComputeBudgetProgram, AddressLookupTableAccount, MessageV0, VersionedTransaction
 } from '@solana/web3.js';
 import {blob, struct, u16, u8} from '@solana/buffer-layout';
-import { Quote, ReferrerAddresses, SolanaTransactionSigner, JitoBundleOptions } from '../types';
+import { Quote, ReferrerAddresses, SolanaTransactionSigner, JitoBundleOptions, SwapMessageV0Params } from '../types';
 import {
 	getAmountOfFractionalAmount,
 	getAssociatedTokenAddress, getGasDecimalsInSolana,
@@ -25,15 +25,21 @@ import {
 import {Buffer} from 'buffer';
 import addresses from '../addresses'
 import {ZeroAddress} from 'ethers';
-import { getCurrentChainTime, getSuggestedRelayer, submitSwiftSolanaSwap } from '../api';
+import { submitSwiftSolanaSwap } from '../api';
 import {
 	createAssociatedTokenAccountInstruction,
 	createSyncNativeInstruction,
 	createApproveInstruction,
-	submitTransactionWithRetry, decideRelayer, getJitoTipTransfer, sendJitoBundle
+	submitTransactionWithRetry,
+	decideRelayer,
+	getJitoTipTransfer,
+	sendJitoBundle,
+	confirmJitoBundleId,
+	broadcastJitoBundleId
 } from './utils';
 import { createMctpFromSolanaInstructions } from "./solanaMctp";
 import { createSwiftFromSolanaInstructions } from './solanaSwift';
+import bs58 from 'bs58';
 
 
 const STATE_SIZE = 420;
@@ -62,11 +68,13 @@ export async function createSwapFromSolanaInstructions(
 	connection?: Connection, options: {
 		allowSwapperOffCurve?: boolean,
 		forceSkipCctpInstructions?: boolean,
+		separateSwapTx?: boolean,
 	} = {}
 ): Promise<{
 	instructions: Array<TransactionInstruction>,
 	signers: Array<Keypair>,
 	lookupTables: Array<AddressLookupTableAccount>,
+	swapMessageV0Params: SwapMessageV0Params | null,
 }> {
 
 	const referrerAddress = getQuoteSuitableReferrerAddress(quote, referrerAddresses);
@@ -154,14 +162,12 @@ export async function createSwapFromSolanaInstructions(
 		instructions.push(SystemProgram.transfer({
 			fromPubkey: swapper,
 			toPubkey: fromAccount,
-			lamports: getAmountOfFractionalAmount(
-				quote.effectiveAmountIn, 9),
+			lamports: BigInt(quote.effectiveAmountIn64),
 		}));
 		instructions.push(createSyncNativeInstruction(fromAccount));
 	}
 
-	const amount = getAmountOfFractionalAmount(
-		quote.effectiveAmountIn, quote.mintDecimals.from);
+	const amount = BigInt(quote.effectiveAmountIn64);
 
 	const delegate = Keypair.generate();
 	instructions.push(createApproveInstruction(
@@ -268,6 +274,7 @@ export async function createSwapFromSolanaInstructions(
 		instructions,
 		signers: [delegate, msg1, msg2],
 		lookupTables: [],
+		swapMessageV0Params: null,
 	};
 }
 
@@ -290,13 +297,25 @@ export async function swapFromSolana(
 	const solanaConnection = connection ??
 		new Connection('https://rpc.ankr.com/solana');
 
+	const jitoEnabled = !!(
+		!quote.gasless &&
+		jitoOptions &&
+		jitoOptions.tipLamports > 0  &&
+		jitoOptions.signAllTransactions
+	);
+
 	const {
 		instructions,
 		signers,
-		lookupTables
+		lookupTables,
+		swapMessageV0Params,
 	} = await createSwapFromSolanaInstructions(
 		quote, swapperWalletAddress, destinationAddress,
-		referrerAddresses, connection, instructionOptions
+		referrerAddresses, connection, {
+			allowSwapperOffCurve: instructionOptions?.allowSwapperOffCurve,
+			forceSkipCctpInstructions: instructionOptions?.forceSkipCctpInstructions,
+			separateSwapTx: jitoEnabled && jitoOptions?.separateSwapTx,
+		}
 	);
 
 	const swapper = new PublicKey(swapperWalletAddress);
@@ -312,17 +331,45 @@ export async function swapFromSolana(
 	});
 	const transaction = new VersionedTransaction(message);
 	transaction.sign(signers);
-	let signedTrx;
-	if (
-		!quote.gasless &&
-		jitoOptions &&
-		jitoOptions.tipLamports > 0  &&
-		jitoOptions.signAllTransactions
-	) {
+	let signedTrx: Transaction | VersionedTransaction;
+	if (jitoEnabled) {
+		const allTransactions: Array<Transaction | VersionedTransaction> = [];
+		if (swapMessageV0Params) {
+			const swapMessage = MessageV0.compile({
+				...swapMessageV0Params,
+				recentBlockhash: blockhash,
+			});
+			allTransactions.push(new VersionedTransaction(swapMessage));
+		}
 		const jitoTipTransfer = getJitoTipTransfer(swapperWalletAddress, blockhash, lastValidBlockHeight, jitoOptions);
-		const signedTrxs = await jitoOptions.signAllTransactions([transaction, jitoTipTransfer]);
-		signedTrx = signedTrxs[0];
-		sendJitoBundle(signedTrxs, jitoOptions);
+		allTransactions.push(transaction);
+		allTransactions.push(jitoTipTransfer);
+		const signedTrxs = await jitoOptions.signAllTransactions(allTransactions);
+		signedTrx = signedTrxs[signedTrxs.length - 2];
+		let mayanTxHash = null;
+		if (signedTrx instanceof Transaction && signedTrx?.signatures[0]?.publicKey) {
+			mayanTxHash = bs58.encode(Uint8Array.from(signedTrx.signatures[0].signature));
+		} else if (signedTrx instanceof VersionedTransaction && signedTrx?.signatures[0]) {
+			mayanTxHash = bs58.encode(Uint8Array.from(signedTrx.signatures[0]));
+		}
+
+		if (mayanTxHash === null) {
+			throw new Error('Failed to get mayan tx hash');
+		}
+
+		if (swapMessageV0Params) {
+			const jitoBundleId = await sendJitoBundle(signedTrxs, jitoOptions, true);
+			await confirmJitoBundleId(jitoBundleId, jitoOptions, lastValidBlockHeight, mayanTxHash, connection);
+			broadcastJitoBundleId(jitoBundleId);
+			return {
+				signature: mayanTxHash,
+				serializedTrx: null,
+			};
+		} else {
+			sendJitoBundle(signedTrxs, jitoOptions)
+				.then(() => { console.log('Jito bundle sent') })
+				.catch(() => {});
+		}
 	} else {
 		signedTrx = await signTransaction(transaction);
 	}

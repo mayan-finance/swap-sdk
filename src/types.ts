@@ -1,4 +1,4 @@
-import { Transaction, VersionedTransaction } from '@solana/web3.js';
+import { CompileV0Args, Transaction, VersionedTransaction } from '@solana/web3.js';
 import { Transaction as SuiTransaction, TransactionResult as SuiTransactionResult } from '@mysten/sui/transactions';
 
 export type ChainName = 'solana'
@@ -25,13 +25,30 @@ export type Token = {
 };
 
 export type QuoteParams = {
-	amount: number;
+	/**
+	 * @deprecated to avoid precision issues, use {@link amountIn64} instead
+	 */
+	amount?: number;
+	amountIn64?: string;
 	fromToken: string;
 	fromChain: ChainName;
 	toToken: string;
 	toChain: ChainName;
-	//@deprecated
+	/**
+	 * @deprecated Use the new property {@link slippageBps} instead
+	 */
 	slippage?: number;
+	/**
+	 * Slippage in basis points.
+	 * One basis point (bps) = 0.01%.
+	 *
+	 * - A value of `50` means a slippage of 0.5%.
+	 * - A value of `100` means a slippage of 1%.
+	 * - If set to `'auto'`, the system will automatically determine slippage.
+	 *
+	 * @example
+	 * slippageBps: 50 // 0.5% slippage
+	 */
 	slippageBps: 'auto' | number;
 	gasDrop?: number;
 	referrer?: string;
@@ -45,7 +62,11 @@ export type QuoteError = {
 
 export type Quote = {
 	type: 'WH' | 'SWIFT' | 'MCTP' | 'SHUTTLE';
+	/**
+	 * @deprecated Use the new property `slippageBps` instead
+	 */
 	effectiveAmountIn: number;
+	effectiveAmountIn64: string;
 	expectedAmountOut: number;
 	priceImpact: number;
 	minAmountOut: number;
@@ -149,13 +170,14 @@ export type Erc20Permit = {
 }
 
 type BaseGetSolanaSwapParams = {
-	amountIn: number,
+	amountIn64: string,
 	fromToken: string,
 	minMiddleAmount: number,
 	middleToken: string,
 	userWallet: string,
 	slippageBps: number,
 	referrerAddress?: string,
+	fillMaxAccounts?: boolean,
 }
 
 type MctpGetSolanaSwapParams = BaseGetSolanaSwapParams & {
@@ -171,7 +193,7 @@ type SwiftGetSolanaSwapParams = BaseGetSolanaSwapParams & {
 export type GetSolanaSwapParams = MctpGetSolanaSwapParams | SwiftGetSolanaSwapParams;
 
 type BaseGetSuiSwapParams = {
-	amountIn: number,
+	amountIn64: string,
 	inputCoinType: string,
 	middleCoinType: string,
 	userWallet: string,
@@ -201,6 +223,7 @@ export type SolanaClientSwap = {
 	swapInstruction: InstructionInfo,
 	cleanupInstruction: InstructionInfo,
 	addressLookupTableAddresses: string[],
+	maxAccountsFilled: boolean,
 }
 
 export type SuiFunctionNestedResult = {
@@ -263,6 +286,7 @@ export type JitoBundleOptions = {
 	signAllTransactions: <T extends Transaction | VersionedTransaction>(transactions: T[]) => Promise<T[]>
 	jitoAccount?: string,
 	jitoSendUrl?: string,
+	separateSwapTx?: boolean,
 }
 
 export type ComposableSuiMoveCallsOptions = {
@@ -270,3 +294,5 @@ export type ComposableSuiMoveCallsOptions = {
 	inputCoin?: SuiFunctionParameter;
 	whFeeCoin?: SuiFunctionParameter;
 };
+
+export type SwapMessageV0Params = Omit<CompileV0Args, 'recentBlockhash'>
