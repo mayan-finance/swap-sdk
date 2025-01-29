@@ -28,6 +28,7 @@ import { Buffer } from 'buffer';
 import { getMctpFromEvmTxPayload } from './evmMctp';
 import { getSwiftFromEvmGasLessParams, getSwiftFromEvmTxPayload } from './evmSwift';
 import { submitSwiftEvmSwap } from '../api';
+import { getShuttleFromEvmTxPayload } from './evmShuttle';
 
 export type ContractRelayerFees = {
 	swapFee: bigint,
@@ -80,8 +81,7 @@ function getEvmSwapParams(
 		mayanMainAccount,
 		true
 	);
-	const amountIn = getAmountOfFractionalAmount(
-		quote.effectiveAmountIn, quote.fromToken.decimals);
+	const amountIn = BigInt(quote.effectiveAmountIn64);
 	const recipientHex = nativeAddressToHexString(recipient.toString(), 1);
 	const auctionHex = nativeAddressToHexString(
 		addresses.AUCTION_PROGRAM_ID, 1
@@ -176,10 +176,13 @@ export function getSwapFromEvmTxPayload(
 	const referrerAddress = getQuoteSuitableReferrerAddress(quote, referrerAddresses);
 
 	if (quote.type === 'MCTP') {
-		return getMctpFromEvmTxPayload(quote, destinationAddress, referrerAddress, signerChainId, permit);
+		return getMctpFromEvmTxPayload(quote, destinationAddress, referrerAddress, signerChainId, permit, payload);
 	}
 	if (quote.type === 'SWIFT') {
 		return getSwiftFromEvmTxPayload(quote, swapperAddress, destinationAddress, referrerAddress, signerChainId, permit);
+	}
+	if (quote.type === 'SHUTTLE') {
+		return getShuttleFromEvmTxPayload(quote, destinationAddress, signerChainId, permit);
 	}
 
 	if (quote.type != 'WH') {

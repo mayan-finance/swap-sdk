@@ -14,13 +14,19 @@ export function nativeAddressToHexString(
 	if (wChainId === 1) {
 		return zeroPadValue(new PublicKey(address).toBytes(), 32);
 	} else if (
-		wChainId === 2 || wChainId === 4 || wChainId === 5 ||
-		wChainId === 6  || wChainId === 23 || wChainId === 24 ||
-		wChainId === 30
+		wChainId === chains.ethereum || wChainId === chains.bsc || wChainId === chains.polygon ||
+		wChainId === chains.avalanche  || wChainId === chains.arbitrum || wChainId === chains.optimism ||
+		wChainId === chains.base
 	) {
 		return zeroPadValue(address, 32);
-	} else if (wChainId === 22 && isValidAptosType(address)) {
+	} else if (wChainId === chains.aptos && isValidAptosType(address)) {
 		return `0x${sha3_256(address)}`
+	} else if (wChainId === chains.sui) {
+		let addressStr = address.startsWith('0x') ? address.substring(2) : address;
+		if (Buffer.from(addressStr, 'hex').length !== 32) {
+			throw new Error('Invalid sui address: ' + address);
+		}
+		return zeroPadValue(address, 32);
 	} else {
 		console.log(`Unsupported chain id: ${wChainId}`, address);
 		throw new Error('Unsupported token chain');
@@ -95,6 +101,7 @@ const chains: { [index in ChainName]: number }  = {
 	optimism: 24,
 	base: 30,
 	aptos: 22,
+	sui: 21,
 };
 
 export function getWormholeChainIdByName(chain: string) : number | null {
@@ -128,7 +135,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [9, 8, 0];
+const sdkVersion = [10, 0, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -210,7 +217,15 @@ export function getQuoteSuitableReferrerAddress(
 		if (quote.toChain === 'solana') {
 			return referrerAddresses?.solana || null;
 		}
+		if (quote.toChain === 'sui') {
+			return referrerAddresses?.sui || null;
+		}
 		return referrerAddresses?.evm || null;
 	}
 	return null;
 }
+
+export const MCTP_PAYLOAD_TYPE_DEFAULT = 1;
+export const MCTP_PAYLOAD_TYPE_CUSTOM_PAYLOAD = 2;
+export const MCTP_INIT_ORDER_PAYLOAD_ID = 1;
+

@@ -1,9 +1,10 @@
-import { Transaction, VersionedTransaction } from '@solana/web3.js';
+import { CompileV0Args, Transaction, VersionedTransaction } from '@solana/web3.js';
+import { Transaction as SuiTransaction, TransactionResult as SuiTransactionResult } from '@mysten/sui/transactions';
 
 export type ChainName = 'solana'
-	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' | 'base' | 'aptos';
+	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' | 'base' | 'aptos' | 'sui';
 
-export type TokenStandard = 'native' | 'erc20' | 'spl' | 'spl2022';
+export type TokenStandard = 'native' | 'erc20' | 'spl' | 'spl2022' | 'suicoin';
 
 export type Token = {
 	name: string,
@@ -18,17 +19,36 @@ export type Token = {
 	realOriginChainId?: number,
 	realOriginContractAddress?: string,
 	supportsPermit: boolean,
+	verified: boolean;
 	standard: TokenStandard,
+	verifiedAddress: string,
 };
 
 export type QuoteParams = {
-	amount: number;
+	/**
+	 * @deprecated to avoid precision issues, use {@link amountIn64} instead
+	 */
+	amount?: number;
+	amountIn64?: string;
 	fromToken: string;
 	fromChain: ChainName;
 	toToken: string;
 	toChain: ChainName;
-	//@deprecated
+	/**
+	 * @deprecated Use the new property {@link slippageBps} instead
+	 */
 	slippage?: number;
+	/**
+	 * Slippage in basis points.
+	 * One basis point (bps) = 0.01%.
+	 *
+	 * - A value of `50` means a slippage of 0.5%.
+	 * - A value of `100` means a slippage of 1%.
+	 * - If set to `'auto'`, the system will automatically determine slippage.
+	 *
+	 * @example
+	 * slippageBps: 50 // 0.5% slippage
+	 */
 	slippageBps: 'auto' | number;
 	gasDrop?: number;
 	referrer?: string;
@@ -41,8 +61,12 @@ export type QuoteError = {
 }
 
 export type Quote = {
-	type: 'WH' | 'SWIFT' | 'MCTP';
+	type: 'WH' | 'SWIFT' | 'MCTP' | 'SHUTTLE';
+	/**
+	 * @deprecated Use the new property `slippageBps` instead
+	 */
 	effectiveAmountIn: number;
+	effectiveAmountIn64: string;
 	expectedAmountOut: number;
 	priceImpact: number;
 	minAmountOut: number;
@@ -98,6 +122,7 @@ export type Quote = {
 	evmSwapRouterCalldata?: string;
 	mctpMayanContract?: string;
 	swiftMayanContract?: string;
+	shuttleContract?: string;
 	swiftAuctionMode?: number;
 	swiftInputContract: string;
 	swiftInputDecimals: number;
@@ -106,11 +131,27 @@ export type Quote = {
 	sendTransactionCost: number;
 	maxUserGasDrop: number;
 	rentCost?: bigint;
+	shuttleParams : {
+		maxLLFee: string;
+		maxRelayingFee: string;
+		fastTransferDeadline: number;
+		hasDestSwap: boolean
+		path: string;
+	}
+	shuttleInputContract: string;
+	shuttleInputDecimals: number;
+
+
+
+	mctpVerifiedInputAddress: string;
+	mctpInputTreasury: string;
 };
 
 export type QuoteOptions = {
+	wormhole?: boolean;
 	swift?: boolean;
 	mctp?: boolean;
+	shuttle?: boolean;
 	gasless?: boolean;
 	onlyDirect?: boolean;
 };
@@ -129,12 +170,14 @@ export type Erc20Permit = {
 }
 
 type BaseGetSolanaSwapParams = {
-	amountIn: number,
+	amountIn64: string,
 	fromToken: string,
 	minMiddleAmount: number,
 	middleToken: string,
 	userWallet: string,
 	slippageBps: number,
+	referrerAddress?: string,
+	fillMaxAccounts?: boolean,
 }
 
 type MctpGetSolanaSwapParams = BaseGetSolanaSwapParams & {
@@ -148,6 +191,20 @@ type SwiftGetSolanaSwapParams = BaseGetSolanaSwapParams & {
 }
 
 export type GetSolanaSwapParams = MctpGetSolanaSwapParams | SwiftGetSolanaSwapParams;
+
+type BaseGetSuiSwapParams = {
+	amountIn64: string,
+	inputCoinType: string,
+	middleCoinType: string,
+	userWallet: string,
+	referrerAddress?: string,
+}
+
+type MctpGetSuiSwapParams = BaseGetSuiSwapParams & {
+	withWhFee: boolean
+}
+
+export type GetSuiSwapParams = MctpGetSuiSwapParams;
 
 export type SolanaKeyInfo = {
 	pubkey: string,
@@ -166,11 +223,37 @@ export type SolanaClientSwap = {
 	swapInstruction: InstructionInfo,
 	cleanupInstruction: InstructionInfo,
 	addressLookupTableAddresses: string[],
+	maxAccountsFilled: boolean,
+}
+
+export type SuiFunctionNestedResult = {
+	$kind: 'NestedResult';
+	NestedResult: [number, number];
+};
+
+export type SuiFunctionParameter =
+	| {
+	result:
+		| SuiTransactionResult
+		| SuiFunctionNestedResult
+		| { $kind: 'Input'; Input: number; type?: 'object' };
+	objectId?: undefined | null;
+}
+	| {
+	result?: undefined | null;
+	objectId: string;
+};
+
+export type SuiClientSwap = {
+	tx: string,
+	outCoin: SuiTransactionResult,
+	whFeeCoin?: SuiTransactionResult | SuiFunctionNestedResult,
 }
 
 export type ReferrerAddresses = {
 	solana?: string | null,
 	evm?: string | null,
+	sui?: string | null,
 }
 
 export type SwiftEvmOrderTypedData = {
@@ -203,4 +286,13 @@ export type JitoBundleOptions = {
 	signAllTransactions: <T extends Transaction | VersionedTransaction>(transactions: T[]) => Promise<T[]>
 	jitoAccount?: string,
 	jitoSendUrl?: string,
+	separateSwapTx?: boolean,
 }
+
+export type ComposableSuiMoveCallsOptions = {
+	builtTransaction?: SuiTransaction;
+	inputCoin?: SuiFunctionParameter;
+	whFeeCoin?: SuiFunctionParameter;
+};
+
+export type SwapMessageV0Params = Omit<CompileV0Args, 'recentBlockhash'>

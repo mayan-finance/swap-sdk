@@ -1,21 +1,17 @@
 import {
 	Contract,
-	Signer,
 	toBeHex,
-	Overrides,
 	ZeroAddress,
-	TransactionResponse,
 	TransactionRequest,
 } from 'ethers';
-import { PublicKey, SystemProgram } from '@solana/web3.js';
+import { SystemProgram } from '@solana/web3.js';
 import type { EvmForwarderParams, Quote } from '../types';
 import {
-	getAssociatedTokenAddress,
 	nativeAddressToHexString,
 	getAmountOfFractionalAmount, getWormholeChainIdByName,
-	getWormholeChainIdById, getGasDecimal, ZeroPermit
+	getWormholeChainIdById, getGasDecimal, ZeroPermit, MCTP_PAYLOAD_TYPE_CUSTOM_PAYLOAD, MCTP_PAYLOAD_TYPE_DEFAULT
 } from '../utils';
-import { getCurrentChainTime } from '../api';
+
 import MayanCircleArtifact from './MayanCircleArtifact';
 import MayanForwarderArtifact from './MayanForwarderArtifact';
 import addresses from '../addresses';
@@ -30,16 +26,14 @@ type EvmMctpBridgeParams = {
 	redeemFee: bigint,
 	gasDrop: bigint,
 	destAddr: string,
-	recipient: {
-		destDomain: number,
-		mintRecipient: string,
-		callerAddr: string,
-	},
+	customPayload: string,
+	payloadType: number,
+	destDomain: number,
 	bridgeFee: bigint,
 	contractAddress: string,
 }
 function getEvmMctpBridgeParams(
-	quote: Quote, destinationAddress: string, signerChainId: number | string
+	quote: Quote, destinationAddress: string, signerChainId: number | string, customPayload?: Uint8Array | Buffer | null
 ): EvmMctpBridgeParams {
 	const signerWormholeChainId = getWormholeChainIdById(Number(signerChainId));
 	const sourceChainId = getWormholeChainIdByName(quote.fromChain);
@@ -48,10 +42,13 @@ function getEvmMctpBridgeParams(
 		throw new Error(`Signer chain id(${Number(signerChainId)}) and quote from chain are not same! ${sourceChainId} !== ${signerWormholeChainId}`);
 	}
 	const lockFee: boolean = quote.cheaperChain === quote.fromChain;
+	if (lockFee && !!customPayload) {
+		throw new Error('Bridge lock fee cannot have custom payload');
+	}
 	const destinationAddressHex = nativeAddressToHexString(destinationAddress, destChainId);
 	const redeemFee = getAmountOfFractionalAmount(quote.redeemRelayerFee, CCTP_TOKEN_DECIMALS);
 	const gasDrop = getAmountOfFractionalAmount(quote.gasDrop, Math.min(getGasDecimal(quote.toChain), 8));
-	const amountIn = getAmountOfFractionalAmount(quote.effectiveAmountIn, quote.fromToken.decimals);
+	const amountIn = BigInt(quote.effectiveAmountIn64);
 	const destDomain = getCCTPDomain(quote.toChain);
 
 	if (!quote.mctpMayanContract) {
@@ -59,34 +56,8 @@ function getEvmMctpBridgeParams(
 	}
 	const contractAddress = quote.mctpMayanContract;
 
-	let mintRecipient: string;
-	let callerAddr: string;
-	if (quote.toChain === 'solana') {
-		if (lockFee) {
-			throw new Error('Cannot lock fee for transfer to solana');
-		}
-		const [caller] = PublicKey.findProgramAddressSync(
-			[Buffer.from('CALLER')], new PublicKey(addresses.MCTP_PROGRAM_ID)
-		);
-		const [main] = PublicKey.findProgramAddressSync(
-			[Buffer.from('MAIN')], new PublicKey(addresses.MCTP_PROGRAM_ID)
-		);
-		const cctpOutputMint = new PublicKey(quote.mctpOutputContract);
-		const mainAccount = getAssociatedTokenAddress(
-			cctpOutputMint,
-			main,
-			true
-		);
-
-		mintRecipient = nativeAddressToHexString(mainAccount.toString(), getWormholeChainIdByName('solana'));
-		callerAddr = nativeAddressToHexString(caller.toString(), getWormholeChainIdByName('solana'));
-	} else {
-		callerAddr = nativeAddressToHexString(contractAddress, destChainId);
-		if (lockFee) {
-			mintRecipient = destinationAddressHex;
-		} else {
-			mintRecipient = callerAddr;
-		}
+	if (quote.toChain === 'solana' && lockFee) {
+		throw new Error('Cannot lock fee for transfer to solana');
 	}
 
 	let bridgeFee = getAmountOfFractionalAmount(
@@ -105,11 +76,9 @@ function getEvmMctpBridgeParams(
 		redeemFee,
 		gasDrop,
 		destAddr: destinationAddressHex,
-		recipient: {
-			destDomain,
-			mintRecipient,
-			callerAddr
-		},
+		destDomain,
+		payloadType: customPayload ? MCTP_PAYLOAD_TYPE_CUSTOM_PAYLOAD : MCTP_PAYLOAD_TYPE_DEFAULT,
+		customPayload: customPayload ? `0x${Buffer.from(customPayload).toString('hex')}` : '0x',
 		bridgeFee,
 		contractAddress,
 	};
@@ -117,14 +86,15 @@ function getEvmMctpBridgeParams(
 
 function getEvmMctpBridgeTxPayload(
 	quote: Quote, destinationAddress: string, signerChainId: number | string,
+	payload: Uint8Array | Buffer | null | undefined
 ): TransactionRequest & { _params: EvmMctpBridgeParams } {
 	const params = getEvmMctpBridgeParams(
-		quote, destinationAddress, signerChainId
+		quote, destinationAddress, signerChainId, payload
 	);
 	const {
 		contractAddress, tokenIn, amountIn, destAddr,
 		lockFee, redeemFee, gasDrop,
-		recipient, bridgeFee
+		destDomain, customPayload, payloadType, bridgeFee
 	} = params;
 
 	const mctpContract = new Contract(contractAddress, MayanCircleArtifact.abi);
@@ -133,12 +103,12 @@ function getEvmMctpBridgeTxPayload(
 	if (lockFee) {
 		data = mctpContract.interface.encodeFunctionData(
 			'bridgeWithLockedFee',
-			[tokenIn, amountIn, gasDrop, redeemFee, recipient]
+			[tokenIn, amountIn, gasDrop, redeemFee, destDomain, destAddr]
 		);
 	} else {
 		data = mctpContract.interface.encodeFunctionData(
 			'bridgeWithFee',
-			[tokenIn, amountIn, redeemFee, gasDrop, destAddr, recipient]
+			[tokenIn, amountIn, redeemFee, gasDrop, destAddr, destDomain, payloadType, customPayload]
 		);
 	}
 	value = toBeHex(bridgeFee);
@@ -166,11 +136,6 @@ type EvmMctpCreateOrderParams = {
 		referrerAddr: string,
 		referrerBps: number,
 	},
-	recipient: {
-		destDomain: number,
-		mintRecipient: string,
-		callerAddr: string,
-	},
 	bridgeFee: bigint,
 	contractAddress: string,
 }
@@ -190,30 +155,6 @@ function getEvmMctpCreateOrderParams(
 	}
 	const contractAddress = quote.mctpMayanContract;
 
-
-	let mintRecipient: string;
-	let callerAddr: string;
-	if (quote.toChain === 'solana') {
-		const [caller] = PublicKey.findProgramAddressSync(
-			[Buffer.from('CALLER')], new PublicKey(addresses.MCTP_PROGRAM_ID)
-		);
-		const [main] = PublicKey.findProgramAddressSync(
-			[Buffer.from('MAIN')], new PublicKey(addresses.MCTP_PROGRAM_ID)
-		);
-		const cctpOutputMint = new PublicKey(quote.mctpOutputContract);
-		const mainAccount = getAssociatedTokenAddress(
-			cctpOutputMint,
-			main,
-			true
-		);
-		mintRecipient = nativeAddressToHexString(mainAccount.toString(), getWormholeChainIdByName('solana'));
-		callerAddr = nativeAddressToHexString(caller.toString(), getWormholeChainIdByName('solana'));
-	} else {
-		mintRecipient = nativeAddressToHexString(contractAddress, destChainId);
-		callerAddr = nativeAddressToHexString(contractAddress, destChainId);
-	}
-	const destDomain = getCCTPDomain(quote.toChain);
-
 	const destinationAddressHex = nativeAddressToHexString(destinationAddress, destChainId);
 	let referrerHex: string;
 	if (referrerAddress) {
@@ -229,7 +170,7 @@ function getEvmMctpCreateOrderParams(
 	const redeemFee = getAmountOfFractionalAmount(quote.redeemRelayerFee, CCTP_TOKEN_DECIMALS);
 	const gasDrop = getAmountOfFractionalAmount(quote.gasDrop, Math.min(getGasDecimal(quote.toChain), 8));
 
-	let amountIn = getAmountOfFractionalAmount(quote.effectiveAmountIn, quote.fromToken.decimals);
+	let amountIn = BigInt(quote.effectiveAmountIn64);
 	const minAmountOut = getAmountOfFractionalAmount(
 		quote.minAmountOut, Math.min(8, quote.toToken.decimals)
 	);
@@ -239,7 +180,10 @@ function getEvmMctpCreateOrderParams(
 	const tokenOut =
 		quote.toToken.contract === ZeroAddress ?
 			nativeAddressToHexString(SystemProgram.programId.toString(), getWormholeChainIdByName('solana')) :
-			nativeAddressToHexString(quote.toToken.contract, quote.toToken.wChainId);
+			nativeAddressToHexString(
+				quote.toChain === 'sui' ? quote.toToken.verifiedAddress : quote.toToken.contract,
+				quote.toToken.wChainId,
+			);
 
 	return {
 		params: {
@@ -255,11 +199,6 @@ function getEvmMctpCreateOrderParams(
 			referrerAddr: referrerHex,
 			referrerBps: quote.referrerBps || 0
 		},
-		recipient: {
-			destDomain,
-			mintRecipient,
-			callerAddr
-		},
 		bridgeFee: getAmountOfFractionalAmount(quote.bridgeFee, getGasDecimal(quote.fromChain)),
 		contractAddress,
 	};
@@ -273,12 +212,12 @@ function getEvmMctpCreateOrderTxPayload(
 		quote, destinationAddress, referrerAddress, signerChainId
 	);
 	const {
-		contractAddress, params, bridgeFee, recipient
+		contractAddress, params, bridgeFee
 	} = orderParams;
 	const mctpContract = new Contract(contractAddress, MayanCircleArtifact.abi);
 	const data = mctpContract.interface.encodeFunctionData(
 		'createOrder',
-		[params, recipient]
+		[params]
 	);
 	const value = toBeHex(bridgeFee);
 
@@ -292,7 +231,7 @@ function getEvmMctpCreateOrderTxPayload(
 
 export function getMctpFromEvmTxPayload(
 	quote: Quote, destinationAddress: string, referrerAddress: string | null | undefined,
-	signerChainId: number | string, permit: Erc20Permit | null
+	signerChainId: number | string, permit: Erc20Permit | null, payload: Uint8Array | Buffer | null | undefined,
 ): TransactionRequest & { _forwarder: EvmForwarderParams } {
 
 	if (quote.type !== 'MCTP') {
@@ -344,7 +283,7 @@ export function getMctpFromEvmTxPayload(
 			}
 		} else {
 			const mctpPayloadIx = getEvmMctpBridgeTxPayload(
-				quote, destinationAddress, signerChainId
+				quote, destinationAddress, signerChainId, payload
 			);
 			const forwarderMethod = 'forwardERC20';
 			const forwarderParams = [
@@ -439,7 +378,9 @@ export function getMctpFromEvmTxPayload(
 				}
 			}
 		} else {
-			const mctpPayloadIx = getEvmMctpBridgeTxPayload(quote, destinationAddress, signerChainId);
+			const mctpPayloadIx = getEvmMctpBridgeTxPayload(
+				quote, destinationAddress, signerChainId, payload
+			);
 			const minMiddleAmount = getAmountOfFractionalAmount(quote.minMiddleAmount, CCTP_TOKEN_DECIMALS);
 
 			if (quote.fromToken.contract === ZeroAddress) {

@@ -14,7 +14,7 @@ import {
 import MayanSwiftArtifact from './MayanSwiftArtifact';
 import addresses from '../addresses';
 import MayanForwarderArtifact from './MayanForwarderArtifact';
-import { createSwiftOrderHash } from '../solana/solanaSwift';
+import { createSwiftOrderHash } from '../solana';
 
 
 export type SwiftOrderParams = {
@@ -66,10 +66,7 @@ export function getEvmSwiftParams(
 	const deadline = BigInt(quote.deadline64);
 
 	const tokenIn = quote.swiftInputContract;
-	const amountIn = getAmountOfFractionalAmount(
-		quote.effectiveAmountIn,
-		quote.fromToken.decimals
-	);
+	const amountIn = BigInt(quote.effectiveAmountIn64);
 	let referrerHex: string;
 	if (referrerAddress) {
 		referrerHex = nativeAddressToHexString(
@@ -239,7 +236,7 @@ export function getSwiftOrderTypeData(
 		throw new Error('Invalid signer chain id');
 	}
 
-	const totalAmountIn = getAmountOfFractionalAmount(quote.effectiveAmountIn, quote.swiftInputDecimals);
+	const totalAmountIn = BigInt(quote.effectiveAmountIn64);
 	const submitFee = BigInt(quote.submitRelayerFee64);
 	return {
 		domain: {
@@ -315,7 +312,6 @@ export function getSwiftFromEvmGasLessParams(
 		tokenIn,
 		amountIn,
 		order,
-		contractAddress: swiftContractAddress
 	} = getEvmSwiftParams(
 		quote, swapperAddress, destinationAddress,
 		referrerAddress, Number(signerChainId)
