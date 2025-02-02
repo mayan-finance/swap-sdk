@@ -25,9 +25,9 @@ async function check5xxError(res: Response): Promise<void> {
 		let error: Error | QuoteError;
 		try {
 			const err = await res.json();
-			if (err.code && (err?.message || err?.msg)) {
+			if ((err?.code || err?.statusCode) && (err?.message || err?.msg)) {
 				error = {
-					code: err.code,
+					code: err?.code || err?.statusCode,
 					message: err?.message || err?.msg,
 				} as QuoteError
 			}
@@ -115,7 +115,6 @@ export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions
 	onlyDirect: false,
 }): Promise<Quote[]> {
 	const url = generateFetchQuoteUrl(params, quoteOptions);
-	console.log('url', url);
 	const res = await fetch(url, {
 		method: 'GET',
 		redirect: 'follow',
@@ -165,7 +164,10 @@ export async function getSuggestedRelayer(): Promise<string> {
 
 
 export async function getSwapSolana(params : GetSolanaSwapParams): Promise<SolanaClientSwap> {
-	const query = toQueryString(params);
+	const query = toQueryString({
+		...params,
+		sdkVersion: getSdkVersion(),
+	});
 	const res = await fetch(`${addresses.PRICE_URL}/get-swap/solana?${query}`, {
 		method: 'GET',
 		redirect: 'follow',
@@ -179,10 +181,19 @@ export async function getSwapSolana(params : GetSolanaSwapParams): Promise<Solan
 }
 
 export async function getSwapSui(params : GetSuiSwapParams): Promise<SuiClientSwap> {
-	const query = toQueryString(params);
-	const res = await fetch(`${addresses.PRICE_URL}/get-swap/sui?${query}`, {
-		method: 'GET',
+	const requestBody = JSON.stringify({
+		...params,
+		sdkVersion: getSdkVersion(),
+	});
+	const requestUrl = `${addresses.PRICE_URL}/get-swap/sui`;
+
+	const res = await fetch(requestUrl, {
+		method: 'POST',
 		redirect: 'follow',
+		body: requestBody,
+		headers: {
+			'Content-Type': 'application/json',
+		},
 	});
 	await check5xxError(res);
 	const result = await res.json();

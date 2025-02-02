@@ -9,7 +9,7 @@ import {
 	Transaction,
 	TransactionInstruction,
 	AddressLookupTableAccount,
-	VersionedTransaction,
+	VersionedTransaction, ComputeBudgetProgram
 } from '@solana/web3.js';
 import {getAmountOfFractionalAmount, getAssociatedTokenAddress, getSafeU64Blob, wait} from '../utils';
 import {InstructionInfo, SolanaClientSwap, SolanaTransactionSigner, JitoBundleOptions} from '../types';
@@ -117,6 +117,38 @@ export function createAssociatedTokenAccountInstruction(
 		data: Buffer.alloc(0),
 	});
 }
+
+const TOKEN_ACCOUNT_LEN = 165;
+export async function createInitializeRandomTokenAccountInstructions(
+	connection: Connection,
+	payer: PublicKey,
+	mint: PublicKey,
+	owner: PublicKey,
+	keyPair: Keypair,
+	programId = new PublicKey(addresses.TOKEN_PROGRAM_ID),
+): Promise<TransactionInstruction[]> {
+	const instructions: TransactionInstruction[] = [];
+	const rentLamports = await connection.getMinimumBalanceForRentExemption(TOKEN_ACCOUNT_LEN);
+	instructions.push(SystemProgram.createAccount({
+		fromPubkey: payer,
+		newAccountPubkey: keyPair.publicKey,
+		lamports: rentLamports,
+		space: TOKEN_ACCOUNT_LEN,
+		programId,
+	}));
+	instructions.push(new TransactionInstruction({
+		keys: [
+			{ pubkey: keyPair.publicKey, isWritable: true, isSigner: false },
+			{ pubkey: mint, isWritable: false, isSigner: false },
+			{ pubkey: owner, isWritable: false, isSigner: false },
+			{ pubkey: SYSVAR_RENT_PUBKEY, isWritable: false, isSigner: false },
+		],
+		programId,
+		data: Buffer.from([1]),
+	}));
+	return instructions;
+}
+
 
 const ApproveInstructionData = struct<any>([
 	u8('instruction'), blob(8, 'amount')
@@ -346,8 +378,15 @@ export async function getAddressLookupTableAccounts(
 	}, new Array<AddressLookupTableAccount>());
 }
 
+type SolanaClientSwapInstructions = {
+	swapInstruction: TransactionInstruction,
+	cleanupInstruction: TransactionInstruction,
+	computeBudgetInstructions: TransactionInstruction[],
+	setupInstructions: TransactionInstruction[],
+	addressLookupTableAddresses: string[]
+};
 
-export function decentralizeClientSwapInstructions(params: SolanaClientSwap, connection: Connection) {
+export function decentralizeClientSwapInstructions(params: SolanaClientSwap, connection: Connection): SolanaClientSwapInstructions {
 	const swapInstruction = deserializeInstructionInfo(params.swapInstruction);
 	const cleanupInstruction = params.cleanupInstruction ?
 		deserializeInstructionInfo(params.cleanupInstruction) : null;
@@ -491,7 +530,7 @@ export async function confirmJitoBundleId(
 			options.jitoSendUrl || 'https://mainnet.block-engine.jito.wtf/api/v1/bundles',
 		);
 
-		if (bundleStatuses && bundleStatuses.value && bundleStatuses.value.length > 0) {
+		if (bundleStatuses && bundleStatuses.value && bundleStatuses.value.length > 0 && bundleStatuses.value[0]) {
 			console.log('===>', bundleStatuses.value[0]);
 			const status = bundleStatuses.value[0].confirmation_status;
 			if (status === 'confirmed' || status === 'finalized') {
@@ -522,4 +561,126 @@ export async function broadcastJitoBundleId(bundleId: string): Promise<void> {
 	} catch {
 		// Errors are silently ignored
 	}
+}
+
+function validateJupCleanupInstruction(instruction: TransactionInstruction) {
+	if (!instruction) {
+		return;
+	}
+	if (
+		!instruction.programId.equals(new PublicKey(addresses.TOKEN_PROGRAM_ID)) &&
+		!instruction.programId.equals(new PublicKey(addresses.TOKEN_2022_PROGRAM_ID))
+	) {
+		throw new Error('Invalid cleanup instruction:: programId');
+	}
+	if (Uint8Array.from(instruction.data).length !== 1) {
+		throw new Error('Invalid cleanup instruction:: data');
+	}
+	if (Uint8Array.from(instruction.data)[0] !== 9) {
+		throw new Error('Invalid cleanup instruction:: data');
+	}
+}
+
+function validateJupSetupInstructions(instructions: TransactionInstruction[], owner?: PublicKey) {
+	if (instructions.length < 1) {
+		return;
+	}
+	if (instructions.length > 6) {
+		throw new Error('Invalid setup instruction:: too many instructions');
+	}
+	instructions.forEach((instruction) => {
+		if (
+			!instruction.programId.equals(new PublicKey(addresses.ASSOCIATED_TOKEN_PROGRAM_ID)) &&
+			!instruction.programId.equals(SystemProgram.programId) &&
+			!instruction.programId.equals(new PublicKey(addresses.TOKEN_PROGRAM_ID)) &&
+			!instruction.programId.equals(new PublicKey(addresses.TOKEN_2022_PROGRAM_ID))
+		) {
+			throw new Error('Invalid setup instruction:: programId');
+		}
+		if (instruction.programId.equals(new PublicKey(addresses.ASSOCIATED_TOKEN_PROGRAM_ID))) {
+			if (Uint8Array.from(instruction.data).length === 1) {
+				if (Uint8Array.from(instruction.data)[0] !== 1) {
+					throw new Error('Invalid setup instruction:: data');
+				}
+			} else if (Uint8Array.from(instruction.data).length !== 0) {
+				throw new Error('Invalid setup instruction:: data');
+			}
+		} else if (instruction.programId.equals(SystemProgram.programId)) {
+			if (!owner) {
+				throw new Error('Invalid setup instruction:: unknown transfer');
+			}
+			const wSolAccount = getAssociatedTokenAddress(solMint, owner, true);
+			if (instruction.data.readUint32LE() !== 2) {
+				throw new Error('Invalid setup instruction:: invalid system program instruction');
+			}
+			if (!instruction.keys[1].pubkey.equals(wSolAccount)) {
+				throw new Error('Invalid setup instruction:: invalid wrap transfer dest');
+			}
+		} else {
+			if (instruction.data.toString('base64') !== 'EQ==') {
+				throw new Error('Invalid setup instruction:: invalid token program instruction');
+			}
+		}
+	});
+}
+
+function validateJupSwapInstruction(instruction: TransactionInstruction, validDestAccount: PublicKey) {
+	if (!instruction.programId.equals(new PublicKey('JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4'))) {
+		throw new Error('Invalid swap instruction:: programId');
+	}
+	if (instruction.data.subarray(0, 8).toString('hex') === getAnchorInstructionData('shared_accounts_route').toString('hex')) {
+		if (!instruction.keys[6].pubkey.equals(validDestAccount)) {
+			throw new Error(`Invalid swap instruction shared_accounts_route:: dest account`);
+		}
+	} else if (instruction.data.subarray(0, 8).toString('hex') === getAnchorInstructionData('route').toString('hex')) {
+		if (!instruction.keys[4].pubkey.equals(validDestAccount)) {
+			throw new Error('Invalid swap instruction route:: dest account');
+		}
+	} else {
+		throw new Error('Invalid swap instruction:: ix id');
+	}
+}
+
+function validateJupComputeBudgetInstructions(instructions: TransactionInstruction[]) {
+	instructions.forEach((instruction) => {
+		if (!instruction.programId.equals(ComputeBudgetProgram.programId)) {
+			throw new Error('Invalid compute budget instruction:: programId');
+		}
+		if (
+			Uint8Array.from(instruction.data)[0] === 3 &&
+			instruction.data.readBigUInt64LE(1) > 100000000n
+		) {
+			throw new Error('Invalid compute budget instruction:: to high tx fee');
+		}
+	});
+}
+
+export function validateJupSwap(swap: SolanaClientSwapInstructions,  validDestAccount: PublicKey, validWrapOwner?: PublicKey,) {
+	validateJupComputeBudgetInstructions(swap.computeBudgetInstructions);
+	validateJupSetupInstructions(swap.setupInstructions, validWrapOwner);
+	validateJupSwapInstruction(swap.swapInstruction, validDestAccount);
+	validateJupCleanupInstruction(swap.cleanupInstruction);
+}
+
+
+export function createTransferAllAndCloseInstruction(
+	owner: PublicKey,
+	mint: PublicKey,
+	tokenAccount: PublicKey,
+	transferDestination: PublicKey,
+	closeDestination: PublicKey,
+	tokenProgramId = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')
+): TransactionInstruction {
+	return new TransactionInstruction({
+		keys: [
+			{pubkey: owner, isSigner: true, isWritable: false},
+			{pubkey: tokenAccount, isSigner: false, isWritable: true},
+			{pubkey: transferDestination, isSigner: false, isWritable: true},
+			{pubkey: mint, isSigner: false, isWritable: false},
+			{pubkey: closeDestination, isSigner: false, isWritable: true},
+			{pubkey: tokenProgramId, isSigner: false, isWritable: false},
+		],
+		programId: new PublicKey('B96dV3Luxzo6SokJx3xt8i5y8Mb7HRR6Eec8hCjJDT69'),
+		data: getAnchorInstructionData('transfer_all_and_close'),
+	})
 }
