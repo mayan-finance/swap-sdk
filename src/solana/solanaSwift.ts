@@ -18,9 +18,9 @@ import addresses from '../addresses'
 import { ethers, ZeroAddress } from 'ethers';
 import { getSwapSolana } from '../api';
 import {
-	createAssociatedTokenAccountInstruction,
-	createSplTransferInstruction, createSyncNativeInstruction,
-	decentralizeClientSwapInstructions, getAddressLookupTableAccounts, getAnchorInstructionData, solMint
+	createAssociatedTokenAccountInstruction, createInitializeRandomTokenAccountInstructions,
+	createSplTransferInstruction, createSyncNativeInstruction, createTransferAllAndCloseInstruction,
+	decentralizeClientSwapInstructions, getAddressLookupTableAccounts, getAnchorInstructionData, solMint, validateJupSwap
 } from './utils';
 
 export function createSwiftOrderHash(
@@ -233,6 +233,8 @@ export async function createSwiftFromSolanaInstructions(
 	// using for the swap via Jito Bundle
 	let _swapAddressLookupTables: string[] = [];
 	let swapInstructions: TransactionInstruction[] = [];
+	let createSwapTpmTokenAccountInstructions: TransactionInstruction[] = [];
+	const tmpSwapTokenAccount: Keypair = Keypair.generate();
 	let swapMessageV0Params: SwapMessageV0Params | null = null;
 
 	const swiftProgram = new PublicKey(addresses.SWIFT_PROGRAM_ID);
@@ -254,11 +256,12 @@ export async function createSwiftFromSolanaInstructions(
 		swiftProgram,
 	);
 
+	const swiftInputMint = quote.swiftInputContract === ZeroAddress ? solMint : new PublicKey(quote.swiftInputContract);
+
 	const stateAccount = getAssociatedTokenAddress(
-		new PublicKey(quote.swiftInputContract), state, true
+		swiftInputMint, state, true
 	);
 
-	const swiftInputMint = quote.swiftInputContract === ZeroAddress ? solMint : new PublicKey(quote.swiftInputContract);
 	const relayer = quote.gasless ? new PublicKey(quote.relayer) : trader;
 	const relayerAccount = getAssociatedTokenAddress(swiftInputMint, relayer, false);
 	if (quote.fromToken.contract === quote.swiftInputContract) {
@@ -302,9 +305,18 @@ export async function createSwiftFromSolanaInstructions(
 			depositMode: quote.gasless ? 'SWIFT_GASLESS' : 'SWIFT',
 			orderHash: `0x${hash.toString('hex')}`,
 			fillMaxAccounts: options?.separateSwapTx || false,
+			tpmTokenAccount: options?.separateSwapTx ? tmpSwapTokenAccount.publicKey.toString() : null,
 		});
 		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection);
 		if (options?.separateSwapTx && clientSwapRaw.maxAccountsFilled) {
+			validateJupSwap(clientSwap, tmpSwapTokenAccount.publicKey, trader);
+			createSwapTpmTokenAccountInstructions = await createInitializeRandomTokenAccountInstructions(
+				connection,
+				relayer,
+				swiftInputMint,
+				trader,
+				tmpSwapTokenAccount,
+			);
 			swapInstructions.push(...clientSwap.computeBudgetInstructions);
 			if (clientSwap.setupInstructions) {
 				swapInstructions.push(...clientSwap.setupInstructions);
@@ -314,6 +326,14 @@ export async function createSwiftFromSolanaInstructions(
 				swapInstructions.push(clientSwap.cleanupInstruction);
 			}
 			_swapAddressLookupTables.push(...clientSwap.addressLookupTableAddresses);
+			instructions.push(createAssociatedTokenAccountInstruction(relayer, stateAccount, state, swiftInputMint));
+			instructions.push(createTransferAllAndCloseInstruction(
+				trader,
+				swiftInputMint,
+				tmpSwapTokenAccount.publicKey,
+				stateAccount,
+				relayer,
+			));
 		} else {
 			instructions.push(...clientSwap.computeBudgetInstructions);
 			if (clientSwap.setupInstructions) {
@@ -346,9 +366,13 @@ export async function createSwiftFromSolanaInstructions(
 	if (swapInstructions.length > 0) {
 		const swapLookupTables = totalLookupTables.slice(_lookupTablesAddress.length);
 		swapMessageV0Params = {
-			payerKey: relayer,
-			instructions: swapInstructions,
-			addressLookupTableAccounts: swapLookupTables,
+			messageV0: {
+				payerKey: relayer,
+				instructions: swapInstructions,
+				addressLookupTableAccounts: swapLookupTables,
+			},
+			createTmpTokenAccountIxs: createSwapTpmTokenAccountInstructions,
+			tmpTokenAccount: tmpSwapTokenAccount,
 		};
 	}
 

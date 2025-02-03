@@ -26,11 +26,11 @@ import { getSwapSolana } from '../api';
 import {getWormholePDAs} from '../wormhole';
 import {getCCTPBridgePDAs, CCTP_TOKEN_DECIMALS} from "../cctp";
 import {
-	createAssociatedTokenAccountInstruction,
-	createSplTransferInstruction,
+	createAssociatedTokenAccountInstruction, createInitializeRandomTokenAccountInstructions,
+	createSplTransferInstruction, createTransferAllAndCloseInstruction,
 	decentralizeClientSwapInstructions,
 	getAddressLookupTableAccounts,
-	getAnchorInstructionData
+	getAnchorInstructionData, validateJupSwap
 } from './utils';
 
 const MCTPBridgeWithFeeLayout = struct<any>([
@@ -512,6 +512,8 @@ export async function createMctpFromSolanaInstructions(
 	// using for the swap via Jito Bundle
 	let _swapAddressLookupTables: string[] = [];
 	let swapInstructions: TransactionInstruction[] = [];
+	let createSwapTpmTokenAccountInstructions: TransactionInstruction[] = [];
+	const tmpSwapTokenAccount: Keypair = Keypair.generate();
 	let swapMessageV0Params: SwapMessageV0Params | null = null;
 
 	_lookupTablesAddress.push(addresses.LOOKUP_TABLE);
@@ -638,10 +640,20 @@ export async function createMctpFromSolanaInstructions(
 			amountIn64: quote.effectiveAmountIn64,
 			depositMode: quote.hasAuction ? 'SWAP' : mode,
 			fillMaxAccounts: options?.separateSwapTx || false,
+			tpmTokenAccount: options?.separateSwapTx ? tmpSwapTokenAccount.publicKey.toString() : null,
 		});
 
-		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection);;
+		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection);
+
 		if (options?.separateSwapTx && clientSwapRaw.maxAccountsFilled) {
+			validateJupSwap(clientSwap, tmpSwapTokenAccount.publicKey, user);
+			createSwapTpmTokenAccountInstructions = await createInitializeRandomTokenAccountInstructions(
+				connection,
+				user,
+				new PublicKey(quote.mctpInputContract),
+				user,
+				tmpSwapTokenAccount,
+			);
 			swapInstructions.push(...clientSwap.computeBudgetInstructions);
 			if (clientSwap.setupInstructions) {
 				swapInstructions.push(...clientSwap.setupInstructions);
@@ -651,7 +663,18 @@ export async function createMctpFromSolanaInstructions(
 				swapInstructions.push(clientSwap.cleanupInstruction);
 			}
 			_swapAddressLookupTables.push(...clientSwap.addressLookupTableAddresses);
+			instructions.push(createAssociatedTokenAccountInstruction(
+				user, ledgerAccount, ledger, new PublicKey(quote.mctpInputContract)
+			));
+			instructions.push(createTransferAllAndCloseInstruction(
+				user,
+				new PublicKey(quote.mctpInputContract),
+				tmpSwapTokenAccount.publicKey,
+				ledgerAccount,
+				user,
+			));
 		} else {
+			validateJupSwap(clientSwap, ledgerAccount, user);
 			instructions.push(...clientSwap.computeBudgetInstructions);
 			if (clientSwap.setupInstructions) {
 				instructions.push(...clientSwap.setupInstructions);
@@ -740,9 +763,13 @@ export async function createMctpFromSolanaInstructions(
 	if (swapInstructions.length > 0) {
 		const swapLookupTables = totalLookupTables.slice(_lookupTablesAddress.length);
 		swapMessageV0Params = {
-			payerKey: new PublicKey(swapperAddress),
-			instructions: swapInstructions,
-			addressLookupTableAccounts: swapLookupTables,
+			messageV0: {
+				payerKey: user,
+				instructions: swapInstructions,
+				addressLookupTableAccounts: swapLookupTables,
+			},
+			createTmpTokenAccountIxs: createSwapTpmTokenAccountInstructions,
+			tmpTokenAccount: tmpSwapTokenAccount,
 		};
 	}
 

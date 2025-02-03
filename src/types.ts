@@ -1,5 +1,14 @@
-import { CompileV0Args, Transaction, VersionedTransaction } from '@solana/web3.js';
-import { Transaction as SuiTransaction, TransactionResult as SuiTransactionResult } from '@mysten/sui/transactions';
+import {
+	CompileV0Args,
+	Transaction,
+	VersionedTransaction,
+	TransactionInstruction as SolanaTransactionInstruction,
+	Keypair as SolanaKeypair,
+} from '@solana/web3.js';
+import {
+	Transaction as SuiTransaction,
+	TransactionResult as SuiTransactionResult,
+} from '@mysten/sui/transactions';
 
 export type ChainName = 'solana'
 	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' | 'base' | 'aptos' | 'sui';
@@ -178,6 +187,7 @@ type BaseGetSolanaSwapParams = {
 	slippageBps: number,
 	referrerAddress?: string,
 	fillMaxAccounts?: boolean,
+	tpmTokenAccount?: string,
 }
 
 type MctpGetSolanaSwapParams = BaseGetSolanaSwapParams & {
@@ -198,6 +208,8 @@ type BaseGetSuiSwapParams = {
 	middleCoinType: string,
 	userWallet: string,
 	referrerAddress?: string,
+	inputCoin: SuiFunctionParameter,
+	transaction: string,
 }
 
 type MctpGetSuiSwapParams = BaseGetSuiSwapParams & {
@@ -232,7 +244,7 @@ export type SuiFunctionNestedResult = {
 };
 
 export type SuiFunctionParameter =
-	| {
+ {
 	result:
 		| SuiTransactionResult
 		| SuiFunctionNestedResult
@@ -295,4 +307,8 @@ export type ComposableSuiMoveCallsOptions = {
 	whFeeCoin?: SuiFunctionParameter;
 };
 
-export type SwapMessageV0Params = Omit<CompileV0Args, 'recentBlockhash'>
+export type SwapMessageV0Params = {
+	messageV0: Omit<CompileV0Args, 'recentBlockhash'>,
+	createTmpTokenAccountIxs: SolanaTransactionInstruction[],
+	tmpTokenAccount: SolanaKeypair,
+}

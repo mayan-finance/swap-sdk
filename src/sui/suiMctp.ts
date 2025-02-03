@@ -1,4 +1,4 @@
-import { Transaction, TransactionResult } from '@mysten/sui/transactions';
+import { Transaction, TransactionResult, TransactionObjectArgument } from '@mysten/sui/transactions';
 import { SUI_TYPE_ARG, SUI_CLOCK_OBJECT_ID } from '@mysten/sui/utils';
 import { SuiClient } from '@mysten/sui/client';
 import {
@@ -67,11 +67,6 @@ export async function createMctpFromSuiMoveCalls(
 			options?.inputCoin
 		);
 	} else {
-		if (options?.builtTransaction || options?.inputCoin) {
-			throw new Error(
-				'Cannot have builtTransaction or input_coin for non-MCTP input'
-			);
-		}
 		const {
 			tx: serializedTx,
 			outCoin,
@@ -83,6 +78,8 @@ export async function createMctpFromSuiMoveCalls(
 			userWallet: swapperAddress,
 			withWhFee: quote.hasAuction || quote.cheaperChain !== 'sui',
 			referrerAddress,
+			inputCoin: options?.inputCoin,
+			transaction: options?.builtTransaction ? (await options.builtTransaction.toJSON()) : undefined,
 		});
 		tx = Transaction.from(serializedTx);
 		inputCoin = outCoin;

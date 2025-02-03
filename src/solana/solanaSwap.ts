@@ -335,8 +335,15 @@ export async function swapFromSolana(
 	if (jitoEnabled) {
 		const allTransactions: Array<Transaction | VersionedTransaction> = [];
 		if (swapMessageV0Params) {
+			const createTmpTokenAccount = new Transaction({
+				feePayer: swapper,
+				blockhash,
+				lastValidBlockHeight,
+			}).add(...swapMessageV0Params.createTmpTokenAccountIxs);
+			createTmpTokenAccount.partialSign(swapMessageV0Params.tmpTokenAccount);
+			allTransactions.push(createTmpTokenAccount);
 			const swapMessage = MessageV0.compile({
-				...swapMessageV0Params,
+				...swapMessageV0Params.messageV0,
 				recentBlockhash: blockhash,
 			});
 			allTransactions.push(new VersionedTransaction(swapMessage));
