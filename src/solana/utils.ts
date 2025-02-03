@@ -525,6 +525,7 @@ export async function confirmJitoBundleId(
 	const timeout = 30 * 3000;
 	const startTime = Date.now();
 	while (Date.now() - startTime < timeout && (await connection.getBlockHeight()) <= lastValidBlockHeight) {
+		await wait(350);
 		const bundleStatuses = await getJitoBundleStatuses(
 			[bundleId],
 			options.jitoSendUrl || 'https://mainnet.block-engine.jito.wtf/api/v1/bundles',
