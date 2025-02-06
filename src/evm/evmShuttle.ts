@@ -97,12 +97,19 @@ export function getShuttleParams(
 	bytes.push(shuttleConstants.EXACT_IN_FLAG); // [22]
 	bytes.push(shuttleConstants.USDC_INPUT_TOKEN_TYPE); // [23]
 
-	// <input amount> we are sure because of the input token is USDC the amount in will be fit in 8 bytes
-	bytes.push(0, 0, 0, 0, 0, 0, 0, 0); // offset of amount_in (8 bytes)
 	const amountIn = BigInt(quote.effectiveAmountIn64);
-	const amountInBuffer = Buffer.alloc(8);
-	amountInBuffer.writeBigUInt64BE(amountIn);
-	bytes.push(...amountInBuffer);
+	// <input amount>
+	if (quote.fromToken.contract === quote.shuttleInputContract) {
+		// we are sure because of the input token is USDC the amount in will be fit in 8 bytes
+		bytes.push(...Array(8).fill(0)); // offset of amount_in (8 bytes)
+		const amountInBuffer = Buffer.alloc(8);
+		amountInBuffer.writeBigUInt64BE(amountIn);
+		bytes.push(...amountInBuffer);
+
+	} else {
+		// as forwarder contract overrides the amount in, we can set the u128 to 0
+		bytes.push(...Array(16).fill(0));
+	}
 	// <input amount />
 
 	bytes.push(shuttleConstants.PRE_APPROVED_ACQUIRE_MODE);
@@ -121,7 +128,7 @@ export function getShuttleParams(
 
 		const minAmountOut = getAmountOfFractionalAmount(quote.minAmountOut, quote.toToken.decimals);
 		if (quote.toChain === 'solana') { // limit_amount should be 8 bytes (u64)
-			bytes.push(0, 0, 0, 0, 0, 0, 0, 0);
+			bytes.push(...Array(8).fill(0));
 			const minAmountOutBuffer = Buffer.alloc(8);
 			minAmountOutBuffer.writeBigUInt64BE(minAmountOut);
 			bytes.push(...minAmountOutBuffer);

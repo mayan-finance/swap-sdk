@@ -67,6 +67,7 @@ export type QuoteParams = {
 export type QuoteError = {
 	message: string,
 	code: number,
+	data: any,
 }
 
 export type Quote = {

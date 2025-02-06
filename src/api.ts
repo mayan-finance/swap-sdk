@@ -125,6 +125,7 @@ export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions
 		throw {
 			code: result?.code || 0,
 			message: result?.msg || result?.message || 'Route not found',
+			data: result?.data,
 		} as QuoteError
 	}
 	if (!checkSdkVersionSupport(result.minimumSdkVersion)) {
