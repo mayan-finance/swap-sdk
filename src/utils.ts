@@ -16,7 +16,7 @@ export function nativeAddressToHexString(
 	} else if (
 		wChainId === chains.ethereum || wChainId === chains.bsc || wChainId === chains.polygon ||
 		wChainId === chains.avalanche  || wChainId === chains.arbitrum || wChainId === chains.optimism ||
-		wChainId === chains.base
+		wChainId === chains.base || wChainId === chains.unichain
 	) {
 		return zeroPadValue(address, 32);
 	} else if (wChainId === chains.aptos && isValidAptosType(address)) {
@@ -102,6 +102,7 @@ const chains: { [index in ChainName]: number }  = {
 	base: 30,
 	aptos: 22,
 	sui: 21,
+	unichain: 44,
 };
 
 export function getWormholeChainIdByName(chain: string) : number | null {
