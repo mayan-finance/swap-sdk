@@ -117,6 +117,7 @@ const evmChainIdMap: { [index: string]: number }  = {
 	[42161]: 23,
 	[10]: 24,
 	[8453]: 30,
+	[130]: 44,
 };
 
 export function getEvmChainIdByName(chain: ChainName) {
@@ -136,7 +137,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [10, 2, 0];
+const sdkVersion = [10, 3, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
