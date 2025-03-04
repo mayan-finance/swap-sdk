@@ -49,6 +49,7 @@ avalanche: 0.2 AVAX
 solana: 0.2 SOL
 arbitrum: 0.01 ETH
 optimism: 0.01 ETH
+unichain: 0.01 ETH
 base: 0.01 ETH
 ```
 

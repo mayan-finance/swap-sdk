@@ -146,6 +146,30 @@ export async function createMctpFromSuiMoveCalls(
 			tx.pure.vector('u8', _payload),
 		]
 	});
+
+	try {
+		// Log referrer
+		let referrerHex: string;
+		if (referrerAddress) {
+			referrerHex = nativeAddressToHexString(referrerAddress, getWormholeChainIdByName(quote.toChain));
+		} else {
+			referrerHex = nativeAddressToHexString(
+				SystemProgram.programId.toString(),
+				getWormholeChainIdByName('solana')
+			);
+		}
+		tx.moveCall({
+			package: addresses.SUI_LOGGER_PACKAGE_ID,
+			module: 'referrer_logger',
+			function: 'log_referrer',
+			arguments: [
+				tx.pure.address(referrerHex),
+				tx.pure.u8(quote.referrerBps || 0),
+			]
+		})
+	} catch (err) {
+		console.error('Failed to log referrer', err);
+	}
 	return tx;
 }
 
