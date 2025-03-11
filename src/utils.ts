@@ -137,7 +137,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [10, 3, 0];
+const sdkVersion = [10, 4, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -230,4 +230,7 @@ export function getQuoteSuitableReferrerAddress(
 export const MCTP_PAYLOAD_TYPE_DEFAULT = 1;
 export const MCTP_PAYLOAD_TYPE_CUSTOM_PAYLOAD = 2;
 export const MCTP_INIT_ORDER_PAYLOAD_ID = 1;
+export const FAST_MCTP_PAYLOAD_TYPE_DEFAULT = 1;
+export const FAST_MCTP_PAYLOAD_TYPE_CUSTOM_PAYLOAD = 2;
+export const FAST_MCTP_PAYLOAD_TYPE_ORDER = 3;
 

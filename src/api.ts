@@ -74,6 +74,7 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 	shuttle: true,
 	gasless: false,
 	onlyDirect: false,
+	fastMctp: true,
 }): string {
 	const { gasDrop, referrerBps } = params;
 	let slippageBps = params.slippageBps;
@@ -85,6 +86,7 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		swift: quoteOptions.swift !== false, // default to true
 		mctp: quoteOptions.mctp !== false, // default to true
 		shuttle: quoteOptions.shuttle === true, // default to false
+		fastMctp: quoteOptions.fastMctp !== false, // default to true
 		gasless: quoteOptions.gasless === true, // default to false
 		onlyDirect: quoteOptions.onlyDirect === true, // default to false
 	}

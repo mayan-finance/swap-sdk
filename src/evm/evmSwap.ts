@@ -29,6 +29,7 @@ import { getMctpFromEvmTxPayload } from './evmMctp';
 import { getSwiftFromEvmGasLessParams, getSwiftFromEvmTxPayload } from './evmSwift';
 import { submitSwiftEvmSwap } from '../api';
 import { getShuttleFromEvmTxPayload } from './evmShuttle';
+import {getFastMctpFromEvmTxPayload} from "./evmFastMctp";
 
 export type ContractRelayerFees = {
 	swapFee: bigint,
@@ -183,6 +184,10 @@ export function getSwapFromEvmTxPayload(
 	}
 	if (quote.type === 'SHUTTLE') {
 		return getShuttleFromEvmTxPayload(quote, destinationAddress, signerChainId, permit);
+	}
+
+	if (quote.type === 'FAST_MCTP') {
+		return getFastMctpFromEvmTxPayload(quote, destinationAddress, referrerAddress, signerChainId, permit, payload);
 	}
 
 	if (quote.type != 'WH') {
