@@ -71,7 +71,7 @@ export type QuoteError = {
 }
 
 export type Quote = {
-	type: 'WH' | 'SWIFT' | 'MCTP' | 'SHUTTLE';
+	type: 'WH' | 'SWIFT' | 'MCTP' | 'SHUTTLE' | 'FAST_MCTP';
 	/**
 	 * @deprecated Use the new property `slippageBps` instead
 	 */
@@ -150,11 +150,12 @@ export type Quote = {
 	}
 	shuttleInputContract: string;
 	shuttleInputDecimals: number;
-
-
-
 	mctpVerifiedInputAddress: string;
 	mctpInputTreasury: string;
+	circleMaxFee64: string;
+	fastMctpMayanContract: string;
+	fastMctpInputContract: string;
+	fastMctpMinFinality: number;
 };
 
 export type QuoteOptions = {
@@ -162,6 +163,7 @@ export type QuoteOptions = {
 	swift?: boolean;
 	mctp?: boolean;
 	shuttle?: boolean;
+	fastMctp?: boolean;
 	gasless?: boolean;
 	onlyDirect?: boolean;
 };
