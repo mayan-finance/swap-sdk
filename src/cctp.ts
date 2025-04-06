@@ -24,6 +24,8 @@ export function getCCTPDomain(chain: ChainName): number {
 			return 8;
 		case 'unichain':
 			return 10;
+		case 'linea':
+			return 11;
 		default:
 			throw new Error('unsupported chain for cctp');
 	}
