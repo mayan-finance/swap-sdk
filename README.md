@@ -158,7 +158,7 @@ async (tx: Transaction) => {
 );
 ```
 
-For swaps from EVM you can use `useWalletConnectModal` hook from  [WalletConnet](https://github.com/WalletConnect/modal-react-native) to get the provider and pass it to `swapFromEvm` function as the `signer`:
+For swaps from EVM you can use `useWalletConnectModal` hook from  [WalletConnect](https://github.com/WalletConnect/modal-react-native) to get the provider and pass it to `swapFromEvm` function as the `signer`:
 
 ```javascript
 import {useWalletConnectModal} from '@walletconnect/modal-react-native';
