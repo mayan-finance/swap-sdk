@@ -1,8 +1,9 @@
-import { ethers, zeroPadValue, parseUnits, formatUnits } from 'ethers';
+import { ethers, zeroPadValue, parseUnits, formatUnits, TypedDataEncoder, JsonRpcProvider } from 'ethers';
 import {PublicKey, SystemProgram} from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import addresses  from './addresses';
-import { ChainName, Erc20Permit, Quote, ReferrerAddresses } from './types';
+import { ChainName, Erc20Permit, Quote, ReferrerAddresses, Token, PermitDomain, PermitValue } from './types';
+import ERC20Artifact from './evm/ERC20Artifact';
 import * as sha3 from 'js-sha3';
 const sha3_256 = sha3.sha3_256;
 
@@ -104,6 +105,7 @@ const chains: { [index in ChainName]: number }  = {
 	sui: 21,
 	unichain: 44,
 	linea: 38,
+	hypercore: 65000,
 };
 
 export function getWormholeChainIdByName(chain: string) : number | null {
@@ -241,3 +243,138 @@ export const FAST_MCTP_PAYLOAD_TYPE_DEFAULT = 1;
 export const FAST_MCTP_PAYLOAD_TYPE_CUSTOM_PAYLOAD = 2;
 export const FAST_MCTP_PAYLOAD_TYPE_ORDER = 3;
 
+export async function getPermitDomain(token: Token, provider: JsonRpcProvider): Promise<PermitDomain> {
+	const contract = new ethers.Contract(token.contract, ERC20Artifact.abi, provider);
+	let domainSeparator: string;
+	let name: string;
+	try {
+		let [_domainSeparator, _name] = await Promise.all([contract.DOMAIN_SEPARATOR(), contract.name()]);
+		domainSeparator = _domainSeparator;
+		name = _name;
+	} catch (err) {
+		throw {
+			mayanError: {
+				permitIssue: true,
+			},
+		};
+	}
+	const domain: PermitDomain = {
+		name: name,
+		version: '1',
+		chainId: token.chainId,
+		verifyingContract: token.contract,
+	};
+	for (let i = 1; i < 11; i++) {
+		domain.version = String(i);
+		const hash = TypedDataEncoder.hashDomain(domain);
+		if (hash.toLowerCase() === domainSeparator.toLowerCase()) {
+			return domain;
+		}
+	}
+	throw {
+		mayanError: {
+			permitIssue: true,
+		},
+	};
+}
+
+export const PermitTypes = {
+	Permit: [
+		{
+			name: 'owner',
+			type: 'address',
+		},
+		{
+			name: 'spender',
+			type: 'address',
+		},
+		{
+			name: 'value',
+			type: 'uint256',
+		},
+		{
+			name: 'nonce',
+			type: 'uint256',
+		},
+		{
+			name: 'deadline',
+			type: 'uint256',
+		},
+	],
+};
+
+export async function getPermitParams(
+	token: Token,
+	walletAddress: string,
+	spender: string,
+	amount: bigint,
+	provider: JsonRpcProvider,
+	deadline: BigInt
+): Promise<{
+	domain: PermitDomain;
+	types: typeof PermitTypes;
+	value: PermitValue;
+}> {
+	if (token.standard !== 'erc20') {
+		throw new Error('Token is not ERC20');
+	}
+	if (!token.supportsPermit) {
+		throw new Error('Token does not support permit');
+	}
+	const contract = new ethers.Contract(token.contract, ERC20Artifact.abi, provider);
+	const [domain, nonce] = await Promise.all([getPermitDomain(token, provider), contract.nonces(walletAddress)]);
+	return {
+		domain,
+		types: PermitTypes,
+		value: {
+			owner: walletAddress,
+			spender: spender,
+			nonce: String(nonce),
+			value: String(amount),
+			deadline: String(deadline),
+		}
+	}
+}
+
+export async function getHyperCoreUSDCDepositPermitParams(
+	quote: Quote,
+	userArbitrumAddress: string,
+	arbProvider: JsonRpcProvider,
+): Promise<{
+	domain: PermitDomain;
+	types: typeof PermitTypes;
+	value: PermitValue;
+}> {
+	if (!quote.hyperCoreParams) {
+		throw new Error('Quote does not have hyperCoreParams');
+	}
+	if (quote.toChain !== 'hypercore') {
+		throw new Error('Quote toChain is not hypercore');
+	}
+	if (quote.toToken.contract.toLowerCase() !== addresses.ARBITRUM_USDC_CONTRACT.toLowerCase()) {
+		throw new Error('Quote toToken is not USDC on Arbitrum');
+	}
+	let now = Math.floor(new Date().getTime() / 1000);
+	let deadline: number;
+	switch (quote.fromChain) {
+		case 'solana':
+		case 'avalanche':
+		case 'sui':
+			deadline = now + 60 * 30;
+			break;
+		case 'polygon':
+			deadline = now + 60 * 45;
+			break;
+		default:
+			deadline = now + 60 * 60; // 1 hour for other chains
+			break;
+	}
+	return getPermitParams(
+		quote.toToken,
+		userArbitrumAddress,
+		addresses.HC_ARBITRUM_BRIDGE,
+		BigInt(quote.hyperCoreParams.depositAmountUSDC64),
+		arbProvider,
+		BigInt(quote.deadline64)
+	);
+}

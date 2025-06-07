@@ -685,3 +685,59 @@ export function createTransferAllAndCloseInstruction(
 		data: getAnchorInstructionData('transfer_all_and_close'),
 	})
 }
+
+export function createPayloadWriterCreateInstruction(
+		payer: PublicKey,
+		payloadAccount: PublicKey,
+		payload: Buffer,
+		nonce: number,
+): TransactionInstruction {
+	const keys = [
+		{pubkey: payer, isSigner: true, isWritable: true},
+		{pubkey: payloadAccount, isSigner: false, isWritable: true},
+		{pubkey: SystemProgram.programId, isSigner: false, isWritable: false},
+	];
+
+	const dataLength =
+		8 + // instruction discriminator
+		2 + // nonce
+		4 + // payload vector length
+		payload.length;
+
+	const insData = Buffer.alloc(dataLength);
+	insData.set(getAnchorInstructionData('create_simple'), 0);
+	insData.writeUint16LE(nonce, 8);
+	insData.writeUint32LE(payload.length, 10);
+	insData.set(payload, 14);
+
+	return new TransactionInstruction({
+		keys,
+		programId: new PublicKey(addresses.PAYLOAD_WRITER_PROGRAM_ID),
+		data: insData,
+	});
+}
+
+export function createPayloadWriterCloseInstruction(
+	payer: PublicKey,
+	payloadAccount: PublicKey,
+	nonce: number,
+): TransactionInstruction {
+	const keys = [
+		{pubkey: payer, isSigner: true, isWritable: true},
+		{pubkey: payloadAccount, isSigner: false, isWritable: true},
+	];
+
+	const dataLength =
+		8 + // instruction discriminator
+		2 // nonce;
+
+	const insData = Buffer.alloc(dataLength);
+	insData.set(getAnchorInstructionData('close'), 0);
+	insData.writeUint16LE(nonce, 8);
+
+	return new TransactionInstruction({
+		keys,
+		programId: new PublicKey(addresses.PAYLOAD_WRITER_PROGRAM_ID),
+		data: insData,
+	});
+}

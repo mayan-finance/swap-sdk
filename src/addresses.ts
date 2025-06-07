@@ -25,4 +25,8 @@ export default {
 	"EXPLORER_URL": "https://explorer-api.mayan.finance/v3",
 	"PRICE_URL": "https://price-api.mayan.finance/v3",
 	"RELAYER_URL": "https://relayer-api.mayan.finance/v3",
+	"HC_ARBITRUM_BRIDGE": "0x2df1c51e09aecf9cacb7bc98cb1742757f163df7",
+	"HC_ARBITRUM_DEPOSIT_PROCESSOR": "0x0000000000000000000000000000000000000000",
+	"ARBITRUM_USDC_CONTRACT": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+	"PAYLOAD_WRITER_PROGRAM_ID": "DwMLtdtJqJQkHzNcrdTBuWHJByJfgpKBnvFvzyKdy3cU",
 }
