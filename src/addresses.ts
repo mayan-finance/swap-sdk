@@ -23,7 +23,7 @@ export default {
 	"SUI_WORMHOLE_STATE": "0xaeab97f96cf9877fee2883315d459552b2b921edc16d7ceac6eab944dd88919c",
 	"SUI_LOGGER_PACKAGE_ID": "0x05680e9030c147b413a489f7891273acc221d49bd061c433e5771bc170fc37ac",
 	"EXPLORER_URL": "https://explorer-api.mayan.finance/v3",
-	"PRICE_URL": "https://test-price-api-2.mayan.finance/v3",
+	"PRICE_URL": "https://price-api.mayan.finance/v3",
 	"RELAYER_URL": "https://relayer-api.mayan.finance/v3",
 	"HC_ARBITRUM_BRIDGE": "0x2df1c51e09aecf9cacb7bc98cb1742757f163df7",
 	"HC_ARBITRUM_DEPOSIT_PROCESSOR": "0xC82282E52bbed7897Ad3bebd77baA91392a45eFc",
