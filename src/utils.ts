@@ -5,6 +5,8 @@ import addresses  from './addresses';
 import { ChainName, Erc20Permit, Quote, ReferrerAddresses, Token, PermitDomain, PermitValue } from './types';
 import ERC20Artifact from './evm/ERC20Artifact';
 import * as sha3 from 'js-sha3';
+import { CCTP_TOKEN_DECIMALS } from './cctp';
+import { checkHyperCoreDeposit } from './api';
 const sha3_256 = sha3.sha3_256;
 
 export const isValidAptosType = (str: string): boolean =>
@@ -141,7 +143,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [10, 6, 0];
+const sdkVersion = [10, 7, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -315,7 +317,7 @@ export async function getPermitParams(
 	types: typeof PermitTypes;
 	value: PermitValue;
 }> {
-	if (token.standard !== 'erc20') {
+	if (token.standard !== 'erc20' && token.standard !== 'hypertoken') {
 		throw new Error('Token is not ERC20');
 	}
 	if (!token.supportsPermit) {
@@ -354,27 +356,62 @@ export async function getHyperCoreUSDCDepositPermitParams(
 	if (quote.toToken.contract.toLowerCase() !== addresses.ARBITRUM_USDC_CONTRACT.toLowerCase()) {
 		throw new Error('Quote toToken is not USDC on Arbitrum');
 	}
-	let now = Math.floor(new Date().getTime() / 1000);
-	let deadline: number;
-	switch (quote.fromChain) {
-		case 'solana':
-		case 'avalanche':
-		case 'sui':
-			deadline = now + 60 * 30;
-			break;
-		case 'polygon':
-			deadline = now + 60 * 45;
-			break;
-		default:
-			deadline = now + 60 * 60; // 1 hour for other chains
-			break;
+
+	const USDC_ARB_TOKEN: Token = {
+		name: "USDC",
+		standard: "erc20",
+		symbol: "USDC",
+		mint: "CR4xnGrhsu1fWNPoX4KbTUUtqGMF3mzRLfj4S6YEs1Yo",
+		verified: true,
+		contract: "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+		chainId: 42161,
+		wChainId: 23,
+		decimals: 6,
+		logoURI: "http://assets.coingecko.com/coins/images/6319/small/usdc.png?1696506694",
+		coingeckoId: "usd-coin",
+		realOriginContractAddress: "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+		realOriginChainId: 23,
+		supportsPermit: true,
+		verifiedAddress: '0xaf88d065e77c8cc2239327c5edb3a432268e5831',
 	}
-	return getPermitParams(
-		quote.toToken,
-		userArbitrumAddress,
-		addresses.HC_ARBITRUM_BRIDGE,
-		BigInt(quote.hyperCoreParams.depositAmountUSDC64),
-		arbProvider,
-		BigInt(quote.deadline64)
+	const [permitParams, isAllowed] = await Promise.all([
+		getPermitParams(
+			USDC_ARB_TOKEN,
+			userArbitrumAddress,
+			addresses.HC_ARBITRUM_BRIDGE,
+			BigInt(quote.hyperCoreParams.depositAmountUSDC64),
+			arbProvider,
+			BigInt(quote.deadline64)
+		),
+		checkHyperCoreDeposit(userArbitrumAddress, quote.toToken.contract)
+	]);
+	if (!isAllowed) {
+		throw new Error('Because of concurrency, deposit is not possible at the moment, please try again later');
+	}
+	return permitParams;
+}
+
+export function getHyperCoreUSDCDepositCustomPayload(
+	quote: Quote,
+	destinationAddress: string,
+	usdcPermitSignature: string,
+): Buffer {
+	const payload = Buffer.alloc(109);
+	const destAddressBuf = Buffer.from(hexToUint8Array(destinationAddress));
+	if (destAddressBuf.length !== 20) {
+		throw new Error('Invalid destination address length, expected 20 bytes');
+	}
+	const permitSignatureBuf = Buffer.from(
+		hexToUint8Array(usdcPermitSignature)
 	);
+	if (permitSignatureBuf.length !== 65) {
+		throw new Error('Invalid USDC permit signature length, expected 65 bytes');
+	}
+	payload.writeBigUInt64BE(getAmountOfFractionalAmount(quote.redeemRelayerFee, CCTP_TOKEN_DECIMALS), 0)
+	payload.set(destAddressBuf, 8);
+	payload.writeBigUInt64BE(BigInt(quote.hyperCoreParams.depositAmountUSDC64), 28);
+	payload.writeBigUInt64BE(BigInt(quote.deadline64), 36);
+	payload.set(permitSignatureBuf, 44);
+
+	return payload
 }

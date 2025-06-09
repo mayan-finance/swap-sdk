@@ -13,7 +13,7 @@ import {
 export type ChainName = 'solana'
 	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' | 'base' | 'aptos' | 'sui' | 'unichain' | 'linea' | 'hypercore';
 
-export type TokenStandard = 'native' | 'erc20' | 'spl' | 'spl2022' | 'suicoin';
+export type TokenStandard = 'native' | 'erc20' | 'spl' | 'spl2022' | 'suicoin' | 'hypertoken';
 
 export type Token = {
 	name: string,
@@ -160,6 +160,8 @@ export type Quote = {
 		depositAmountUSDC64: string;
 		initiateAmountUSDC64: string;
 		initiateTokenContract: string;
+		initiateContractAddress?: string;
+		failureGasDrop: number;
 	}
 };
 
@@ -318,6 +320,7 @@ export type ComposableSuiMoveCallsOptions = {
 	builtTransaction?: SuiTransaction;
 	inputCoin?: SuiFunctionParameter;
 	whFeeCoin?: SuiFunctionParameter;
+	usdcPermitSignature?: string;
 };
 
 export type SwapMessageV0Params = {
@@ -339,4 +342,11 @@ export type PermitValue = {
 	value: string;
 	nonce: string;
 	deadline: string;
+}
+
+export type SolanaBridgeOptions = {
+	allowSwapperOffCurve?: boolean,
+	forceSkipCctpInstructions?: boolean,
+	separateSwapTx?: boolean,
+	usdcPermitSignature?: string;
 }

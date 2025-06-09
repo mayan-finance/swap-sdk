@@ -30,6 +30,7 @@ import { getSwiftFromEvmGasLessParams, getSwiftFromEvmTxPayload } from './evmSwi
 import { submitSwiftEvmSwap } from '../api';
 import { getShuttleFromEvmTxPayload } from './evmShuttle';
 import {getFastMctpFromEvmTxPayload} from "./evmFastMctp";
+import { getHyperCoreDepositFromEvmTxPayload } from './evmHyperCore';
 
 export type ContractRelayerFees = {
 	swapFee: bigint,
@@ -165,7 +166,10 @@ export function getSwapFromEvmTxPayload(
 	referrerAddresses: ReferrerAddresses | null | undefined,
 	signerAddress: string, signerChainId: number | string,
 	payload: Uint8Array | Buffer | null | undefined,
-	permit: Erc20Permit | null | undefined
+	permit: Erc20Permit | null | undefined,
+	options?: {
+		usdcPermitSignature?: string,
+	}
 ): TransactionRequest & { _forwarder: EvmForwarderParams } {
 
 	const signerWormholeChainId = getWormholeChainIdById(Number(signerChainId));
@@ -175,6 +179,13 @@ export function getSwapFromEvmTxPayload(
 	}
 
 	const referrerAddress = getQuoteSuitableReferrerAddress(quote, referrerAddresses);
+
+	if (quote.toChain === 'hypercore') {
+		return getHyperCoreDepositFromEvmTxPayload(
+			quote, swapperAddress, destinationAddress, referrerAddress,
+			signerChainId, permit, payload, options
+		);
+	}
 
 	if (quote.type === 'MCTP') {
 		return getMctpFromEvmTxPayload(quote, destinationAddress, referrerAddress, signerChainId, permit, payload);
@@ -253,7 +264,10 @@ export async function swapFromEvm(
 	referrerAddresses: ReferrerAddresses | null | undefined,
 	signer: Signer, permit: Erc20Permit | null | undefined,
 	overrides: Overrides | null | undefined,
-	payload: Uint8Array | Buffer | null | undefined
+	payload: Uint8Array | Buffer | null | undefined,
+	options?: {
+		usdcPermitSignature?: string,
+	},
 ): Promise<TransactionResponse | string> {
 	if (!signer.provider) {
 		throw new Error('No provider found for signer');
@@ -264,7 +278,7 @@ export async function swapFromEvm(
 	}
 	const signerChainId = Number((await signer.provider.getNetwork()).chainId);
 
-	if (quote.type === 'SWIFT' && quote.gasless) {
+	if (quote.type === 'SWIFT' && quote.gasless && quote.toChain !== 'hypercore') {
 		const referrerAddress = getQuoteSuitableReferrerAddress(quote, referrerAddresses);
 		const gasLessParams = getSwiftFromEvmGasLessParams(
 			quote, swapperAddress, destinationAddress, referrerAddress,
@@ -280,7 +294,7 @@ export async function swapFromEvm(
 	}
 	const transactionRequest = getSwapFromEvmTxPayload(
 		quote, swapperAddress, destinationAddress, referrerAddresses,
-		signerAddress, signerChainId, payload, permit
+		signerAddress, signerChainId, payload, permit, options
 	);
 	delete transactionRequest._forwarder;
 

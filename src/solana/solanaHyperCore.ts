@@ -6,8 +6,13 @@ import {
 	ComputeBudgetProgram,
 	AddressLookupTableAccount,
 } from '@solana/web3.js';
-import { Quote, ChainName, SwapMessageV0Params } from '../types';
-import { getAssociatedTokenAddress, hexToUint8Array, getSafeU64Blob,
+import { Quote, ChainName, SwapMessageV0Params, SolanaBridgeOptions } from '../types';
+import {
+	getAmountOfFractionalAmount,
+	getAssociatedTokenAddress,
+	getHyperCoreUSDCDepositCustomPayload,
+	getSafeU64Blob,
+	hexToUint8Array
 } from '../utils';
 import { Buffer } from 'buffer';
 import addresses from '../addresses';
@@ -23,6 +28,7 @@ import {
 	validateJupSwap
 } from './utils';
 import { createMctpBridgeLedgerInstruction, createMctpBridgeWithFeeInstruction } from './solanaMctp';
+import { CCTP_TOKEN_DECIMALS } from '../cctp';
 
 export async function createHyperCoreDepositFromSolanaInstructions(
 	quote: Quote,
@@ -30,11 +36,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 	destinationAddress: string,
 	referrerAddress: string | null | undefined,
 	connection: Connection,
-	options: {
-		allowSwapperOffCurve?: boolean;
-		separateSwapTx?: boolean;
-		usdcPermitSignature?: string;
-	} = {}
+	options: SolanaBridgeOptions = {}
 ): Promise<{
 	instructions: TransactionInstruction[];
 	signers: Keypair[];
@@ -42,13 +44,19 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 	swapMessageV0Params: SwapMessageV0Params | null;
 }> {
 	if (
-		quote.toToken.contract !== addresses.ARBITRUM_USDC_CONTRACT ||
+		quote.toToken.contract.toLowerCase() !== addresses.ARBITRUM_USDC_CONTRACT.toLowerCase() ||
 		quote.type !== 'MCTP'
 	) {
 		throw new Error('Unsupported quote type for USDC deposit: ' + quote.type);
 	}
 	if (!options?.usdcPermitSignature) {
 		throw new Error('USDC permit signature is required for this quote');
+	}
+	if (!quote.hyperCoreParams) {
+		throw new Error('HyperCore parameters are required for this quote');
+	}
+	if (!Number(quote.deadline64)) {
+		throw new Error('HyperCore deposit requires timeout');
 	}
 
 	const allowSwapperOffCurve = options.allowSwapperOffCurve || false;
@@ -70,10 +78,6 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 
 	const trader = new PublicKey(swapperAddress);
 
-	if (!quote.hyperCoreParams) {
-		throw new Error('HyperCore parameters are required for this quote');
-	}
-
 	const inputMint = new PublicKey(quote.hyperCoreParams.initiateTokenContract);
 
 	const payloadNonce = Math.floor(Math.random() * 65000); // Random nonce for the payload
@@ -87,26 +91,9 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 				return buf;
 			})(),
 		],
-		new PublicKey(addresses.MAYAN_PROGRAM_ID)
+		new PublicKey(addresses.PAYLOAD_WRITER_PROGRAM_ID)
 	);
-	const payload = Buffer.alloc(101);
-	const destAddressBuf = Buffer.from(hexToUint8Array(destinationAddress));
-	if (destAddressBuf.length !== 20) {
-		throw new Error('Invalid destination address length, expected 20 bytes');
-	}
-	const permitSignatureBuf = Buffer.from(
-		hexToUint8Array(options.usdcPermitSignature)
-	);
-	if (permitSignatureBuf.length !== 65) {
-		throw new Error('Invalid USDC permit signature length, expected 65 bytes');
-	}
-	payload.set(destAddressBuf, 0);
-	payload.set(
-		getSafeU64Blob(BigInt(quote.hyperCoreParams.depositAmountUSDC64)),
-		20
-	);
-	payload.set(getSafeU64Blob(BigInt(quote.deadline64)), 28);
-	payload.set(permitSignatureBuf, 36);
+	const payload = getHyperCoreUSDCDepositCustomPayload(quote, destinationAddress, options.usdcPermitSignature);
 
 	const mctpRandomKey = Keypair.generate();
 
@@ -165,10 +152,10 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 				feeSolana: BigInt(0),
 				amountInMin64: BigInt(quote.hyperCoreParams.initiateAmountUSDC64),
 				customPayload: payloadAccount,
-				destinationAddress,
+				destinationAddress: addresses.HC_ARBITRUM_DEPOSIT_PROCESSOR,
 				referrerAddress,
-				feeRedeem: quote.redeemRelayerFee,
-				gasDrop: quote.gasDrop,
+				feeRedeem: 0,
+				gasDrop: quote.hyperCoreParams.failureGasDrop,
 				toChain: 'arbitrum',
 			})
 		);
@@ -222,8 +209,17 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			}
 			_swapAddressLookupTables.push(...clientSwap.addressLookupTableAddresses);
 		} else {
-			validateJupSwap(clientSwap, ledgerAccount, trader);
+			validateJupSwap(clientSwap, tmpSwapTokenAccount.publicKey, trader);
 			instructions.push(...clientSwap.computeBudgetInstructions);
+			const _createSwapTpmTokenAccountInstructions = await createInitializeRandomTokenAccountInstructions(
+				connection,
+				trader,
+				inputMint,
+				trader,
+				tmpSwapTokenAccount,
+			);
+			instructions.push(..._createSwapTpmTokenAccountInstructions);
+			signers.push(tmpSwapTokenAccount);
 			if (clientSwap.setupInstructions) {
 				instructions.push(...clientSwap.setupInstructions);
 			}
@@ -233,24 +229,43 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			}
 			_lookupTablesAddress.push(...clientSwap.addressLookupTableAddresses);
 		}
+
+		const feeSolana: bigint = swapInstructions.length > 0 ? BigInt(0) : BigInt(quote.solanaRelayerFee64);
+		let initiateAmountUSDC64 = BigInt(quote.hyperCoreParams.initiateAmountUSDC64);
+		if (swapInstructions.length > 0) {
+			initiateAmountUSDC64 = initiateAmountUSDC64 - BigInt(quote.solanaRelayerFee64);
+		}
+
 		instructions.push(createAssociatedTokenAccountInstruction(
 			trader, ledgerAccount, ledger, new PublicKey(quote.mctpInputContract)
 		));
+
 		instructions.push(
 			createSplTransferInstruction(
 				tmpSwapTokenAccount.publicKey,
 				ledgerAccount,
 				trader,
-				BigInt(quote.hyperCoreParams.initiateAmountUSDC64),
+				initiateAmountUSDC64,
 			)
 		);
+
+		const traderInputMintAccount = getAssociatedTokenAddress(
+			inputMint, trader, allowSwapperOffCurve
+		);
+		const traderInputMintAccountInfo = await connection.getAccountInfo(traderInputMintAccount);
+		if (!traderInputMintAccountInfo || !traderInputMintAccountInfo.data) {
+			instructions.push(createAssociatedTokenAccountInstruction(
+				trader,
+				traderInputMintAccount,
+				trader,
+				inputMint
+			));
+		}
 		instructions.push(createTransferAllAndCloseInstruction(
 			trader,
 			inputMint,
 			tmpSwapTokenAccount.publicKey,
-			getAssociatedTokenAddress(
-				inputMint, trader, allowSwapperOffCurve
-			),
+			traderInputMintAccount,
 			trader,
 		));
 
@@ -263,8 +278,6 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			)
 		);
 
-		const feeSolana: bigint = swapInstructions.length > 0 ? BigInt(0) : BigInt(quote.solanaRelayerFee64);
-
 		instructions.push(createMctpBridgeLedgerInstruction({
 			ledger,
 			swapperAddress: trader.toString(),
@@ -272,12 +285,12 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			randomKey: mctpRandomKey.publicKey,
 			mode: 'WITH_FEE',
 			feeSolana,
-			amountInMin64: BigInt(quote.hyperCoreParams.initiateAmountUSDC64) + feeSolana,
+			amountInMin64: initiateAmountUSDC64,
 			customPayload: payloadAccount,
-			destinationAddress,
+			destinationAddress: addresses.HC_ARBITRUM_DEPOSIT_PROCESSOR,
 			referrerAddress,
-			feeRedeem: quote.redeemRelayerFee,
-			gasDrop: quote.gasDrop,
+			feeRedeem: 0,
+			gasDrop: quote.hyperCoreParams.failureGasDrop,
 			toChain: 'arbitrum',
 		}));
 		instructions.push(createPayloadWriterCloseInstruction(

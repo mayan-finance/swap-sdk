@@ -242,3 +242,22 @@ export async function submitSwiftSolanaSwap(signedTx: string): Promise<{ orderHa
 	}
 	return result;
 }
+
+
+export async function checkHyperCoreDeposit(destinationAddress: string, tokenAddress: string): Promise<boolean> {
+	const query = toQueryString({
+		destWallet: destinationAddress,
+		destToken: tokenAddress,
+		sdkVersion: getSdkVersion(),
+	});
+	const res = await fetch(`${addresses.EXPLORER_URL}/hypercore/is-allowed?${query}`, {
+		method: 'GET',
+		redirect: 'follow',
+	});
+	await check5xxError(res);
+	const result = await res.json();
+	if (res.status !== 200 && res.status !== 201) {
+		throw result;
+	}
+	return result.allowed === true;
+}
