@@ -131,7 +131,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 				),
 				ledgerAccount,
 				trader,
-				BigInt(quote.hyperCoreParams.initiateAmountUSDC64),
+				BigInt(quote.hyperCoreParams.bridgeAmountUSDC64),
 			)
 		);
 		instructions.push(
@@ -150,7 +150,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 				mintAddress: inputMint.toString(),
 				mode: 'WITH_FEE',
 				feeSolana: BigInt(0),
-				amountInMin64: BigInt(quote.hyperCoreParams.initiateAmountUSDC64),
+				amountInMin64: BigInt(quote.hyperCoreParams.bridgeAmountUSDC64),
 				customPayload: payloadAccount,
 				destinationAddress: addresses.HC_ARBITRUM_DEPOSIT_PROCESSOR,
 				referrerAddress,
@@ -231,7 +231,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 		}
 
 		const feeSolana: bigint = swapInstructions.length > 0 ? BigInt(0) : BigInt(quote.solanaRelayerFee64);
-		let initiateAmountUSDC64 = BigInt(quote.hyperCoreParams.initiateAmountUSDC64);
+		let initiateAmountUSDC64 = BigInt(quote.hyperCoreParams.bridgeAmountUSDC64);
 		if (swapInstructions.length > 0) {
 			initiateAmountUSDC64 = initiateAmountUSDC64 - BigInt(quote.solanaRelayerFee64);
 		}

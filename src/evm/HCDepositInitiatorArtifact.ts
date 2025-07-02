@@ -44,6 +44,7 @@ export default {
 					type: 'uint64',
 					internalType: 'uint64',
 				},
+				{ name: 'bridgeAmount', type: 'uint256', internalType: 'uint256' },
 				{
 					name: 'depositPayload',
 					type: 'tuple',
@@ -112,6 +113,7 @@ export default {
 					type: 'uint32',
 					internalType: 'uint32',
 				},
+				{ name: 'bridgeAmount', type: 'uint256', internalType: 'uint256' },
 				{
 					name: 'depositPayload',
 					type: 'tuple',

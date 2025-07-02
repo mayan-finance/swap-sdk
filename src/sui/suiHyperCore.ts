@@ -65,7 +65,7 @@ export async function createHyperCoreDepositFromSuiMoveCalls(
 	if (quote.fromToken.contract === quote.hyperCoreParams.initiateTokenContract) {
 		tx = options?.builtTransaction ?? new Transaction();
 		inputCoin = await resolveInputCoin(
-			BigInt(quote.hyperCoreParams.initiateAmountUSDC64),
+			BigInt(quote.hyperCoreParams.bridgeAmountUSDC64),
 			swapperAddress,
 			quote.mctpInputContract,
 			suiClient,
@@ -90,7 +90,7 @@ export async function createHyperCoreDepositFromSuiMoveCalls(
 		tx = Transaction.from(serializedTx);
 		const [initiateCoin] = tx.splitCoins(
 			outCoin,
-			[ BigInt(quote.hyperCoreParams.initiateAmountUSDC64) ]
+			[ BigInt(quote.hyperCoreParams.bridgeAmountUSDC64) ]
 		);
 
 		tx.transferObjects(
@@ -108,7 +108,7 @@ export async function createHyperCoreDepositFromSuiMoveCalls(
 		destinationAddress: addresses.HC_ARBITRUM_DEPOSIT_PROCESSOR,
 		mctpPackageId,
 		toChain: 'arbitrum',
-		minMiddleAmount: getDisplayAmount(quote.hyperCoreParams.initiateAmountUSDC64, CCTP_TOKEN_DECIMALS),
+		minMiddleAmount: getDisplayAmount(quote.hyperCoreParams.bridgeAmountUSDC64, CCTP_TOKEN_DECIMALS),
 		bridgeFee: quote.bridgeFee,
 		gasDrop: quote.hyperCoreParams.failureGasDrop,
 		mctpInputContract: quote.mctpInputContract,

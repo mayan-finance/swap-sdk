@@ -53,12 +53,13 @@ function getUsdcDepositInitiatorMctpTxPayload(
 	let value: string | null;
 	data = initiatorContract.interface.encodeFunctionData('deposit', [
 		quote.hyperCoreParams.initiateTokenContract,
-		BigInt(quote.hyperCoreParams.initiateAmountUSDC64),
+		BigInt(quote.hyperCoreParams.bridgeAmountUSDC64),
 		swapperAddress,
 		getAmountOfFractionalAmount(
 			quote.hyperCoreParams.failureGasDrop,
 			Math.min(getGasDecimal('arbitrum'), 8)
 		),
+		BigInt(quote.hyperCoreParams.bridgeAmountUSDC64),
 		{
 			relayerFee: getAmountOfFractionalAmount(quote.redeemRelayerFee, CCTP_TOKEN_DECIMALS),
 			permit: {
@@ -80,7 +81,7 @@ function getUsdcDepositInitiatorMctpTxPayload(
 		data,
 		value,
 		_params: {
-			amountIn: BigInt(quote.hyperCoreParams.initiateAmountUSDC64),
+			amountIn: BigInt(quote.hyperCoreParams.bridgeAmountUSDC64),
 			contractAddress: quote.hyperCoreParams.initiateContractAddress,
 		},
 	};
@@ -129,7 +130,7 @@ function getUsdcDepositInitiatorFastMctpTxPayload(
 	let value: string | null;
 	data = initiatorContract.interface.encodeFunctionData('fastDeposit', [
 		quote.hyperCoreParams.initiateTokenContract,
-		BigInt(quote.hyperCoreParams.initiateAmountUSDC64),
+		BigInt(quote.hyperCoreParams.bridgeAmountUSDC64),
 		swapperAddress,
 		BigInt(quote.circleMaxFee64),
 		getAmountOfFractionalAmount(
@@ -139,6 +140,7 @@ function getUsdcDepositInitiatorFastMctpTxPayload(
 		referrerHex,
 		quote.referrerBps,
 		Number(quote.fastMctpMinFinality),
+		BigInt(quote.hyperCoreParams.bridgeAmountUSDC64),
 		{
 			relayerFee: getAmountOfFractionalAmount(quote.redeemRelayerFee, CCTP_TOKEN_DECIMALS),
 			permit: {
@@ -160,7 +162,7 @@ function getUsdcDepositInitiatorFastMctpTxPayload(
 		data,
 		value,
 		_params: {
-			amountIn: BigInt(quote.hyperCoreParams.initiateAmountUSDC64),
+			amountIn: BigInt(quote.hyperCoreParams.bridgeAmountUSDC64),
 			contractAddress: quote.hyperCoreParams.initiateContractAddress,
 		},
 	};
