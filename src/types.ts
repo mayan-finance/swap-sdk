@@ -11,9 +11,10 @@ import {
 } from '@mysten/sui/transactions';
 
 export type ChainName = 'solana'
-	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' | 'base' | 'aptos' | 'sui' | 'unichain' | 'linea';
+	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' |
+	'base' | 'aptos' | 'sui' | 'unichain' | 'linea' | 'hypercore' | 'sonic';
 
-export type TokenStandard = 'native' | 'erc20' | 'spl' | 'spl2022' | 'suicoin';
+export type TokenStandard = 'native' | 'erc20' | 'spl' | 'spl2022' | 'suicoin' | 'hypertoken';
 
 export type Token = {
 	name: string,
@@ -73,7 +74,7 @@ export type QuoteError = {
 export type Quote = {
 	type: 'WH' | 'SWIFT' | 'MCTP' | 'SHUTTLE' | 'FAST_MCTP';
 	/**
-	 * @deprecated Use the new property `slippageBps` instead
+	 * @deprecated Use the new property {@link effectiveAmountIn64} instead
 	 */
 	effectiveAmountIn: number;
 	effectiveAmountIn64: string;
@@ -156,6 +157,13 @@ export type Quote = {
 	fastMctpMayanContract: string;
 	fastMctpInputContract: string;
 	fastMctpMinFinality: number;
+	hyperCoreParams?: {
+		depositAmountUSDC64: string;
+		bridgeAmountUSDC64: string;
+		initiateTokenContract: string;
+		initiateContractAddress?: string;
+		failureGasDrop: number;
+	}
 };
 
 export type QuoteOptions = {
@@ -166,6 +174,8 @@ export type QuoteOptions = {
 	fastMctp?: boolean;
 	gasless?: boolean;
 	onlyDirect?: boolean;
+	fullList?: boolean;
+	payload?: string;
 };
 
 export type SolanaTransactionSigner = {
@@ -203,7 +213,12 @@ type SwiftGetSolanaSwapParams = BaseGetSolanaSwapParams & {
 	depositMode: 'SWIFT' | 'SWIFT_GASLESS',
 }
 
-export type GetSolanaSwapParams = MctpGetSolanaSwapParams | SwiftGetSolanaSwapParams;
+type HCDepositUSDCGetSolanaSwapParams = BaseGetSolanaSwapParams & {
+	tpmTokenAccount: string,
+	depositMode: 'HC_USDC',
+}
+
+export type GetSolanaSwapParams = MctpGetSolanaSwapParams | SwiftGetSolanaSwapParams | HCDepositUSDCGetSolanaSwapParams;
 
 type BaseGetSuiSwapParams = {
 	amountIn64: string,
@@ -308,10 +323,33 @@ export type ComposableSuiMoveCallsOptions = {
 	builtTransaction?: SuiTransaction;
 	inputCoin?: SuiFunctionParameter;
 	whFeeCoin?: SuiFunctionParameter;
+	usdcPermitSignature?: string;
 };
 
 export type SwapMessageV0Params = {
 	messageV0: Omit<CompileV0Args, 'recentBlockhash'>,
 	createTmpTokenAccountIxs: SolanaTransactionInstruction[],
 	tmpTokenAccount: SolanaKeypair,
+}
+
+export type PermitDomain = {
+	name: string;
+	version: string;
+	chainId: number;
+	verifyingContract: string;
+};
+
+export type PermitValue = {
+	owner: string;
+	spender: string;
+	value: string;
+	nonce: string;
+	deadline: string;
+}
+
+export type SolanaBridgeOptions = {
+	allowSwapperOffCurve?: boolean,
+	forceSkipCctpInstructions?: boolean,
+	separateSwapTx?: boolean,
+	usdcPermitSignature?: string;
 }

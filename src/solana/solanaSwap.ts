@@ -12,7 +12,14 @@ import {
 	ComputeBudgetProgram, AddressLookupTableAccount, MessageV0, VersionedTransaction
 } from '@solana/web3.js';
 import {blob, struct, u16, u8} from '@solana/buffer-layout';
-import { Quote, ReferrerAddresses, SolanaTransactionSigner, JitoBundleOptions, SwapMessageV0Params } from '../types';
+import {
+	Quote,
+	ReferrerAddresses,
+	SolanaTransactionSigner,
+	JitoBundleOptions,
+	SwapMessageV0Params,
+	SolanaBridgeOptions
+} from '../types';
 import {
 	getAmountOfFractionalAmount,
 	getAssociatedTokenAddress, getGasDecimalsInSolana,
@@ -40,6 +47,7 @@ import {
 import { createMctpFromSolanaInstructions } from "./solanaMctp";
 import { createSwiftFromSolanaInstructions } from './solanaSwift';
 import bs58 from 'bs58';
+import { createHyperCoreDepositFromSolanaInstructions } from './solanaHyperCore';
 
 
 const STATE_SIZE = 420;
@@ -65,11 +73,7 @@ const SwapLayout = struct<any>([
 export async function createSwapFromSolanaInstructions(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
 	referrerAddresses: ReferrerAddresses | null | undefined,
-	connection?: Connection, options: {
-		allowSwapperOffCurve?: boolean,
-		forceSkipCctpInstructions?: boolean,
-		separateSwapTx?: boolean,
-	} = {}
+	connection?: Connection, options: SolanaBridgeOptions = {}
 ): Promise<{
 	instructions: Array<TransactionInstruction>,
 	signers: Array<Keypair>,
@@ -78,6 +82,13 @@ export async function createSwapFromSolanaInstructions(
 }> {
 
 	const referrerAddress = getQuoteSuitableReferrerAddress(quote, referrerAddresses);
+
+	if (quote.fromChain === 'hypercore') {
+		throw new Error('HyperCore as source chain is not supported in Solana');
+	}
+	if (quote.toChain === 'hypercore') {
+		return createHyperCoreDepositFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
+	}
 
 	if (quote.type === 'MCTP') {
 		return createMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
@@ -289,6 +300,7 @@ export async function swapFromSolana(
 	instructionOptions?: {
 		allowSwapperOffCurve?: boolean,
 		forceSkipCctpInstructions?: boolean,
+		usdcPermitSignature?: string | null,
 	}
 ): Promise<{
 	signature: string,
@@ -315,6 +327,7 @@ export async function swapFromSolana(
 			allowSwapperOffCurve: instructionOptions?.allowSwapperOffCurve,
 			forceSkipCctpInstructions: instructionOptions?.forceSkipCctpInstructions,
 			separateSwapTx: jitoEnabled && jitoOptions?.separateSwapTx,
+			usdcPermitSignature: instructionOptions?.usdcPermitSignature,
 		}
 	);
 

@@ -5,6 +5,8 @@ import {
 	PaginatedCoins,
 	SuiObjectResponse,
 } from '@mysten/sui/client';
+import { SuiFunctionNestedResult, SuiFunctionParameter } from '../types';
+import { Transaction, TransactionResult } from '@mysten/sui/transactions';
 
 /**
  * assertArgumentIsImmutable
@@ -166,4 +168,46 @@ export async function fetchMayanSuiPackageId(
 		return object.data.content.fields.latest_package_id;
 	}
 	throw new Error('latest_package_id not found in Mayan Sui state object');
+}
+
+export async function resolveInputCoin(
+	amount: bigint,
+	owner: string,
+	coinType: string,
+	suiClient: SuiClient,
+	tx: Transaction,
+	preparedCoin: SuiFunctionParameter
+) {
+	let inputCoin:
+		| TransactionResult
+		| SuiFunctionNestedResult
+		| { $kind: 'Input'; Input: number; type?: 'object' };
+	if (preparedCoin?.result) {
+		inputCoin = preparedCoin.result;
+	} else if (preparedCoin?.objectId) {
+		inputCoin = tx.object(preparedCoin.objectId);
+	} else {
+		const { coins, sum } = await fetchAllCoins(
+			{
+				walletAddress: owner,
+				coinType: coinType,
+				coinAmount: amount,
+			},
+			suiClient
+		);
+		if (sum < amount) {
+			throw new Error(
+				`Insufficient funds to create Coin ${coinType} with amount ${amount}`
+			);
+		}
+		if (coins.length > 1) {
+			tx.mergeCoins(
+				coins[0].coinObjectId,
+				coins.slice(1).map((c) => c.coinObjectId)
+			);
+		}
+		const [spitedCoin] = tx.splitCoins(coins[0].coinObjectId, [amount]);
+		inputCoin = spitedCoin;
+	}
+	return inputCoin;
 }

@@ -114,7 +114,7 @@ export function createAssociatedTokenAccountInstruction(
 	return new TransactionInstruction({
 		keys,
 		programId: associatedTokenProgramId,
-		data: Buffer.alloc(0),
+		data: Buffer.from([1]),
 	});
 }
 
@@ -439,6 +439,36 @@ export function getJitoTipTransfer(
 	}));
 }
 
+const defaultJitoSendBundleUrls = [
+	'https://mainnet.block-engine.jito.wtf/api/v1/bundles',
+	'https://amsterdam.mainnet.block-engine.jito.wtf/api/v1/bundles',
+	'https://frankfurt.mainnet.block-engine.jito.wtf/api/v1/bundles',
+	'https://london.mainnet.block-engine.jito.wtf/api/v1/bundles',
+	'https://ny.mainnet.block-engine.jito.wtf/api/v1/bundles',
+	'https://tokyo.mainnet.block-engine.jito.wtf/api/v1/bundles',
+	'https://slc.mainnet.block-engine.jito.wtf/api/v1/bundles',
+]
+
+async function postJitoBundle(
+	url: string,
+	body: string,
+): Promise<any> {
+	const res = await fetch(url, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+		},
+		body,
+	});
+	if (res.status !== 200 && res.status !== 201) {
+		console.error('Post Jito bundle failed', url, res.status, res.statusText);
+		throw new Error('Send Jito bundle failed: ' + res.status + ' ' + res.statusText);
+	} else {
+		const result = await res.json();
+		console.log('Post Jito bundle result', url, result.result);
+		return result.result;
+	}
+}
 export async function sendJitoBundle(
 	singedTrxs: Array<Transaction | VersionedTransaction>,
 	options: JitoBundleOptions,
@@ -455,23 +485,14 @@ export async function sendJitoBundle(
 			method: 'sendBundle',
 			params: [signedTrxs.map((trx) => bs58.encode(trx))],
 		};
-		const res = await fetch(options.jitoSendUrl || 'https://mainnet.block-engine.jito.wtf/api/v1/bundles', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify(bundle),
-		});
-		if (res.status !== 200 && res.status !== 201) {
-				throw new Error('Send Jito bundle failed');
-		} else {
-			const result = await res.json();
-			return result.result;
-		}
+		const urls: string[] = options.jitoSendUrl ? [options.jitoSendUrl] : defaultJitoSendBundleUrls;
+		const body = JSON.stringify(bundle);
+		const result = await Promise.any(urls.map(url => postJitoBundle(url, body)));
+		return result;
 	} catch (err) {
 		console.error('Send Jito bundle failed', err);
 		if (forceToBeSubmitted) {
-			throw err;
+			throw new Error(`Send Jito bundle failed`);
 		}
 	}
 }
@@ -506,7 +527,7 @@ async function getJitoBundleStatuses(bundleIds: string[], jitoApiUrl: string) {
 			return data.result;
 		} catch (error) {
 			attempt++;
-			await wait(400);
+			await wait(1000);
 			if (attempt >= maxRetries) {
 				throw new Error(`Failed to fetch bundle statuses after ${maxRetries} attempts: ${error.message}`);
 			}
@@ -525,11 +546,9 @@ export async function confirmJitoBundleId(
 	const timeout = 30 * 3000;
 	const startTime = Date.now();
 	while (Date.now() - startTime < timeout && (await connection.getBlockHeight()) <= lastValidBlockHeight) {
-		await wait(350);
-		const bundleStatuses = await getJitoBundleStatuses(
-			[bundleId],
-			options.jitoSendUrl || 'https://mainnet.block-engine.jito.wtf/api/v1/bundles',
-		);
+		await wait(1050);
+		const urls = options.jitoSendUrl ? [options.jitoSendUrl] : defaultJitoSendBundleUrls;
+		const bundleStatuses = await Promise.any(urls.map(url => getJitoBundleStatuses([bundleId], url)));
 
 		if (bundleStatuses && bundleStatuses.value && bundleStatuses.value.length > 0 && bundleStatuses.value[0]) {
 			console.log('===>', bundleStatuses.value[0]);
@@ -684,4 +703,60 @@ export function createTransferAllAndCloseInstruction(
 		programId: new PublicKey('B96dV3Luxzo6SokJx3xt8i5y8Mb7HRR6Eec8hCjJDT69'),
 		data: getAnchorInstructionData('transfer_all_and_close'),
 	})
+}
+
+export function createPayloadWriterCreateInstruction(
+		payer: PublicKey,
+		payloadAccount: PublicKey,
+		payload: Buffer,
+		nonce: number,
+): TransactionInstruction {
+	const keys = [
+		{pubkey: payer, isSigner: true, isWritable: true},
+		{pubkey: payloadAccount, isSigner: false, isWritable: true},
+		{pubkey: SystemProgram.programId, isSigner: false, isWritable: false},
+	];
+
+	const dataLength =
+		8 + // instruction discriminator
+		2 + // nonce
+		4 + // payload vector length
+		payload.length;
+
+	const insData = Buffer.alloc(dataLength);
+	insData.set(getAnchorInstructionData('create_simple'), 0);
+	insData.writeUint16LE(nonce, 8);
+	insData.writeUint32LE(payload.length, 10);
+	insData.set(payload, 14);
+
+	return new TransactionInstruction({
+		keys,
+		programId: new PublicKey(addresses.PAYLOAD_WRITER_PROGRAM_ID),
+		data: insData,
+	});
+}
+
+export function createPayloadWriterCloseInstruction(
+	payer: PublicKey,
+	payloadAccount: PublicKey,
+	nonce: number,
+): TransactionInstruction {
+	const keys = [
+		{pubkey: payer, isSigner: true, isWritable: true},
+		{pubkey: payloadAccount, isSigner: false, isWritable: true},
+	];
+
+	const dataLength =
+		8 + // instruction discriminator
+		2 // nonce;
+
+	const insData = Buffer.alloc(dataLength);
+	insData.set(getAnchorInstructionData('close'), 0);
+	insData.writeUint16LE(nonce, 8);
+
+	return new TransactionInstruction({
+		keys,
+		programId: new PublicKey(addresses.PAYLOAD_WRITER_PROGRAM_ID),
+		data: insData,
+	});
 }

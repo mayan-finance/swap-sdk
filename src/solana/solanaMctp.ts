@@ -37,7 +37,7 @@ const MCTPBridgeWithFeeLayout = struct<any>([
 	blob(8, 'instruction'),
 ]);
 
-function createMctpBridgeWithFeeInstruction(
+export function createMctpBridgeWithFeeInstruction(
 	ledger: PublicKey, toChain: ChainName, mintAddress: string,
 	relayerAddress: string, feeSolana: bigint,
 ): {
@@ -323,7 +323,7 @@ type CreateMctpBridgeLedgerInstructionParams = {
 	mode: 'WITH_FEE' | 'LOCK_FEE',
 	customPayload?: PublicKey | null,
 }
-function createMctpBridgeLedgerInstruction(params: CreateMctpBridgeLedgerInstructionParams): TransactionInstruction {
+export function createMctpBridgeLedgerInstruction(params: CreateMctpBridgeLedgerInstructionParams): TransactionInstruction {
 	if (params.mode !== 'WITH_FEE' && params.mode !== 'LOCK_FEE') {
 		throw new Error('Invalid mode: ' + params.mode);
 	}

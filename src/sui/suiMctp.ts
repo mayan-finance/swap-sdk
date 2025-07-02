@@ -5,12 +5,13 @@ import {
 	Quote,
 	SuiFunctionParameter,
 	SuiFunctionNestedResult,
-	ComposableSuiMoveCallsOptions,
+	ComposableSuiMoveCallsOptions, ChainName
 } from '../types';
 import {
 	assertArgumentIsImmutable,
 	fetchAllCoins,
 	fetchMayanSuiPackageId,
+	resolveInputCoin,
 } from './utils';
 import {
 	getAmountOfFractionalAmount,
@@ -182,102 +183,22 @@ export async function addBridgeWithFeeMoveCalls(
 	suiClient: SuiClient,
 	options?: ComposableSuiMoveCallsOptions
 ): Promise<Transaction> {
-	const destChainId = getWormholeChainIdByName(quote.toChain);
-	const tx = options?.builtTransaction ?? new Transaction();
-
-	const amountInMin = getAmountOfFractionalAmount(
-		quote.minMiddleAmount,
-		CCTP_TOKEN_DECIMALS
-	);
-	const inputCoin = await resolveInputCoin(
-		amountInMin,
+	return addBridgeWithFeeMoveCalls2({
 		swapperAddress,
-		quote.mctpInputContract,
+		destinationAddress,
+		toChain: quote.toChain,
+		minMiddleAmount: quote.minMiddleAmount,
+		mctpPackageId,
+		mctpInputContract: quote.mctpInputContract,
+		gasDrop: quote.gasDrop,
+		redeemRelayerFee: quote.redeemRelayerFee,
+		mctpVerifiedInputAddress: quote.mctpVerifiedInputAddress,
+		mctpInputTreasury: quote.mctpInputTreasury,
+		bridgeFee: quote.bridgeFee,
+		payload,
 		suiClient,
-		tx,
-		options?.inputCoin
-	);
-
-	const payloadType = payload
-		? MCTP_PAYLOAD_TYPE_CUSTOM_PAYLOAD
-		: MCTP_PAYLOAD_TYPE_DEFAULT;
-
-	const addrDest = nativeAddressToHexString(destinationAddress, destChainId);
-	const domainDest = getCCTPDomain(quote.toChain);
-	const gasDrop = getAmountOfFractionalAmount(
-		quote.gasDrop,
-		Math.min(getGasDecimal(quote.toChain), 8)
-	);
-	const redeemFee = getAmountOfFractionalAmount(
-		quote.redeemRelayerFee,
-		CCTP_TOKEN_DECIMALS
-	);
-	const _payload = payload ? Uint8Array.from(payload) : Uint8Array.from([]);
-
-	const [bridgeWithFeeTicket] = tx.moveCall({
-		package: mctpPackageId,
-		module: 'bridge_with_fee',
-		function: 'prepare_bridge_with_fee',
-		typeArguments: [quote.mctpInputContract],
-		arguments: [
-			tx.pure.u8(payloadType),
-			inputCoin,
-			tx.pure.u64(amountInMin),
-			tx.pure.address(addrDest),
-			tx.pure.u32(domainDest),
-			tx.pure.u64(gasDrop),
-			tx.pure.u64(redeemFee),
-			tx.pure.vector('u8', _payload),
-		],
+		options
 	});
-
-	const [burnRequest, depositTicket] = tx.moveCall({
-		package: mctpPackageId,
-		module: 'bridge_with_fee',
-		function: 'bridge_with_fee',
-		typeArguments: [quote.mctpInputContract],
-		arguments: [
-			tx.object(addresses.SUI_MCTP_STATE),
-			tx.object(addresses.SUI_CCTP_CORE_STATE),
-			tx.object(quote.mctpVerifiedInputAddress),
-			bridgeWithFeeTicket,
-		],
-	});
-
-	const [_burnMessage, cctpMessage] = tx.moveCall({
-		package: addresses.SUI_CCTP_TOKEN_PACKAGE_ID,
-		module: 'deposit_for_burn',
-		function: 'deposit_for_burn_with_caller_with_package_auth',
-		typeArguments: [
-			quote.mctpInputContract,
-			`${mctpPackageId}::bridge_with_fee::CircleAuth`,
-		],
-		arguments: [
-			depositTicket,
-			tx.object(addresses.SUI_CCTP_TOKEN_STATE),
-			tx.object(addresses.SUI_CCTP_CORE_STATE),
-			tx.object('0x403'),
-			tx.object(quote.mctpInputTreasury),
-		],
-	});
-
-	const [wormholeMessage] = tx.moveCall({
-		package: mctpPackageId,
-		module: 'bridge_with_fee',
-		function: 'publish_bridge_with_fee',
-		arguments: [tx.object(addresses.SUI_MCTP_STATE), burnRequest, cctpMessage],
-	});
-
-	await addPublishWormholeMessage(
-		tx,
-		wormholeMessage,
-		suiClient,
-		BigInt(quote.bridgeFee),
-		swapperAddress,
-		options?.whFeeCoin
-	);
-
-	return tx;
 }
 
 export async function addBridgeLockedFeeMoveCalls(
@@ -597,44 +518,125 @@ async function addPublishWormholeMessage(
 	return tx;
 }
 
-async function resolveInputCoin(
-	amount: bigint,
-	owner: string,
-	coinType: string,
+export async function addBridgeWithFeeMoveCalls2(params:{
+	swapperAddress: string,
+	destinationAddress: string,
+	toChain: ChainName,
+	minMiddleAmount: number,
+	mctpPackageId: string,
+	mctpInputContract: string,
+	gasDrop: number,
+	redeemRelayerFee: number,
+	mctpVerifiedInputAddress: string,
+	mctpInputTreasury: string,
+	bridgeFee: number,
+	payload: Uint8Array | Buffer | null | undefined,
 	suiClient: SuiClient,
-	tx: Transaction,
-	preparedCoin: SuiFunctionParameter
-) {
-	let inputCoin:
-		| TransactionResult
-		| SuiFunctionNestedResult
-		| { $kind: 'Input'; Input: number; type?: 'object' };
-	if (preparedCoin?.result) {
-		inputCoin = preparedCoin.result;
-	} else if (preparedCoin?.objectId) {
-		inputCoin = tx.object(preparedCoin.objectId);
-	} else {
-		const { coins, sum } = await fetchAllCoins(
-			{
-				walletAddress: owner,
-				coinType: coinType,
-				coinAmount: amount,
-			},
-			suiClient
-		);
-		if (sum < amount) {
-			throw new Error(
-				`Insufficient funds to create Coin ${coinType} with amount ${amount}`
-			);
-		}
-		if (coins.length > 1) {
-			tx.mergeCoins(
-				coins[0].coinObjectId,
-				coins.slice(1).map((c) => c.coinObjectId)
-			);
-		}
-		const [spitedCoin] = tx.splitCoins(coins[0].coinObjectId, [amount]);
-		inputCoin = spitedCoin;
-	}
-	return inputCoin;
+	options?: ComposableSuiMoveCallsOptions
+}): Promise<Transaction> {
+	const {
+		swapperAddress,
+		destinationAddress,
+		mctpPackageId,
+		payload,
+		suiClient,
+		options,
+	} = params;
+	const destChainId = getWormholeChainIdByName(params.toChain);
+	const tx = options?.builtTransaction ?? new Transaction();
+
+	const amountInMin = getAmountOfFractionalAmount(
+		params.minMiddleAmount,
+		CCTP_TOKEN_DECIMALS
+	);
+	const inputCoin = await resolveInputCoin(
+		amountInMin,
+		swapperAddress,
+		params.mctpInputContract,
+		suiClient,
+		tx,
+		options?.inputCoin
+	);
+
+	const payloadType = payload
+		? MCTP_PAYLOAD_TYPE_CUSTOM_PAYLOAD
+		: MCTP_PAYLOAD_TYPE_DEFAULT;
+
+	const addrDest = nativeAddressToHexString(destinationAddress, destChainId);
+	const domainDest = getCCTPDomain(params.toChain);
+	const gasDrop = getAmountOfFractionalAmount(
+		params.gasDrop,
+		Math.min(getGasDecimal(params.toChain), 8)
+	);
+	const redeemFee = getAmountOfFractionalAmount(
+		params.redeemRelayerFee,
+		CCTP_TOKEN_DECIMALS
+	);
+	const _payload = payload ? Uint8Array.from(payload) : Uint8Array.from([]);
+
+	const [bridgeWithFeeTicket] = tx.moveCall({
+		package: mctpPackageId,
+		module: 'bridge_with_fee',
+		function: 'prepare_bridge_with_fee',
+		typeArguments: [params.mctpInputContract],
+		arguments: [
+			tx.pure.u8(payloadType),
+			inputCoin,
+			tx.pure.u64(amountInMin),
+			tx.pure.address(addrDest),
+			tx.pure.u32(domainDest),
+			tx.pure.u64(gasDrop),
+			tx.pure.u64(redeemFee),
+			tx.pure.vector('u8', _payload),
+		],
+	});
+
+	const [burnRequest, depositTicket] = tx.moveCall({
+		package: mctpPackageId,
+		module: 'bridge_with_fee',
+		function: 'bridge_with_fee',
+		typeArguments: [params.mctpInputContract],
+		arguments: [
+			tx.object(addresses.SUI_MCTP_STATE),
+			tx.object(addresses.SUI_CCTP_CORE_STATE),
+			tx.object(params.mctpVerifiedInputAddress),
+			bridgeWithFeeTicket,
+		],
+	});
+
+	const [_burnMessage, cctpMessage] = tx.moveCall({
+		package: addresses.SUI_CCTP_TOKEN_PACKAGE_ID,
+		module: 'deposit_for_burn',
+		function: 'deposit_for_burn_with_caller_with_package_auth',
+		typeArguments: [
+			params.mctpInputContract,
+			`${mctpPackageId}::bridge_with_fee::CircleAuth`,
+		],
+		arguments: [
+			depositTicket,
+			tx.object(addresses.SUI_CCTP_TOKEN_STATE),
+			tx.object(addresses.SUI_CCTP_CORE_STATE),
+			tx.object('0x403'),
+			tx.object(params.mctpInputTreasury),
+		],
+	});
+
+	const [wormholeMessage] = tx.moveCall({
+		package: mctpPackageId,
+		module: 'bridge_with_fee',
+		function: 'publish_bridge_with_fee',
+		arguments: [tx.object(addresses.SUI_MCTP_STATE), burnRequest, cctpMessage],
+	});
+
+	await addPublishWormholeMessage(
+		tx,
+		wormholeMessage,
+		suiClient,
+		BigInt(params.bridgeFee),
+		swapperAddress,
+		options?.whFeeCoin
+	);
+
+	return tx;
 }
+

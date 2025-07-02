@@ -1,9 +1,12 @@
-import { ethers, zeroPadValue, parseUnits, formatUnits } from 'ethers';
+import { ethers, zeroPadValue, parseUnits, formatUnits, TypedDataEncoder, JsonRpcProvider } from 'ethers';
 import {PublicKey, SystemProgram} from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import addresses  from './addresses';
-import { ChainName, Erc20Permit, Quote, ReferrerAddresses } from './types';
+import { ChainName, Erc20Permit, Quote, ReferrerAddresses, Token, PermitDomain, PermitValue } from './types';
+import ERC20Artifact from './evm/ERC20Artifact';
 import * as sha3 from 'js-sha3';
+import { CCTP_TOKEN_DECIMALS } from './cctp';
+import { checkHyperCoreDeposit } from './api';
 const sha3_256 = sha3.sha3_256;
 
 export const isValidAptosType = (str: string): boolean =>
@@ -16,7 +19,8 @@ export function nativeAddressToHexString(
 	} else if (
 		wChainId === chains.ethereum || wChainId === chains.bsc || wChainId === chains.polygon ||
 		wChainId === chains.avalanche  || wChainId === chains.arbitrum || wChainId === chains.optimism ||
-		wChainId === chains.base || wChainId === chains.unichain || wChainId === chains.linea
+		wChainId === chains.base || wChainId === chains.unichain || wChainId === chains.linea ||
+		wChainId === chains.sonic
 	) {
 		return zeroPadValue(address, 32);
 	} else if (wChainId === chains.aptos && isValidAptosType(address)) {
@@ -104,6 +108,8 @@ const chains: { [index in ChainName]: number }  = {
 	sui: 21,
 	unichain: 44,
 	linea: 38,
+	hypercore: 65000,
+	sonic: 52,
 };
 
 export function getWormholeChainIdByName(chain: string) : number | null {
@@ -120,6 +126,7 @@ const evmChainIdMap: { [index: string]: number }  = {
 	[8453]: 30,
 	[130]: 44,
 	[59144]: 38,
+	[146]: 52,
 };
 
 export function getEvmChainIdByName(chain: ChainName) {
@@ -139,7 +146,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [10, 6, 0];
+const sdkVersion = [10, 8, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -241,3 +248,173 @@ export const FAST_MCTP_PAYLOAD_TYPE_DEFAULT = 1;
 export const FAST_MCTP_PAYLOAD_TYPE_CUSTOM_PAYLOAD = 2;
 export const FAST_MCTP_PAYLOAD_TYPE_ORDER = 3;
 
+export async function getPermitDomain(token: Token, provider: JsonRpcProvider): Promise<PermitDomain> {
+	const contract = new ethers.Contract(token.contract, ERC20Artifact.abi, provider);
+	let domainSeparator: string;
+	let name: string;
+	try {
+		let [_domainSeparator, _name] = await Promise.all([contract.DOMAIN_SEPARATOR(), contract.name()]);
+		domainSeparator = _domainSeparator;
+		name = _name;
+	} catch (err) {
+		throw {
+			mayanError: {
+				permitIssue: true,
+			},
+		};
+	}
+	const domain: PermitDomain = {
+		name: name,
+		version: '1',
+		chainId: token.chainId,
+		verifyingContract: token.contract,
+	};
+	for (let i = 1; i < 11; i++) {
+		domain.version = String(i);
+		const hash = TypedDataEncoder.hashDomain(domain);
+		if (hash.toLowerCase() === domainSeparator.toLowerCase()) {
+			return domain;
+		}
+	}
+	throw {
+		mayanError: {
+			permitIssue: true,
+		},
+	};
+}
+
+export const PermitTypes = {
+	Permit: [
+		{
+			name: 'owner',
+			type: 'address',
+		},
+		{
+			name: 'spender',
+			type: 'address',
+		},
+		{
+			name: 'value',
+			type: 'uint256',
+		},
+		{
+			name: 'nonce',
+			type: 'uint256',
+		},
+		{
+			name: 'deadline',
+			type: 'uint256',
+		},
+	],
+};
+
+export async function getPermitParams(
+	token: Token,
+	walletAddress: string,
+	spender: string,
+	amount: bigint,
+	provider: JsonRpcProvider,
+	deadline: BigInt
+): Promise<{
+	domain: PermitDomain;
+	types: typeof PermitTypes;
+	value: PermitValue;
+}> {
+	if (token.standard !== 'erc20' && token.standard !== 'hypertoken') {
+		throw new Error('Token is not ERC20');
+	}
+	if (!token.supportsPermit) {
+		throw new Error('Token does not support permit');
+	}
+	const contract = new ethers.Contract(token.contract, ERC20Artifact.abi, provider);
+	const [domain, nonce] = await Promise.all([getPermitDomain(token, provider), contract.nonces(walletAddress)]);
+	return {
+		domain,
+		types: PermitTypes,
+		value: {
+			owner: walletAddress,
+			spender: spender,
+			nonce: String(nonce),
+			value: String(amount),
+			deadline: String(deadline),
+		}
+	}
+}
+
+export async function getHyperCoreUSDCDepositPermitParams(
+	quote: Quote,
+	userArbitrumAddress: string,
+	arbProvider: JsonRpcProvider,
+): Promise<{
+	domain: PermitDomain;
+	types: typeof PermitTypes;
+	value: PermitValue;
+}> {
+	if (!quote.hyperCoreParams) {
+		throw new Error('Quote does not have hyperCoreParams');
+	}
+	if (quote.toChain !== 'hypercore') {
+		throw new Error('Quote toChain is not hypercore');
+	}
+	if (quote.toToken.contract.toLowerCase() !== addresses.ARBITRUM_USDC_CONTRACT.toLowerCase()) {
+		throw new Error('Quote toToken is not USDC on Arbitrum');
+	}
+
+	const USDC_ARB_TOKEN: Token = {
+		name: "USDC",
+		standard: "erc20",
+		symbol: "USDC",
+		mint: "CR4xnGrhsu1fWNPoX4KbTUUtqGMF3mzRLfj4S6YEs1Yo",
+		verified: true,
+		contract: "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+		chainId: 42161,
+		wChainId: 23,
+		decimals: 6,
+		logoURI: "http://assets.coingecko.com/coins/images/6319/small/usdc.png?1696506694",
+		coingeckoId: "usd-coin",
+		realOriginContractAddress: "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+		realOriginChainId: 23,
+		supportsPermit: true,
+		verifiedAddress: '0xaf88d065e77c8cc2239327c5edb3a432268e5831',
+	}
+	const [permitParams, isAllowed] = await Promise.all([
+		getPermitParams(
+			USDC_ARB_TOKEN,
+			userArbitrumAddress,
+			addresses.HC_ARBITRUM_BRIDGE,
+			BigInt(quote.hyperCoreParams.depositAmountUSDC64),
+			arbProvider,
+			BigInt(quote.deadline64)
+		),
+		checkHyperCoreDeposit(userArbitrumAddress, quote.toToken.contract)
+	]);
+	if (!isAllowed) {
+		throw new Error('Because of concurrency, deposit is not possible at the moment, please try again later');
+	}
+	return permitParams;
+}
+
+export function getHyperCoreUSDCDepositCustomPayload(
+	quote: Quote,
+	destinationAddress: string,
+	usdcPermitSignature: string,
+): Buffer {
+	const payload = Buffer.alloc(109);
+	const destAddressBuf = Buffer.from(hexToUint8Array(destinationAddress));
+	if (destAddressBuf.length !== 20) {
+		throw new Error('Invalid destination address length, expected 20 bytes');
+	}
+	const permitSignatureBuf = Buffer.from(
+		hexToUint8Array(usdcPermitSignature)
+	);
+	if (permitSignatureBuf.length !== 65) {
+		throw new Error('Invalid USDC permit signature length, expected 65 bytes');
+	}
+	payload.writeBigUInt64BE(getAmountOfFractionalAmount(quote.redeemRelayerFee, CCTP_TOKEN_DECIMALS), 0)
+	payload.set(destAddressBuf, 8);
+	payload.writeBigUInt64BE(BigInt(quote.hyperCoreParams.depositAmountUSDC64), 28);
+	payload.writeBigUInt64BE(BigInt(quote.deadline64), 36);
+	payload.set(permitSignatureBuf, 44);
+
+	return payload
+}
