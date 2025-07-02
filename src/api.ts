@@ -75,6 +75,8 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 	gasless: false,
 	onlyDirect: false,
 	fastMctp: true,
+	fullList: false,
+	payload: undefined,
 }): string {
 	const { gasDrop, referrerBps } = params;
 	let slippageBps = params.slippageBps;
@@ -89,6 +91,8 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		fastMctp: quoteOptions.fastMctp !== false, // default to true
 		gasless: quoteOptions.gasless === true, // default to false
 		onlyDirect: quoteOptions.onlyDirect === true, // default to false
+		fullList: quoteOptions.fullList === true, // default to false
+		payload: typeof quoteOptions.payload === 'string' ? quoteOptions.payload : undefined,
 	}
 	const queryParams: Record<string, any> = {
 		..._quoteOptions,

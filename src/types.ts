@@ -11,7 +11,8 @@ import {
 } from '@mysten/sui/transactions';
 
 export type ChainName = 'solana'
-	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' | 'base' | 'aptos' | 'sui' | 'unichain' | 'linea' | 'hypercore';
+	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' |
+	'base' | 'aptos' | 'sui' | 'unichain' | 'linea' | 'hypercore' | 'sonic';
 
 export type TokenStandard = 'native' | 'erc20' | 'spl' | 'spl2022' | 'suicoin' | 'hypertoken';
 
@@ -158,7 +159,7 @@ export type Quote = {
 	fastMctpMinFinality: number;
 	hyperCoreParams?: {
 		depositAmountUSDC64: string;
-		initiateAmountUSDC64: string;
+		bridgeAmountUSDC64: string;
 		initiateTokenContract: string;
 		initiateContractAddress?: string;
 		failureGasDrop: number;
@@ -173,6 +174,8 @@ export type QuoteOptions = {
 	fastMctp?: boolean;
 	gasless?: boolean;
 	onlyDirect?: boolean;
+	fullList?: boolean;
+	payload?: string;
 };
 
 export type SolanaTransactionSigner = {
