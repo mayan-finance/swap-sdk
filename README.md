@@ -8,12 +8,12 @@ A minimal package for sending cross-chain swap transactions
 npm install --save @mayanfinance/swap-sdk
 ```
 
-## Usage: 
+## Usage:
 
-Import the necessary functions and models: 
+Import the necessary functions and models:
 
 ```javascript
-import { fetchQuote, swapFromEvm, swapFromSolana, Quote } from '@mayanfinance/swap-sdk'
+import { fetchQuote, swapFromEvm, swapFromSolana, Quote, createSwapFromSuiMoveCalls } from '@mayanfinance/swap-sdk'
 ```
 
 Then you will need to get a quote:
@@ -21,17 +21,21 @@ Then you will need to get a quote:
 ### Getting Quote:
 ```javascript
 const quotes = await fetchQuote({
-  amount: 250,
-  fromToken: fromToken.contract,
-  toToken: toToken.contract,
-  fromChain: "avalanche",
-  toChain: "solana",
-  slippageBps: 300, // means 3%
-  gasDrop: 0.04, // optional
-  referrer: "YOUR SOLANA WALLET ADDRESS", // optional
-  referrerBps: 5, // optional
+	amountIn64: "250000000", // if fromToken is USDC means 250 USDC
+	fromToken: fromToken.contract,
+	toToken: toToken.contract,
+	fromChain: "avalanche",
+	toChain: "solana",
+	slippageBps: "auto",
+	gasDrop: 0.04, // optional
+	referrer: "YOUR SOLANA WALLET ADDRESS", // optional
+	referrerBps: 5, // optional
 });
 ```
+> `slippageBps` can either be a specific basis point number or the string **"auto"**. When set to "auto", the system determines the safest slippage based on the input and output tokens.
+You can also provide slippageBps directly as a number in basis points; for example, 300 means 3%. Regardless of whether you pass "auto" or a basis point number, the `slippageBps` field in the quote response will always be returned as a **basis point number**.
+
+> see the list of supported chains [here](./src/types.ts#L13).
 
 You can get the list of supported tokens using [Tokens API](https://price-api.mayan.finance/swagger/)
 
@@ -62,7 +66,7 @@ base: 0.01 ETH
 <br />
 After you get the quote, you can build and send the swap transaction:
 
-### Swap from Solana:
+### Bridge from Solana:
 
 ```javascript
 swapTrx = await swapFromSolana(quotes[0], originWalletAddress, destinationWalletAddress, referrerAddresses, signSolanaTransaction, solanaConnection)
@@ -76,7 +80,8 @@ example:
 ```javascript
 {
   evm: "YOUR EVM WALLET",
-  solana: "YOUR SOLANA WALLET"
+  solana: "YOUR SOLANA WALLET",
+  sui: "YOUR SUI WALLET"
 }
 ```
 <br />
@@ -84,7 +89,7 @@ example:
 If you need more control over the transaction and manually send the trx you can use `createSwapFromSolanaInstructions` function to build the solana instruction.
 
 
-### Swap from EVM:
+### Bridge from EVM:
 
 ```javascript
 swapTrx = await swapFromEvm(quotes[0], destinationWalletAddress, referrerAddress, provider, signer, permit?)
@@ -105,6 +110,67 @@ swapTrx = await swapFromEvm(quotes[0], destinationWalletAddress, referrerAddress
 	r: string,
 	s: string,
 }
+```
+<br />
+
+### Bridge from Sui
+The `createSwapFromSuiMoveCalls` function returns a Transaction instance containing all the required Move calls. This transaction should then be signed by the user's wallet and broadcast to the Sui network.
+
+```javascript
+const bridgeFromSuiMoveCalls = await createSwapFromSuiMoveCalls(
+  	quote, // Quote
+	originWalletAddress, // string
+	destinationWalletAddress, // string
+	referrerAddresses, // Optional(ReferrerAddresses)
+	customPayload, // Optional(Uint8Array | Buffer)
+	suiClient, // SuiClient
+	options, // Optional(ComposableSuiMoveCallsOptions)
+);
+
+await suiClient.signAndExecuteTransaction({
+     signer: suiKeypair,
+     transaction: bridgeFromSuiMoveCalls,
+ });
+```
+
+#### Composability on Move Calls and Input Coin
+
+The SDK offers composability for advanced use cases where you want to integrate bridge Move calls into an existing Sui transaction or use a specific coin as the input for bridging.
+
+- **Custom Move Calls**: To compose the bridge logic into an existing transaction, pass your transaction through the `builtTransaction` parameter. The bridge Move calls will be appended, allowing you to sign and send the combined transaction.
+
+- **Custom Input Coin**: If you'd like to use a specific coin (e.g., one returned from earlier Move calls) as the input for the bridge, provide it via the `inputCoin` parameter.
+
+```javascript
+type ComposableSuiMoveCallsOptions = {
+	builtTransaction?: SuiTransaction;
+	inputCoin?: SuiFunctionParameter;
+}
+```
+<br />
+
+### Depositing on HyperCore (Hyperliquid Core) as a Destination
+
+
+To deposit into HyperCore, start by fetching a quote as described earlier, just set the `toChain` parameter to `hypercore`. Then, depending on the source chain, use the appropriate transaction-building method, also covered above.
+
+The key difference when depositing **USDC on HyperCore** is that you must pass a `usdcPermitSignature` in the options object when building the transaction.
+
+You can generate this signature using the `getHyperCoreUSDCDepositPermitParams` helper function as shown below:
+
+```javascript
+import { getHyperCoreUSDCDepositPermitParams } from '@mayanfinance/swap-sdk';
+
+const arbitrumProvider = new ethers.providers.JsonRpcProvider('ARBITRUM_RPC_URL');
+const arbDestUserWallet = new ethers.Wallet('USER_ARBITRUM_WALLET_PRIVATE_KEY', arbitrumProvider);
+
+const { value, domain, types } = await getHyperCoreUSDCDepositPermitParams(
+	quote,
+	userDestAddress,
+	arbitrumProvider
+);
+
+const permitSignature = await arbDestUserWallet.signTypedData(domain, types, value);
 ```
 <br />
 
