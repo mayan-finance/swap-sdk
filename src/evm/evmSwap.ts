@@ -31,6 +31,7 @@ import { submitSwiftEvmSwap } from '../api';
 import { getShuttleFromEvmTxPayload } from './evmShuttle';
 import {getFastMctpFromEvmTxPayload} from "./evmFastMctp";
 import { getHyperCoreDepositFromEvmTxPayload } from './evmHyperCore';
+import { getMonoChainFromEvmTxPayload } from './evmMonoChain';
 
 export type ContractRelayerFees = {
 	swapFee: bigint,
@@ -199,6 +200,10 @@ export function getSwapFromEvmTxPayload(
 
 	if (quote.type === 'FAST_MCTP') {
 		return getFastMctpFromEvmTxPayload(quote, destinationAddress, referrerAddress, signerChainId, permit, payload);
+	}
+
+if (quote.type === 'MONO_CHAIN') {
+		return getMonoChainFromEvmTxPayload(quote, destinationAddress, referrerAddress, signerChainId, permit);
 	}
 
 	if (quote.type != 'WH') {

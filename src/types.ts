@@ -72,7 +72,7 @@ export type QuoteError = {
 }
 
 export type Quote = {
-	type: 'WH' | 'SWIFT' | 'MCTP' | 'SHUTTLE' | 'FAST_MCTP';
+	type: 'WH' | 'SWIFT' | 'MCTP' | 'SHUTTLE' | 'FAST_MCTP' | 'MONO_CHAIN';
 	/**
 	 * @deprecated Use the new property {@link effectiveAmountIn64} instead
 	 */
@@ -163,7 +163,8 @@ export type Quote = {
 		initiateTokenContract: string;
 		initiateContractAddress?: string;
 		failureGasDrop: number;
-	}
+	};
+	monoChainMayanContract: string;
 };
 
 export type QuoteOptions = {
@@ -176,6 +177,7 @@ export type QuoteOptions = {
 	onlyDirect?: boolean;
 	fullList?: boolean;
 	payload?: string;
+	monoChain?: boolean;
 };
 
 export type SolanaTransactionSigner = {
@@ -218,7 +220,18 @@ type HCDepositUSDCGetSolanaSwapParams = BaseGetSolanaSwapParams & {
 	depositMode: 'HC_USDC',
 }
 
-export type GetSolanaSwapParams = MctpGetSolanaSwapParams | SwiftGetSolanaSwapParams | HCDepositUSDCGetSolanaSwapParams;
+type MonoChainGetSolanaSwapParams = Omit<
+	BaseGetSolanaSwapParams,
+	'minMiddleAmount' | 'fillMaxAccounts' | 'tpmTokenAccount'
+> & {
+	destinationWallet: string;
+	expectedAmountOut64: string;
+	depositMode: 'MONO_CHAIN';
+};
+
+
+export type GetSolanaSwapParams =
+	MctpGetSolanaSwapParams | SwiftGetSolanaSwapParams | HCDepositUSDCGetSolanaSwapParams | MonoChainGetSolanaSwapParams;
 
 type BaseGetSuiSwapParams = {
 	amountIn64: string,

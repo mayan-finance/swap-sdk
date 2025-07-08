@@ -65,6 +65,16 @@ export function getAssociatedTokenAddress(
 	return address;
 }
 
+function isValidNumericInput(value: any): boolean {
+	return (
+		(typeof value === 'string' || typeof value === 'number') &&
+		value !== '' &&
+		value !== null &&
+		!isNaN(Number(value)) &&
+		Number.isFinite(Number(value))
+	);
+}
+
 export function getAmountOfFractionalAmount(
 	amount: string | number, decimals: string | number) : bigint {
 	if (amount === null || amount === undefined) {
@@ -78,6 +88,9 @@ export function getAmountOfFractionalAmount(
 	}
 	if (!Number.isFinite(Number(amount))) {
 		throw new Error('getAmountOfFractionalAmount: Amount is not a number');
+	}
+	if (!isValidNumericInput(decimals)) {
+		throw new Error('getAmountOfFractionalAmount: decimals is not a number');
 	}
 	const cutFactor = Math.min(8, Number(decimals));
 	const numStr = Number(amount).toFixed(cutFactor + 1);
@@ -146,7 +159,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [10, 8, 0];
+const sdkVersion = [10, 9, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -237,6 +250,14 @@ export function getQuoteSuitableReferrerAddress(
 		if (quote.toChain !== 'solana' && quote.toChain !== 'sui') {
 			return referrerAddresses?.evm || null;
 		}
+	}
+	if (quote.type === 'MONO_CHAIN') {
+		if (quote.fromChain === 'solana') {
+			return referrerAddresses?.solana || null;
+		} else if (quote.fromChain === 'sui') {
+			return referrerAddresses?.sui || null;
+		}
+		return referrerAddresses?.evm || null;
 	}
 	return null;
 }

@@ -48,6 +48,7 @@ import { createMctpFromSolanaInstructions } from "./solanaMctp";
 import { createSwiftFromSolanaInstructions } from './solanaSwift';
 import bs58 from 'bs58';
 import { createHyperCoreDepositFromSolanaInstructions } from './solanaHyperCore';
+import { createMonoChainFromSolanaInstructions } from './solanaMonoChain';
 
 
 const STATE_SIZE = 420;
@@ -95,6 +96,9 @@ export async function createSwapFromSolanaInstructions(
 	}
 	if (quote.type === 'SWIFT') {
 		return createSwiftFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
+	}
+	if (quote.type === 'MONO_CHAIN') {
+		return createMonoChainFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
 	}
 
 	let instructions: Array<TransactionInstruction> = [];

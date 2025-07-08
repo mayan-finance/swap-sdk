@@ -12,13 +12,14 @@ import {
 	VersionedTransaction, ComputeBudgetProgram
 } from '@solana/web3.js';
 import {getAmountOfFractionalAmount, getAssociatedTokenAddress, getSafeU64Blob, wait} from '../utils';
-import {InstructionInfo, SolanaClientSwap, SolanaTransactionSigner, JitoBundleOptions} from '../types';
+import {InstructionInfo, SolanaClientSwap, SolanaTransactionSigner, JitoBundleOptions, Quote} from '../types';
 import addresses from "../addresses";
 import {Buffer} from "buffer";
 import {blob, struct, u8} from "@solana/buffer-layout";
 import { sha256 } from 'js-sha256';
 import bs58 from 'bs58';
 import { getSuggestedRelayer } from '../api';
+import { decodeJupiterV6InsArgs } from './jupiter';
 
 const cachedConnections: Record<string, Connection> = {};
 
@@ -583,7 +584,7 @@ export async function broadcastJitoBundleId(bundleId: string): Promise<void> {
 	}
 }
 
-function validateJupCleanupInstruction(instruction: TransactionInstruction) {
+function validateJupCleanupInstruction(instruction: TransactionInstruction, validCleanReceiverAddress?: PublicKey) {
 	if (!instruction) {
 		return;
 	}
@@ -598,6 +599,11 @@ function validateJupCleanupInstruction(instruction: TransactionInstruction) {
 	}
 	if (Uint8Array.from(instruction.data)[0] !== 9) {
 		throw new Error('Invalid cleanup instruction:: data');
+	}
+	if (validCleanReceiverAddress) {
+		if (!instruction.keys[1].pubkey.equals(validCleanReceiverAddress)) {
+			throw new Error('Invalid cleanup instruction:: dest account');
+		}
 	}
 }
 
@@ -644,8 +650,9 @@ function validateJupSetupInstructions(instructions: TransactionInstruction[], ow
 	});
 }
 
-function validateJupSwapInstruction(instruction: TransactionInstruction, validDestAccount: PublicKey) {
-	if (!instruction.programId.equals(new PublicKey('JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4'))) {
+function validateJupSwapInstruction(instruction: TransactionInstruction, validDestAccount: PublicKey, sameSourceAndDestWallet = false) {
+	const JUP_PROGRAM_ID = new PublicKey('JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4');
+	if (!instruction.programId.equals(JUP_PROGRAM_ID)) {
 		throw new Error('Invalid swap instruction:: programId');
 	}
 	if (instruction.data.subarray(0, 8).toString('hex') === getAnchorInstructionData('shared_accounts_route').toString('hex')) {
@@ -653,11 +660,37 @@ function validateJupSwapInstruction(instruction: TransactionInstruction, validDe
 			throw new Error(`Invalid swap instruction shared_accounts_route:: dest account`);
 		}
 	} else if (instruction.data.subarray(0, 8).toString('hex') === getAnchorInstructionData('route').toString('hex')) {
-		if (!instruction.keys[4].pubkey.equals(validDestAccount)) {
-			throw new Error('Invalid swap instruction route:: dest account');
+		if (sameSourceAndDestWallet) {
+			if (!instruction.keys[4].pubkey.equals(JUP_PROGRAM_ID) && !instruction.keys[3].pubkey.equals(validDestAccount)) {
+				throw new Error('Invalid swap instruction route:: dest account');
+			}
+		} else {
+			if (!instruction.keys[4].pubkey.equals(validDestAccount)) {
+				throw new Error('Invalid swap instruction route:: dest account');
+			}
 		}
 	} else {
 		throw new Error('Invalid swap instruction:: ix id');
+	}
+}
+
+export function validateJupSwapInstructionData(instruction: TransactionInstruction, quote: Quote) {
+	const args = decodeJupiterV6InsArgs(Uint8Array.from(instruction.data)) as {
+		in_amount: bigint;
+		quoted_out_amount: bigint;
+		slippage_bps: number;
+		platform_fee_bps: number;
+	}
+	if (args.in_amount > BigInt(quote.effectiveAmountIn64)) {
+		throw new Error('Invalid swap instruction:: amount in');
+	}
+	const minAmountOut64 = getAmountOfFractionalAmount(quote.minAmountOut, quote.toToken.decimals);
+	const calculatedMinAmountOut = args.quoted_out_amount - ((args.quoted_out_amount * BigInt(args.slippage_bps)) / 10000n);
+	if (calculatedMinAmountOut < minAmountOut64) {
+		throw new Error('Invalid swap instruction:: quote expired');
+	}
+	if (args.platform_fee_bps !== quote.referrerBps) {
+		throw new Error('Invalid swap instruction:: platform fee');
 	}
 }
 
@@ -675,11 +708,17 @@ function validateJupComputeBudgetInstructions(instructions: TransactionInstructi
 	});
 }
 
-export function validateJupSwap(swap: SolanaClientSwapInstructions,  validDestAccount: PublicKey, validWrapOwner?: PublicKey,) {
+export function validateJupSwap(
+	swap: SolanaClientSwapInstructions,
+	validDestAccount: PublicKey,
+	validWrapOwner?: PublicKey,
+	validCleanReceiverAddress?: PublicKey,
+	sameSourceAndDestWallet = false
+) {
 	validateJupComputeBudgetInstructions(swap.computeBudgetInstructions);
 	validateJupSetupInstructions(swap.setupInstructions, validWrapOwner);
-	validateJupSwapInstruction(swap.swapInstruction, validDestAccount);
-	validateJupCleanupInstruction(swap.cleanupInstruction);
+	validateJupSwapInstruction(swap.swapInstruction, validDestAccount, sameSourceAndDestWallet);
+	validateJupCleanupInstruction(swap.cleanupInstruction, validCleanReceiverAddress);
 }
 
 
