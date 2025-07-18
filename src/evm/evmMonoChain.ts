@@ -12,8 +12,6 @@ import {
 import MayanMonoChainArtifact from './MayanMonoChainArtifact';
 import MayanForwarderArtifact from './MayanForwarderArtifact';
 import addresses from '../addresses';
-import { Buffer } from 'buffer';
-import { getCCTPDomain, CCTP_TOKEN_DECIMALS } from '../cctp';
 import { Erc20Permit } from '../types';
 
 function getEvmMonoChainTxPayload(
@@ -29,21 +27,23 @@ function getEvmMonoChainTxPayload(
 		quote.monoChainMayanContract,
 		MayanMonoChainArtifact.abi
 	);
+	const referrerBps = referrerAddress ? quote.referrerBps || 0 : 0;
+
 	let data: string;
 	let value: string | null;
 	if (quote.toToken.contract === ZeroAddress) {
 		data = monoChainContract.interface.encodeFunctionData('transferEth', [
 			destinationAddress,
-			referrerAddress,
-			quote.referrerBps || 0,
+			referrerAddress || ZeroAddress,
+			referrerBps,
 		]);
 	} else {
 		data = monoChainContract.interface.encodeFunctionData('transferToken', [
 			quote.toToken.contract,
 			amountOut,
 			destinationAddress,
-			referrerAddress,
-			quote.referrerBps || 0,
+			referrerAddress || ZeroAddress,
+			referrerBps,
 		]);
 	}
 	if (quote.fromToken.contract === ZeroAddress) {
