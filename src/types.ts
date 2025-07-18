@@ -227,6 +227,7 @@ type MonoChainGetSolanaSwapParams = Omit<
 	destinationWallet: string;
 	expectedAmountOut64: string;
 	depositMode: 'MONO_CHAIN';
+	referrerBps: number;
 };
 
 

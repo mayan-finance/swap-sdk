@@ -109,6 +109,7 @@ export async function createMonoChainFromSolanaInstructions(
 		expectedAmountOut64: String(expectedAmountOut64),
 		depositMode: 'MONO_CHAIN',
 		referrerAddress: referrerAddress,
+		referrerBps: quote.referrerBps,
 	});
 	const clientSwap = decentralizeClientSwapInstructions(
 		clientSwapRaw,
