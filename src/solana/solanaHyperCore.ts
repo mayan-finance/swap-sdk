@@ -8,11 +8,8 @@ import {
 } from '@solana/web3.js';
 import { Quote, ChainName, SwapMessageV0Params, SolanaBridgeOptions } from '../types';
 import {
-	getAmountOfFractionalAmount,
 	getAssociatedTokenAddress,
 	getHyperCoreUSDCDepositCustomPayload,
-	getSafeU64Blob,
-	hexToUint8Array
 } from '../utils';
 import { Buffer } from 'buffer';
 import addresses from '../addresses';
@@ -25,10 +22,10 @@ import {
 	createTransferAllAndCloseInstruction,
 	decentralizeClientSwapInstructions,
 	getAddressLookupTableAccounts,
-	validateJupSwap
+	sandwichInstructionInCpiProxy,
+	validateJupSwap,
 } from './utils';
 import { createMctpBridgeLedgerInstruction, createMctpBridgeWithFeeInstruction } from './solanaMctp';
-import { CCTP_TOKEN_DECIMALS } from '../cctp';
 
 export async function createHyperCoreDepositFromSolanaInstructions(
 	quote: Quote,
@@ -122,28 +119,28 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			);
 		}
 		instructions.push(
-			createAssociatedTokenAccountInstruction(trader, ledgerAccount, ledger, inputMint)
+			sandwichInstructionInCpiProxy(createAssociatedTokenAccountInstruction(trader, ledgerAccount, ledger, inputMint))
 		);
 		instructions.push(
-			createSplTransferInstruction(
+			sandwichInstructionInCpiProxy(createSplTransferInstruction(
 				getAssociatedTokenAddress(
 					inputMint, trader, allowSwapperOffCurve
 				),
 				ledgerAccount,
 				trader,
 				BigInt(quote.hyperCoreParams.bridgeAmountUSDC64),
-			)
+			))
 		);
 		instructions.push(
-			createPayloadWriterCreateInstruction(
+			sandwichInstructionInCpiProxy(createPayloadWriterCreateInstruction(
 				trader,
 				payloadAccount,
 				payload,
 				payloadNonce
-			)
+			))
 		);
 		instructions.push(
-			createMctpBridgeLedgerInstruction({
+			sandwichInstructionInCpiProxy(createMctpBridgeLedgerInstruction({
 				ledger,
 				randomKey: mctpRandomKey.publicKey,
 				swapperAddress: trader.toString(),
@@ -157,7 +154,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 				feeRedeem: 0,
 				gasDrop: quote.hyperCoreParams.failureGasDrop,
 				toChain: 'arbitrum',
-			})
+			}))
 		);
 		const {
 			instruction: _instruction,
@@ -169,13 +166,13 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			trader.toString(),
 			BigInt(0),
 		);
-		instructions.push(_instruction);
+		instructions.push(sandwichInstructionInCpiProxy(_instruction));
 		signers.push(..._signers);
-		instructions.push(createPayloadWriterCloseInstruction(
+		instructions.push(sandwichInstructionInCpiProxy(createPayloadWriterCloseInstruction(
 			trader,
 			payloadAccount,
 			payloadNonce,
-		));
+		)));
 	} else {
 		const clientSwapRaw = await getSwapSolana({
 			minMiddleAmount: quote.minMiddleAmount,
@@ -218,14 +215,14 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 				trader,
 				tmpSwapTokenAccount,
 			);
-			instructions.push(..._createSwapTpmTokenAccountInstructions);
+			instructions.push(...(_createSwapTpmTokenAccountInstructions).map(ins => sandwichInstructionInCpiProxy(ins)));
 			signers.push(tmpSwapTokenAccount);
 			if (clientSwap.setupInstructions) {
-				instructions.push(...clientSwap.setupInstructions);
+				instructions.push(...(clientSwap.setupInstructions.map(ins => sandwichInstructionInCpiProxy(ins))));
 			}
-			instructions.push(clientSwap.swapInstruction);
+			instructions.push(sandwichInstructionInCpiProxy(clientSwap.swapInstruction));
 			if (clientSwap.cleanupInstruction) {
-				instructions.push(clientSwap.cleanupInstruction);
+				instructions.push(sandwichInstructionInCpiProxy(clientSwap.cleanupInstruction));
 			}
 			_lookupTablesAddress.push(...clientSwap.addressLookupTableAddresses);
 		}
@@ -236,17 +233,17 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			initiateAmountUSDC64 = initiateAmountUSDC64 - BigInt(quote.solanaRelayerFee64);
 		}
 
-		instructions.push(createAssociatedTokenAccountInstruction(
+		instructions.push(sandwichInstructionInCpiProxy(createAssociatedTokenAccountInstruction(
 			trader, ledgerAccount, ledger, new PublicKey(quote.mctpInputContract)
-		));
+		)));
 
 		instructions.push(
-			createSplTransferInstruction(
+			sandwichInstructionInCpiProxy(createSplTransferInstruction(
 				tmpSwapTokenAccount.publicKey,
 				ledgerAccount,
 				trader,
 				initiateAmountUSDC64,
-			)
+			))
 		);
 
 		const traderInputMintAccount = getAssociatedTokenAddress(
@@ -254,31 +251,31 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 		);
 		const traderInputMintAccountInfo = await connection.getAccountInfo(traderInputMintAccount);
 		if (!traderInputMintAccountInfo || !traderInputMintAccountInfo.data) {
-			instructions.push(createAssociatedTokenAccountInstruction(
+			instructions.push(sandwichInstructionInCpiProxy(createAssociatedTokenAccountInstruction(
 				trader,
 				traderInputMintAccount,
 				trader,
 				inputMint
-			));
+			)));
 		}
-		instructions.push(createTransferAllAndCloseInstruction(
+		instructions.push(sandwichInstructionInCpiProxy(createTransferAllAndCloseInstruction(
 			trader,
 			inputMint,
 			tmpSwapTokenAccount.publicKey,
 			traderInputMintAccount,
 			trader,
-		));
+		)));
 
 		instructions.push(
-			createPayloadWriterCreateInstruction(
+			sandwichInstructionInCpiProxy(createPayloadWriterCreateInstruction(
 				trader,
 				payloadAccount,
 				payload,
 				payloadNonce
-			)
+			))
 		);
 
-		instructions.push(createMctpBridgeLedgerInstruction({
+		instructions.push(sandwichInstructionInCpiProxy(createMctpBridgeLedgerInstruction({
 			ledger,
 			swapperAddress: trader.toString(),
 			mintAddress: inputMint.toString(),
@@ -292,12 +289,12 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			feeRedeem: 0,
 			gasDrop: quote.hyperCoreParams.failureGasDrop,
 			toChain: 'arbitrum',
-		}));
-		instructions.push(createPayloadWriterCloseInstruction(
+		})));
+		instructions.push(sandwichInstructionInCpiProxy(createPayloadWriterCloseInstruction(
 			trader,
 			payloadAccount,
 			payloadNonce,
-		));
+		)));
 		if (swapInstructions.length > 0) {
 			const {
 				instruction: _instruction,
@@ -309,7 +306,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 				trader.toString(),
 				BigInt(0),
 			);
-			instructions.push(_instruction);
+			instructions.push(sandwichInstructionInCpiProxy(_instruction));
 			signers.push(..._signers);
 		}
 	}

@@ -31,7 +31,7 @@ import {
 	createTransferAllAndCloseInstruction,
 	decentralizeClientSwapInstructions,
 	getAddressLookupTableAccounts,
-	getAnchorInstructionData,
+	getAnchorInstructionData, sandwichInstructionInCpiProxy,
 	solMint,
 	validateJupSwap, validateJupSwapInstructionData
 } from './utils';
@@ -119,13 +119,18 @@ export async function createMonoChainFromSolanaInstructions(
 	validateJupSwapInstructionData(clientSwap.swapInstruction, quote);
 	instructions.push(...clientSwap.computeBudgetInstructions);
 	if (clientSwap.setupInstructions) {
-		instructions.push(...clientSwap.setupInstructions);
+		instructions.push(...(clientSwap.setupInstructions.map(ins => sandwichInstructionInCpiProxy(ins))));
 	}
-	instructions.push(clientSwap.swapInstruction);
+	instructions.push(sandwichInstructionInCpiProxy(clientSwap.swapInstruction));
 	if (clientSwap.cleanupInstruction) {
-		instructions.push(clientSwap.cleanupInstruction);
+		instructions.push(sandwichInstructionInCpiProxy(clientSwap.cleanupInstruction));
 	}
 	_lookupTablesAddress.push(...clientSwap.addressLookupTableAddresses);
+	_lookupTablesAddress.push(addresses.LOOKUP_TABLE);
+
+	lookupTables = await getAddressLookupTableAccounts(_lookupTablesAddress, connection);
+
+
 
 	return { instructions, signers: [], lookupTables, swapMessageV0Params: null };
 }

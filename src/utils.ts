@@ -159,7 +159,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [10, 9, 2];
+const sdkVersion = [10, 9, 3];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -431,7 +431,7 @@ export function getHyperCoreUSDCDepositCustomPayload(
 	if (permitSignatureBuf.length !== 65) {
 		throw new Error('Invalid USDC permit signature length, expected 65 bytes');
 	}
-	payload.writeBigUInt64BE(getAmountOfFractionalAmount(quote.redeemRelayerFee, CCTP_TOKEN_DECIMALS), 0)
+	payload.writeBigUInt64BE(BigInt(quote.redeemRelayerFee64), 0)
 	payload.set(destAddressBuf, 8);
 	payload.writeBigUInt64BE(BigInt(quote.hyperCoreParams.depositAmountUSDC64), 28);
 	payload.writeBigUInt64BE(BigInt(quote.deadline64), 36);

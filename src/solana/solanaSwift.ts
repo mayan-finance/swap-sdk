@@ -18,9 +18,17 @@ import addresses from '../addresses'
 import { ethers, ZeroAddress } from 'ethers';
 import { getSwapSolana } from '../api';
 import {
-	createAssociatedTokenAccountInstruction, createInitializeRandomTokenAccountInstructions,
-	createSplTransferInstruction, createSyncNativeInstruction, createTransferAllAndCloseInstruction,
-	decentralizeClientSwapInstructions, getAddressLookupTableAccounts, getAnchorInstructionData, solMint, validateJupSwap
+	createAssociatedTokenAccountInstruction,
+	createInitializeRandomTokenAccountInstructions,
+	createSplTransferInstruction,
+	createSyncNativeInstruction,
+	createTransferAllAndCloseInstruction,
+	decentralizeClientSwapInstructions,
+	getAddressLookupTableAccounts,
+	getAnchorInstructionData,
+	sandwichInstructionInCpiProxy,
+	solMint,
+	validateJupSwap
 } from './utils';
 
 export function createSwiftOrderHash(
@@ -271,27 +279,27 @@ export async function createSwiftFromSolanaInstructions(
 			}))
 		}
 		instructions.push(
-			createAssociatedTokenAccountInstruction(relayer, stateAccount, state, swiftInputMint)
+			sandwichInstructionInCpiProxy(createAssociatedTokenAccountInstruction(relayer, stateAccount, state, swiftInputMint))
 		);
 		if (quote.swiftInputContract === ZeroAddress) {
 			instructions.push(
-				SystemProgram.transfer({
+				sandwichInstructionInCpiProxy(SystemProgram.transfer({
 					fromPubkey: trader,
 					toPubkey: stateAccount,
 					lamports: BigInt(quote.effectiveAmountIn64),
-				}),
-				createSyncNativeInstruction(stateAccount),
+				})),
+				sandwichInstructionInCpiProxy(createSyncNativeInstruction(stateAccount)),
 			);
 		} else {
 			instructions.push(
-				createSplTransferInstruction(
+				sandwichInstructionInCpiProxy(createSplTransferInstruction(
 					getAssociatedTokenAddress(
 						swiftInputMint, trader, allowSwapperOffCurve
 					),
 					stateAccount,
 					trader,
 					BigInt(quote.effectiveAmountIn64),
-				)
+				))
 			);
 		}
 	} else {
@@ -326,28 +334,31 @@ export async function createSwiftFromSolanaInstructions(
 				swapInstructions.push(clientSwap.cleanupInstruction);
 			}
 			_swapAddressLookupTables.push(...clientSwap.addressLookupTableAddresses);
-			instructions.push(createAssociatedTokenAccountInstruction(relayer, stateAccount, state, swiftInputMint));
-			instructions.push(createTransferAllAndCloseInstruction(
+			instructions.push(sandwichInstructionInCpiProxy(
+				createAssociatedTokenAccountInstruction(relayer, stateAccount, state, swiftInputMint)
+			));
+			instructions.push(sandwichInstructionInCpiProxy(createTransferAllAndCloseInstruction(
 				trader,
 				swiftInputMint,
 				tmpSwapTokenAccount.publicKey,
 				stateAccount,
 				relayer,
-			));
+			)));
 		} else {
+			validateJupSwap(clientSwap, stateAccount, trader);
 			instructions.push(...clientSwap.computeBudgetInstructions);
 			if (clientSwap.setupInstructions) {
-				instructions.push(...clientSwap.setupInstructions);
+				instructions.push(...(clientSwap.setupInstructions.map(ins => sandwichInstructionInCpiProxy(ins))));
 			}
-			instructions.push(clientSwap.swapInstruction);
+			instructions.push(sandwichInstructionInCpiProxy(clientSwap.swapInstruction));
 			if (clientSwap.cleanupInstruction) {
-				instructions.push(clientSwap.cleanupInstruction);
+				instructions.push(sandwichInstructionInCpiProxy(clientSwap.cleanupInstruction));
 			}
 			_lookupTablesAddress.push(...clientSwap.addressLookupTableAddresses);
 		}
 	}
 
-	instructions.push(createSwiftInitInstruction({
+	instructions.push(sandwichInstructionInCpiProxy(createSwiftInitInstruction({
 		quote,
 		state,
 		trader,
@@ -358,7 +369,7 @@ export async function createSwiftFromSolanaInstructions(
 		destinationAddress,
 		deadline,
 		referrerAddress,
-	}));
+	})));
 
 	const totalLookupTables = await getAddressLookupTableAccounts(_lookupTablesAddress.concat(_swapAddressLookupTables), connection);
 	lookupTables = totalLookupTables.slice(0, _lookupTablesAddress.length);

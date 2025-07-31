@@ -30,7 +30,7 @@ import {
 	createSplTransferInstruction, createTransferAllAndCloseInstruction,
 	decentralizeClientSwapInstructions,
 	getAddressLookupTableAccounts,
-	getAnchorInstructionData, validateJupSwap
+	getAnchorInstructionData, sandwichInstructionInCpiProxy, validateJupSwap
 } from './utils';
 
 const MCTPBridgeWithFeeLayout = struct<any>([
@@ -549,20 +549,20 @@ export async function createMctpFromSolanaInstructions(
 			}))
 		}
 		instructions.push(
-			createAssociatedTokenAccountInstruction(user, ledgerAccount, ledger, new PublicKey(quote.mctpInputContract))
+			sandwichInstructionInCpiProxy(createAssociatedTokenAccountInstruction(user, ledgerAccount, ledger, new PublicKey(quote.mctpInputContract)))
 		);
 		instructions.push(
-			createSplTransferInstruction(
+			sandwichInstructionInCpiProxy(createSplTransferInstruction(
 				getAssociatedTokenAddress(
 					new PublicKey(quote.mctpInputContract), user, allowSwapperOffCurve
 				),
 				ledgerAccount,
 				user,
 				BigInt(quote.effectiveAmountIn64),
-			)
+			))
 		);
 		if (quote.hasAuction) {
-			instructions.push(createMctpSwapLedgerInstruction({
+			instructions.push(sandwichInstructionInCpiProxy(createMctpSwapLedgerInstruction({
 				ledger,
 				swapperAddress,
 				mintAddress: quote.mctpInputContract,
@@ -579,7 +579,7 @@ export async function createMctpFromSolanaInstructions(
 				amountOutMin: quote.minAmountOut,
 				deadline,
 				feeRateRef: quote.referrerBps,
-			}));
+			})));
 			if (!forceSkipCctpInstructions) {
 				const {
 					instruction: _instruction,
@@ -587,12 +587,12 @@ export async function createMctpFromSolanaInstructions(
 				} = createMctpInitSwapInstruction(
 					ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
 				);
-				instructions.push(_instruction);
+				instructions.push(sandwichInstructionInCpiProxy(_instruction));
 				signers.push(_signer);
 			}
 		}
 		else {
-			instructions.push(createMctpBridgeLedgerInstruction({
+			instructions.push(sandwichInstructionInCpiProxy(createMctpBridgeLedgerInstruction({
 				ledger,
 				swapperAddress,
 				mintAddress: quote.mctpInputContract,
@@ -605,7 +605,7 @@ export async function createMctpFromSolanaInstructions(
 				amountInMin64: BigInt(quote.effectiveAmountIn64),
 				mode,
 				referrerAddress,
-			}));
+			})));
 			if (!forceSkipCctpInstructions) {
 				if (mode === 'WITH_FEE') {
 					const {
@@ -614,7 +614,7 @@ export async function createMctpFromSolanaInstructions(
 					} = createMctpBridgeWithFeeInstruction(
 						ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
 					);
-					instructions.push(_instruction);
+					instructions.push(sandwichInstructionInCpiProxy(_instruction));
 					signers.push(..._signers);
 				} else {
 					const {
@@ -623,7 +623,7 @@ export async function createMctpFromSolanaInstructions(
 					} = createMctpBridgeLockFeeInstruction(
 						ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
 					);
-					instructions.push(..._instructions);
+					instructions.push(...(_instructions.map(ins => sandwichInstructionInCpiProxy(ins))));
 					signers.push(_signer);
 				}
 			}
@@ -663,25 +663,25 @@ export async function createMctpFromSolanaInstructions(
 				swapInstructions.push(clientSwap.cleanupInstruction);
 			}
 			_swapAddressLookupTables.push(...clientSwap.addressLookupTableAddresses);
-			instructions.push(createAssociatedTokenAccountInstruction(
+			instructions.push(sandwichInstructionInCpiProxy(createAssociatedTokenAccountInstruction(
 				user, ledgerAccount, ledger, new PublicKey(quote.mctpInputContract)
-			));
-			instructions.push(createTransferAllAndCloseInstruction(
+			)));
+			instructions.push(sandwichInstructionInCpiProxy(createTransferAllAndCloseInstruction(
 				user,
 				new PublicKey(quote.mctpInputContract),
 				tmpSwapTokenAccount.publicKey,
 				ledgerAccount,
 				user,
-			));
+			)));
 		} else {
 			validateJupSwap(clientSwap, ledgerAccount, user);
 			instructions.push(...clientSwap.computeBudgetInstructions);
 			if (clientSwap.setupInstructions) {
-				instructions.push(...clientSwap.setupInstructions);
+				instructions.push(...(clientSwap.setupInstructions.map(ins => sandwichInstructionInCpiProxy(ins))));
 			}
-			instructions.push(clientSwap.swapInstruction);
+			instructions.push(sandwichInstructionInCpiProxy(clientSwap.swapInstruction));
 			if (clientSwap.cleanupInstruction) {
-				instructions.push(clientSwap.cleanupInstruction);
+				instructions.push(sandwichInstructionInCpiProxy(clientSwap.cleanupInstruction));
 			}
 			_lookupTablesAddress.push(...clientSwap.addressLookupTableAddresses);
 		}
@@ -690,7 +690,7 @@ export async function createMctpFromSolanaInstructions(
 
 
 		if (quote.hasAuction) {
-			instructions.push(createMctpSwapLedgerInstruction({
+			instructions.push(sandwichInstructionInCpiProxy(createMctpSwapLedgerInstruction({
 				ledger,
 				swapperAddress,
 				mintAddress: quote.mctpInputContract,
@@ -707,7 +707,7 @@ export async function createMctpFromSolanaInstructions(
 				amountOutMin: quote.minAmountOut,
 				deadline,
 				feeRateRef: quote.referrerBps,
-			}));
+			})));
 			if (swapInstructions.length > 0) {
 				const {
 					instruction: _instruction,
@@ -715,12 +715,12 @@ export async function createMctpFromSolanaInstructions(
 				} = createMctpInitSwapInstruction(
 					ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
 				);
-				instructions.push(_instruction);
+				instructions.push(sandwichInstructionInCpiProxy(_instruction));
 				signers.push(_signer);
 			}
 		}
 		else {
-			instructions.push(createMctpBridgeLedgerInstruction({
+			instructions.push(sandwichInstructionInCpiProxy(createMctpBridgeLedgerInstruction({
 				ledger,
 				swapperAddress,
 				mintAddress: quote.mctpInputContract,
@@ -733,7 +733,7 @@ export async function createMctpFromSolanaInstructions(
 				amountInMin64: getAmountOfFractionalAmount(quote.minMiddleAmount, CCTP_TOKEN_DECIMALS),
 				mode,
 				referrerAddress,
-			}));
+			})));
 			if (swapInstructions.length > 0) {
 				if (mode === 'WITH_FEE') {
 					const {
@@ -742,7 +742,7 @@ export async function createMctpFromSolanaInstructions(
 					} = createMctpBridgeWithFeeInstruction(
 						ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
 					);
-					instructions.push(_instruction);
+					instructions.push(sandwichInstructionInCpiProxy(_instruction));
 					signers.push(..._signers);
 				} else {
 					const {
@@ -751,7 +751,7 @@ export async function createMctpFromSolanaInstructions(
 					} = createMctpBridgeLockFeeInstruction(
 						ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
 					);
-					instructions.push(..._instructions);
+					instructions.push(...(_instructions.map(ins => sandwichInstructionInCpiProxy(ins))));
 					signers.push(_signer);
 				}
 			}

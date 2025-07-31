@@ -88,6 +88,7 @@ export type Quote = {
 	redeemRelayerFee: number;
 	refundRelayerFee: number;
 	solanaRelayerFee: number;
+	redeemRelayerFee64: string;
 	refundRelayerFee64: string;
 	cancelRelayerFee64: string;
 	submitRelayerFee64: string;

@@ -48,6 +48,7 @@ export async function submitTransactionWithRetry(
 }> {
 	let signature: string | null = null;
 	let errorNumber = 0;
+	let latestError: any;
 	const connections = [connection].concat(extraRpcs.map(getConnection));
 	for (let i = 0; i < rate; i++) {
 		if (signature) {
@@ -78,14 +79,26 @@ export async function submitTransactionWithRetry(
 			try {
 				signature = await Promise.any(sendRequests);
 			} catch (err) {
-				console.error('Transaction not submitted, remaining attempts:', rate - i - 1, err);
+				latestError = err;
+				try {
+					const simulated = await connection.sendRawTransaction(trx);
+				} catch (err) {
+					console.error('Transaction not submitted, remaining attempts:', rate - i - 1);
+					console.error(err);
+					latestError = err;
+				}
 			}
 		}
 		await wait(1000);
 	}
 
 	if (!signature) {
-		throw new Error('Failed to send transaction');
+		if (latestError) {
+			console.error('Failed to submit transaction');
+			throw latestError;
+		} else {
+			throw new Error('Failed to submit transaction, not landed on any signature');
+		}
 	}
 
 	return {
@@ -680,7 +693,8 @@ export function validateJupSwapInstructionData(instruction: TransactionInstructi
 		quoted_out_amount: bigint;
 		slippage_bps: number;
 		platform_fee_bps: number;
-	}
+		route_plan: Array<{ swap: object, percent: number, input_index: number, output_index: number }>;
+	};
 	if (args.in_amount > BigInt(quote.effectiveAmountIn64)) {
 		throw new Error('Invalid swap instruction:: amount in');
 	}
@@ -797,5 +811,32 @@ export function createPayloadWriterCloseInstruction(
 		keys,
 		programId: new PublicKey(addresses.PAYLOAD_WRITER_PROGRAM_ID),
 		data: insData,
+	});
+}
+
+export function sandwichInstructionInCpiProxy(
+	instruction: TransactionInstruction,
+): TransactionInstruction {
+	const cpiProxyProgramId: PublicKey = new PublicKey(addresses.CPI_PROXY_PROGRAM_ID);
+	const instructionDataLen = Buffer.alloc(4);
+	instructionDataLen.writeUint32LE(instruction.data.length, 0);
+	const data = Buffer.concat([
+		getAnchorInstructionData('foreign_program_invoker'),
+		instructionDataLen,
+		instruction.data,
+	]);
+	const keys = [
+		{ pubkey: instruction.programId, isSigner: false, isWritable: false },
+		{ pubkey: instruction.programId, isSigner: false, isWritable: false },
+	].concat(instruction.keys.map((key) => ({
+		pubkey: key.pubkey,
+		isSigner: key.isSigner,
+		isWritable: key.isWritable,
+	})));
+
+	return new TransactionInstruction({
+		keys,
+		programId: cpiProxyProgramId,
+		data: data,
 	});
 }
