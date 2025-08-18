@@ -816,7 +816,11 @@ export function createPayloadWriterCloseInstruction(
 
 export function sandwichInstructionInCpiProxy(
 	instruction: TransactionInstruction,
+	skipProxy: boolean = false,
 ): TransactionInstruction {
+	if (skipProxy) {
+		return instruction;
+	}
 	const cpiProxyProgramId: PublicKey = new PublicKey(addresses.CPI_PROXY_PROGRAM_ID);
 	const instructionDataLen = Buffer.alloc(4);
 	instructionDataLen.writeUint32LE(instruction.data.length, 0);

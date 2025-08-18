@@ -214,6 +214,7 @@ export async function createSwiftFromSolanaInstructions(
 	connection: Connection, options: {
 		allowSwapperOffCurve?: boolean,
 		separateSwapTx?: boolean,
+		skipProxyMayanInstructions?: boolean,
 	} = {}
 ): Promise<{
 	instructions: TransactionInstruction[],
@@ -369,7 +370,7 @@ export async function createSwiftFromSolanaInstructions(
 		destinationAddress,
 		deadline,
 		referrerAddress,
-	})));
+	}), options.skipProxyMayanInstructions));
 
 	const totalLookupTables = await getAddressLookupTableAccounts(_lookupTablesAddress.concat(_swapAddressLookupTables), connection);
 	lookupTables = totalLookupTables.slice(0, _lookupTablesAddress.length);

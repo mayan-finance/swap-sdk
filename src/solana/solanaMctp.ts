@@ -128,10 +128,11 @@ function createMctpBridgeLockFeeInstruction(
 	ledger: PublicKey, toChain: ChainName, mintAddress: string,
 	relayerAddress: string, feeSolana: bigint,
 ): {
-	instructions: TransactionInstruction[];
+	instructions: [TransactionInstruction, TransactionInstruction];
 	signer: Keypair;
 } {
-	const instructions: TransactionInstruction[] = [];
+
+	const instructions: [TransactionInstruction | null, TransactionInstruction | null] = [null, null];
 
 	const TOKEN_PROGRAM_ID = new PublicKey(addresses.TOKEN_PROGRAM_ID);
 	const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey(addresses.ASSOCIATED_TOKEN_PROGRAM_ID);
@@ -167,9 +168,9 @@ function createMctpBridgeLockFeeInstruction(
 		mint, feeState, true
 	);
 
-	instructions.push(createAssociatedTokenAccountInstruction(
+	instructions[0] = createAssociatedTokenAccountInstruction(
 		relayer, feeStateAccount, feeState, mint
-	));
+	);
 
 	const accounts: AccountMeta[] = [
 		{pubkey: ledger, isWritable: true, isSigner: false},
@@ -210,7 +211,7 @@ function createMctpBridgeLockFeeInstruction(
 		data,
 		programId: mctpProgram,
 	});
-	instructions.push(bridgeIns);
+	instructions[1] = bridgeIns;
 
 	return {instructions, signer: cctpMessage};
 }
@@ -488,6 +489,7 @@ export async function createMctpFromSolanaInstructions(
 		allowSwapperOffCurve?: boolean,
 		forceSkipCctpInstructions?: boolean,
 		separateSwapTx?: boolean,
+		skipProxyMayanInstructions?: boolean,
 	} = {}
 ): Promise<{
 	instructions: TransactionInstruction[],
@@ -579,7 +581,7 @@ export async function createMctpFromSolanaInstructions(
 				amountOutMin: quote.minAmountOut,
 				deadline,
 				feeRateRef: quote.referrerBps,
-			})));
+			}), options.skipProxyMayanInstructions));
 			if (!forceSkipCctpInstructions) {
 				const {
 					instruction: _instruction,
@@ -587,7 +589,7 @@ export async function createMctpFromSolanaInstructions(
 				} = createMctpInitSwapInstruction(
 					ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
 				);
-				instructions.push(sandwichInstructionInCpiProxy(_instruction));
+				instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 				signers.push(_signer);
 			}
 		}
@@ -605,7 +607,7 @@ export async function createMctpFromSolanaInstructions(
 				amountInMin64: BigInt(quote.effectiveAmountIn64),
 				mode,
 				referrerAddress,
-			})));
+			}), options.skipProxyMayanInstructions));
 			if (!forceSkipCctpInstructions) {
 				if (mode === 'WITH_FEE') {
 					const {
@@ -614,7 +616,7 @@ export async function createMctpFromSolanaInstructions(
 					} = createMctpBridgeWithFeeInstruction(
 						ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
 					);
-					instructions.push(sandwichInstructionInCpiProxy(_instruction));
+					instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 					signers.push(..._signers);
 				} else {
 					const {
@@ -623,7 +625,8 @@ export async function createMctpFromSolanaInstructions(
 					} = createMctpBridgeLockFeeInstruction(
 						ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
 					);
-					instructions.push(...(_instructions.map(ins => sandwichInstructionInCpiProxy(ins))));
+					instructions.push(sandwichInstructionInCpiProxy(_instructions[0]));
+					instructions.push(sandwichInstructionInCpiProxy(_instructions[1], options.skipProxyMayanInstructions));
 					signers.push(_signer);
 				}
 			}
@@ -707,7 +710,7 @@ export async function createMctpFromSolanaInstructions(
 				amountOutMin: quote.minAmountOut,
 				deadline,
 				feeRateRef: quote.referrerBps,
-			})));
+			}), options.skipProxyMayanInstructions));
 			if (swapInstructions.length > 0) {
 				const {
 					instruction: _instruction,
@@ -715,7 +718,7 @@ export async function createMctpFromSolanaInstructions(
 				} = createMctpInitSwapInstruction(
 					ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
 				);
-				instructions.push(sandwichInstructionInCpiProxy(_instruction));
+				instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 				signers.push(_signer);
 			}
 		}
@@ -733,7 +736,7 @@ export async function createMctpFromSolanaInstructions(
 				amountInMin64: getAmountOfFractionalAmount(quote.minMiddleAmount, CCTP_TOKEN_DECIMALS),
 				mode,
 				referrerAddress,
-			})));
+			}), options.skipProxyMayanInstructions));
 			if (swapInstructions.length > 0) {
 				if (mode === 'WITH_FEE') {
 					const {
@@ -742,7 +745,7 @@ export async function createMctpFromSolanaInstructions(
 					} = createMctpBridgeWithFeeInstruction(
 						ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
 					);
-					instructions.push(sandwichInstructionInCpiProxy(_instruction));
+					instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 					signers.push(..._signers);
 				} else {
 					const {
@@ -751,7 +754,8 @@ export async function createMctpFromSolanaInstructions(
 					} = createMctpBridgeLockFeeInstruction(
 						ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
 					);
-					instructions.push(...(_instructions.map(ins => sandwichInstructionInCpiProxy(ins))));
+					instructions.push(sandwichInstructionInCpiProxy(_instructions[0]));
+					instructions.push(sandwichInstructionInCpiProxy(_instructions[1], options.skipProxyMayanInstructions));
 					signers.push(_signer);
 				}
 			}

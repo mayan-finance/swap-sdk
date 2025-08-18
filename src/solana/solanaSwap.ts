@@ -305,6 +305,7 @@ export async function swapFromSolana(
 		allowSwapperOffCurve?: boolean,
 		forceSkipCctpInstructions?: boolean,
 		usdcPermitSignature?: string | null,
+		skipProxyMayanInstructions?: boolean
 	}
 ): Promise<{
 	signature: string,
@@ -332,6 +333,7 @@ export async function swapFromSolana(
 			forceSkipCctpInstructions: instructionOptions?.forceSkipCctpInstructions,
 			separateSwapTx: jitoEnabled && jitoOptions?.separateSwapTx,
 			usdcPermitSignature: instructionOptions?.usdcPermitSignature,
+			skipProxyMayanInstructions: instructionOptions?.skipProxyMayanInstructions === true, // default is false
 		}
 	);
 

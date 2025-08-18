@@ -154,7 +154,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 				feeRedeem: 0,
 				gasDrop: quote.hyperCoreParams.failureGasDrop,
 				toChain: 'arbitrum',
-			}))
+			}), options.skipProxyMayanInstructions)
 		);
 		const {
 			instruction: _instruction,
@@ -166,7 +166,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			trader.toString(),
 			BigInt(0),
 		);
-		instructions.push(sandwichInstructionInCpiProxy(_instruction));
+		instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 		signers.push(..._signers);
 		instructions.push(sandwichInstructionInCpiProxy(createPayloadWriterCloseInstruction(
 			trader,
@@ -289,7 +289,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			feeRedeem: 0,
 			gasDrop: quote.hyperCoreParams.failureGasDrop,
 			toChain: 'arbitrum',
-		})));
+		}), options.skipProxyMayanInstructions));
 		instructions.push(sandwichInstructionInCpiProxy(createPayloadWriterCloseInstruction(
 			trader,
 			payloadAccount,
@@ -306,7 +306,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 				trader.toString(),
 				BigInt(0),
 			);
-			instructions.push(sandwichInstructionInCpiProxy(_instruction));
+			instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 			signers.push(..._signers);
 		}
 	}
