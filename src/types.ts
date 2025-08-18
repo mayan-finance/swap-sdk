@@ -12,7 +12,7 @@ import {
 
 export type ChainName = 'solana'
 	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' |
-	'base' | 'aptos' | 'sui' | 'unichain' | 'linea' | 'hypercore' | 'sonic';
+	'base' | 'aptos' | 'sui' | 'unichain' | 'linea' | 'hypercore' | 'sonic' | 'hyperevm';
 
 export type TokenStandard = 'native' | 'erc20' | 'spl' | 'spl2022' | 'suicoin' | 'hypertoken';
 
@@ -367,4 +367,5 @@ export type SolanaBridgeOptions = {
 	forceSkipCctpInstructions?: boolean,
 	separateSwapTx?: boolean,
 	usdcPermitSignature?: string;
+	skipProxyMayanInstructions?: boolean;
 }
