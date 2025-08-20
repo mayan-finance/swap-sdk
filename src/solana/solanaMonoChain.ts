@@ -46,6 +46,7 @@ export async function createMonoChainFromSolanaInstructions(
 	options: {
 		allowSwapperOffCurve?: boolean;
 		separateSwapTx?: boolean;
+		skipProxyMayanInstructions?: boolean,
 	} = {}
 ): Promise<{
 	instructions: TransactionInstruction[];
@@ -121,7 +122,7 @@ export async function createMonoChainFromSolanaInstructions(
 	if (clientSwap.setupInstructions) {
 		instructions.push(...(clientSwap.setupInstructions.map(ins => sandwichInstructionInCpiProxy(ins))));
 	}
-	instructions.push(sandwichInstructionInCpiProxy(clientSwap.swapInstruction));
+	instructions.push(sandwichInstructionInCpiProxy(clientSwap.swapInstruction, options?.skipProxyMayanInstructions));
 	if (clientSwap.cleanupInstruction) {
 		instructions.push(sandwichInstructionInCpiProxy(clientSwap.cleanupInstruction));
 	}
