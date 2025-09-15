@@ -9,6 +9,7 @@ import {
 	Transaction as SuiTransaction,
 	TransactionResult as SuiTransactionResult,
 } from '@mysten/sui/transactions';
+import { Buffer } from 'buffer';
 
 export type ChainName = 'solana'
 	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' |
@@ -368,4 +369,5 @@ export type SolanaBridgeOptions = {
 	separateSwapTx?: boolean,
 	usdcPermitSignature?: string;
 	skipProxyMayanInstructions?: boolean;
+	customPayload?: Buffer | Uint8Array | null;
 }

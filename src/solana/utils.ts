@@ -85,6 +85,16 @@ export async function submitTransactionWithRetry(
 				} catch (err) {
 					console.error('Transaction not submitted, remaining attempts:', rate - i - 1);
 					console.error(err);
+					if (typeof err?.transactionMessage === 'string' && err.transactionMessage.indexOf('transaction has already been processed')) {
+						if (signature) {
+							return {
+								signature,
+								serializedTrx: trx,
+							};
+						} else {
+							throw new Error('Transaction has already been processed, but no signature found');
+						}
+					}
 					latestError = err;
 				}
 			}
@@ -400,14 +410,18 @@ type SolanaClientSwapInstructions = {
 	addressLookupTableAddresses: string[]
 };
 
-export function decentralizeClientSwapInstructions(params: SolanaClientSwap, connection: Connection): SolanaClientSwapInstructions {
+export function decentralizeClientSwapInstructions(
+	params: SolanaClientSwap,
+	connection: Connection,
+	relayer?: PublicKey
+): SolanaClientSwapInstructions {
 	const swapInstruction = deserializeInstructionInfo(params.swapInstruction);
 	const cleanupInstruction = params.cleanupInstruction ?
 		deserializeInstructionInfo(params.cleanupInstruction) : null;
 	const computeBudgetInstructions = params.computeBudgetInstructions ?
 		params.computeBudgetInstructions.map(deserializeInstructionInfo) : [];
 	const setupInstructions = params.setupInstructions ?
-		params.setupInstructions.map(deserializeInstructionInfo) : [];
+		overrideInstructionsPayer(params.setupInstructions, relayer).map(deserializeInstructionInfo) : [];
 
 	return {
 		swapInstruction,
@@ -418,6 +432,58 @@ export function decentralizeClientSwapInstructions(params: SolanaClientSwap, con
 	};
 }
 
+const payerAccountsLocation: Array<{
+	programId: string,
+	instructionDataHex: string,
+	discriminatorLength: number,
+	accountIndex: number
+}> = [
+	{ // System program create account
+		programId: SystemProgram.programId.toString(),
+		instructionDataHex: '00000000',
+		discriminatorLength: 4,
+		accountIndex: 0,
+	},
+	{ // ATA create idempotent
+		programId: addresses.ASSOCIATED_TOKEN_PROGRAM_ID,
+		instructionDataHex: '01',
+		discriminatorLength: 1,
+		accountIndex: 0,
+	},
+	{ // ATA create
+		programId: addresses.ASSOCIATED_TOKEN_PROGRAM_ID,
+		instructionDataHex: '',
+		discriminatorLength: 0,
+		accountIndex: 0,
+	}
+];
+
+
+function overrideInstructionsPayer(instructions: InstructionInfo[], relayer?: PublicKey): InstructionInfo[] {
+	if (!relayer) {
+		return instructions;
+	}
+	return instructions.map((instruction) => {
+		const override = payerAccountsLocation.find((item) =>
+			item.programId === instruction.programId &&
+			item.instructionDataHex === Buffer.from(instruction.data, 'base64').subarray(0, item.discriminatorLength).toString('hex') &&
+			instruction.accounts.length > item.accountIndex
+		);
+		if (override) {
+			const newAccounts = [...instruction.accounts];
+			newAccounts[override.accountIndex] = {
+				...newAccounts[override.accountIndex],
+				pubkey: relayer.toString(),
+			};
+			return {
+				...instruction,
+				accounts: newAccounts,
+			};
+		} else {
+			return instruction;
+		}
+	});
+}
 export function getAnchorInstructionData(name: string): Buffer {
 	let preimage = `global:${name}`;
 	return Buffer.from(sha256(preimage)).subarray(0, 8);
