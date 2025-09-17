@@ -16,7 +16,7 @@ import {InstructionInfo, SolanaClientSwap, SolanaTransactionSigner, JitoBundleOp
 import addresses from "../addresses";
 import {Buffer} from "buffer";
 import {blob, struct, u8} from "@solana/buffer-layout";
-import { sha256 } from 'js-sha256';
+import { sha256 } from '@noble/hashes/sha2';
 import bs58 from 'bs58';
 import { getSuggestedRelayer } from '../api';
 import { decodeJupiterV6InsArgs } from './jupiter';
@@ -420,7 +420,7 @@ export function decentralizeClientSwapInstructions(params: SolanaClientSwap, con
 
 export function getAnchorInstructionData(name: string): Buffer {
 	let preimage = `global:${name}`;
-	return Buffer.from(sha256.digest(preimage)).subarray(0, 8);
+	return Buffer.from(sha256(preimage)).subarray(0, 8);
 }
 
 export async function decideRelayer(): Promise<PublicKey> {
