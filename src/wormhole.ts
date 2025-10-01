@@ -7,8 +7,11 @@ export function getWormholePDAs(supplierProgram: string): {
 	sequenceKey: PublicKey,
 	feeCollector: PublicKey,
 	emitter: PublicKey,
+	shimEventAuth: PublicKey,
+	shimMessage: PublicKey,
 } {
 	const wormholeProgramId = new PublicKey(addresses.WORMHOLE_PROGRAM_ID);
+	const wormholeShimProgramId = new PublicKey(addresses.WORMHOLE_SHIM_POST_MESSAGE_PROGRAM_ID);
 	const programId = new PublicKey(supplierProgram);
 	const [ bridgeConfig ] = PublicKey.findProgramAddressSync(
 		[Buffer.from('Bridge')],
@@ -26,11 +29,21 @@ export function getWormholePDAs(supplierProgram: string): {
 		[Buffer.from('fee_collector')],
 		wormholeProgramId,
 	);
+	const [shimMessage] = PublicKey.findProgramAddressSync(
+		[emitter.toBuffer()],
+		wormholeShimProgramId,
+	);
+	const [shimEventAuth] = PublicKey.findProgramAddressSync(
+		[Buffer.from('__event_authority')],
+		wormholeShimProgramId,
+	);
 	return {
 		bridgeConfig,
 		sequenceKey,
 		feeCollector,
 		emitter,
+		shimEventAuth,
+		shimMessage,
 	};
 }
 

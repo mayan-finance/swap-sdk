@@ -88,6 +88,9 @@ export async function createSwapFromSolanaInstructions(
 		throw new Error('HyperCore as source chain is not supported in Solana');
 	}
 	if (quote.toChain === 'hypercore') {
+		if (options.customPayload) {
+			throw new Error('Custom payload is not supported for HyperCore');
+		}
 		return createHyperCoreDepositFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
 	}
 
@@ -95,10 +98,20 @@ export async function createSwapFromSolanaInstructions(
 		return createMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
 	}
 	if (quote.type === 'SWIFT') {
+		if (options.customPayload) {
+			throw new Error('Custom payload is not supported for SWIFT yet');
+		}
 		return createSwiftFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
 	}
 	if (quote.type === 'MONO_CHAIN') {
+		if (options.customPayload) {
+			throw new Error('Custom payload is not supported for MONO_CHAIN yet');
+		}
 		return createMonoChainFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
+	}
+
+	if (options.customPayload) {
+		throw new Error('Custom payload is not supported for WH from Solana');
 	}
 
 	let instructions: Array<TransactionInstruction> = [];
@@ -305,7 +318,8 @@ export async function swapFromSolana(
 		allowSwapperOffCurve?: boolean,
 		forceSkipCctpInstructions?: boolean,
 		usdcPermitSignature?: string | null,
-		skipProxyMayanInstructions?: boolean
+		skipProxyMayanInstructions?: boolean,
+		customPayload?: Buffer | Uint8Array | null,
 	}
 ): Promise<{
 	signature: string,
@@ -334,6 +348,7 @@ export async function swapFromSolana(
 			separateSwapTx: jitoEnabled && jitoOptions?.separateSwapTx,
 			usdcPermitSignature: instructionOptions?.usdcPermitSignature,
 			skipProxyMayanInstructions: instructionOptions?.skipProxyMayanInstructions === true, // default is false
+			customPayload: instructionOptions?.customPayload,
 		}
 	);
 

@@ -74,6 +74,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 	let swapMessageV0Params: SwapMessageV0Params | null = null;
 
 	const trader = new PublicKey(swapperAddress);
+	const relayerAddress = quote.relayer || swapperAddress;
 
 	const inputMint = new PublicKey(quote.hyperCoreParams.initiateTokenContract);
 
@@ -154,6 +155,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 				feeRedeem: 0,
 				gasDrop: quote.hyperCoreParams.failureGasDrop,
 				toChain: 'arbitrum',
+				relayerAddress,
 			}), options.skipProxyMayanInstructions)
 		);
 		const {
@@ -163,7 +165,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			ledger,
 			'arbitrum',
 			quote.hyperCoreParams.initiateTokenContract,
-			trader.toString(),
+			relayerAddress,
 			BigInt(0),
 		);
 		instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
@@ -289,6 +291,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			feeRedeem: 0,
 			gasDrop: quote.hyperCoreParams.failureGasDrop,
 			toChain: 'arbitrum',
+			relayerAddress,
 		}), options.skipProxyMayanInstructions));
 		instructions.push(sandwichInstructionInCpiProxy(createPayloadWriterCloseInstruction(
 			trader,
@@ -303,7 +306,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 				ledger,
 				'arbitrum',
 				quote.hyperCoreParams.initiateTokenContract,
-				trader.toString(),
+				relayerAddress,
 				BigInt(0),
 			);
 			instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));

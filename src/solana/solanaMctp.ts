@@ -26,11 +26,16 @@ import { getSwapSolana } from '../api';
 import {getWormholePDAs} from '../wormhole';
 import {getCCTPBridgePDAs, CCTP_TOKEN_DECIMALS} from "../cctp";
 import {
-	createAssociatedTokenAccountInstruction, createInitializeRandomTokenAccountInstructions,
-	createSplTransferInstruction, createTransferAllAndCloseInstruction,
+	createAssociatedTokenAccountInstruction,
+	createInitializeRandomTokenAccountInstructions, createPayloadWriterCloseInstruction,
+	createPayloadWriterCreateInstruction,
+	createSplTransferInstruction,
+	createTransferAllAndCloseInstruction,
 	decentralizeClientSwapInstructions,
 	getAddressLookupTableAccounts,
-	getAnchorInstructionData, sandwichInstructionInCpiProxy, validateJupSwap
+	getAnchorInstructionData,
+	sandwichInstructionInCpiProxy,
+	validateJupSwap
 } from './utils';
 
 const MCTPBridgeWithFeeLayout = struct<any>([
@@ -46,6 +51,7 @@ export function createMctpBridgeWithFeeInstruction(
 } {
 
 	const wormholeProgramId = new PublicKey(addresses.WORMHOLE_PROGRAM_ID);
+	const wormholeShimProgramId = new PublicKey(addresses.WORMHOLE_SHIM_POST_MESSAGE_PROGRAM_ID);
 	const TOKEN_PROGRAM_ID = new PublicKey(addresses.TOKEN_PROGRAM_ID);
 	const cctpCoreProgramId = new PublicKey(addresses.CCTP_CORE_PROGRAM_ID);
 	const cctpTokenProgramId = new PublicKey(addresses.CCTP_TOKEN_PROGRAM_ID);
@@ -69,7 +75,6 @@ export function createMctpBridgeWithFeeInstruction(
 	const wormholePDAs = getWormholePDAs(addresses.MCTP_PROGRAM_ID);
 
 	const cctpMessage = Keypair.generate();
-	const wormholeMessage = Keypair.generate();
 
 	const accounts: AccountMeta[] = [
 		{pubkey: ledger, isWritable: true, isSigner: false},
@@ -93,10 +98,11 @@ export function createMctpBridgeWithFeeInstruction(
 		{pubkey: wormholePDAs.bridgeConfig, isWritable: true, isSigner: false},
 		{pubkey: wormholePDAs.sequenceKey, isWritable: true, isSigner: false},
 		{pubkey: wormholePDAs.feeCollector, isWritable: true, isSigner: false},
-		{pubkey: wormholeMessage.publicKey, isWritable: true, isSigner: true},
+		{pubkey: wormholePDAs.shimMessage, isWritable: true, isSigner: false},
 		{pubkey: wormholeProgramId, isWritable: false, isSigner: false},
 		{pubkey: SYSVAR_CLOCK_PUBKEY, isWritable: false, isSigner: false},
-		{pubkey: SYSVAR_RENT_PUBKEY, isWritable: false, isSigner: false},
+		{pubkey: wormholePDAs.shimEventAuth, isWritable: false, isSigner: false},
+		{pubkey: wormholeShimProgramId, isWritable: false, isSigner: false},
 
 		{pubkey: TOKEN_PROGRAM_ID, isWritable: false, isSigner: false},
 		{pubkey: SystemProgram.programId, isWritable: false, isSigner: false},
@@ -106,7 +112,7 @@ export function createMctpBridgeWithFeeInstruction(
 
 	MCTPBridgeWithFeeLayout.encode(
 		{
-			instruction: getAnchorInstructionData('bridge_with_fee'),
+			instruction: getAnchorInstructionData('bridge_with_fee_shim'),
 		},
 		data
 	);
@@ -117,7 +123,7 @@ export function createMctpBridgeWithFeeInstruction(
 		programId: mctpProgram,
 	});
 
-	return {instruction: bridgeIns, signers: [cctpMessage, wormholeMessage]};
+	return {instruction: bridgeIns, signers: [cctpMessage]};
 }
 
 const MctpBridgeLockFeeLayout = struct<any>([
@@ -323,12 +329,19 @@ type CreateMctpBridgeLedgerInstructionParams = {
 	referrerAddress?: string | null | undefined,
 	mode: 'WITH_FEE' | 'LOCK_FEE',
 	customPayload?: PublicKey | null,
+	relayerAddress: string,
 }
 export function createMctpBridgeLedgerInstruction(params: CreateMctpBridgeLedgerInstructionParams): TransactionInstruction {
 	if (params.mode !== 'WITH_FEE' && params.mode !== 'LOCK_FEE') {
 		throw new Error('Invalid mode: ' + params.mode);
 	}
+
+	if (params.customPayload && params.mode !== 'WITH_FEE') {
+		throw new Error('Custom payload is only supported in WITH_FEE mode');
+	}
+
 	const user = new PublicKey(params.swapperAddress);
+	const relayer =  new PublicKey(params.relayerAddress);
 	const mint = new PublicKey(params.mintAddress);
 	const ledgerAccount = getAssociatedTokenAddress(mint, params.ledger, true);
 	const destinationChainId = getWormholeChainIdByName(params.toChain);
@@ -358,12 +371,13 @@ export function createMctpBridgeLedgerInstruction(params: CreateMctpBridgeLedger
 		{pubkey: params.customPayload || new PublicKey(addresses.MCTP_PROGRAM_ID), isWritable: false, isSigner: false},
 		{pubkey: mint, isWritable: false, isSigner: false},
 		{pubkey: SystemProgram.programId, isWritable: false, isSigner: false},
+		{pubkey: relayer, isWritable: true, isSigner: true},
 		{pubkey: new PublicKey(refAddress), isWritable: false, isSigner: false},
 	];
 	const data = Buffer.alloc(MctpBridgeLedgerLayout.span);
 	MctpBridgeLedgerLayout.encode(
 		{
-			instruction: getAnchorInstructionData('init_bridge_ledger'),
+			instruction: getAnchorInstructionData('init_bridge_ledger_gasless'),
 			destAddress,
 			amountInMin,
 			gasDrop,
@@ -416,9 +430,11 @@ type CreateMctpSwapLedgerInstructionParams = {
 	amountOutMin: number,
 	deadline: bigint,
 	feeRateRef: number,
+	relayerAddress: string,
 }
 function createMctpSwapLedgerInstruction(params: CreateMctpSwapLedgerInstructionParams): TransactionInstruction {
 	const user = new PublicKey(params.swapperAddress);
+	const relayer =  new PublicKey(params.relayerAddress);
 	const mint = new PublicKey(params.mintAddress);
 	const ledgerAccount = getAssociatedTokenAddress(mint, params.ledger, true);
 	const destinationChainId = getWormholeChainIdByName(params.toChain);
@@ -454,11 +470,12 @@ function createMctpSwapLedgerInstruction(params: CreateMctpSwapLedgerInstruction
 		{pubkey: ledgerAccount, isWritable: false, isSigner: false},
 		{pubkey: mint, isWritable: false, isSigner: false},
 		{pubkey: SystemProgram.programId, isWritable: false, isSigner: false},
+		{pubkey: relayer, isWritable: true, isSigner: true},
 	];
 	const data = Buffer.alloc(MctpSwapLedgerLayout.span);
 	MctpSwapLedgerLayout.encode(
 		{
-			instruction: getAnchorInstructionData('init_order_ledger'),
+			instruction: getAnchorInstructionData('init_order_ledger_gasless'),
 			destAddress,
 			amountInMin,
 			gasDrop,
@@ -490,6 +507,7 @@ export async function createMctpFromSolanaInstructions(
 		forceSkipCctpInstructions?: boolean,
 		separateSwapTx?: boolean,
 		skipProxyMayanInstructions?: boolean,
+		customPayload?: Buffer | Uint8Array | null,
 	} = {}
 ): Promise<{
 	instructions: TransactionInstruction[],
@@ -504,6 +522,8 @@ export async function createMctpFromSolanaInstructions(
 	if (quote.toChain === 'solana') {
 		throw new Error('Unsupported destination chain: ' + quote.toChain);
 	}
+
+	const relayerAddress = quote.relayer || swapperAddress;
 
 	let _lookupTablesAddress: string[] = [];
 
@@ -522,6 +542,7 @@ export async function createMctpFromSolanaInstructions(
 
 	const mctpProgram = new PublicKey(addresses.MCTP_PROGRAM_ID);
 	const user = new PublicKey(swapperAddress);
+	const relayer = new PublicKey(relayerAddress);
 
 	const randomKey = Keypair.generate();
 
@@ -542,6 +563,36 @@ export async function createMctpFromSolanaInstructions(
 	const mode = quote.cheaperChain === 'solana' ? 'LOCK_FEE' : 'WITH_FEE';
 	const tokenOut = quote.toChain === 'sui' ? quote.toToken.verifiedAddress : quote.toToken.contract;
 
+	if (options.customPayload && quote.hasAuction) {
+		throw new Error('Cannot use customPayload with create Mctp swap');
+	}
+
+	let customPayloadAccount: PublicKey | null = null;
+	const customPayloadNonce = Math.floor(Math.random() * 65000);
+
+	if (options.customPayload) {
+		customPayloadAccount = PublicKey.findProgramAddressSync(
+			[
+				Buffer.from('PAYLOAD'),
+				relayer.toBuffer(),
+				(() => {
+					const buf = Buffer.alloc(2);
+					buf.writeUInt16LE(customPayloadNonce, 0);
+					return buf;
+				})(),
+			],
+			new PublicKey(addresses.PAYLOAD_WRITER_PROGRAM_ID)
+		)[0];
+		instructions.push(
+			sandwichInstructionInCpiProxy(createPayloadWriterCreateInstruction(
+				relayer,
+				customPayloadAccount,
+				Buffer.from(options.customPayload),
+				customPayloadNonce
+			))
+		);
+	}
+
 	if (quote.fromToken.contract === quote.mctpInputContract) {
 		// If forceSkip is false then user will execute the cctp instructions by themselves
 		const feeSolana: bigint = forceSkipCctpInstructions ? BigInt(quote.solanaRelayerFee64) : BigInt(0);
@@ -551,7 +602,7 @@ export async function createMctpFromSolanaInstructions(
 			}))
 		}
 		instructions.push(
-			sandwichInstructionInCpiProxy(createAssociatedTokenAccountInstruction(user, ledgerAccount, ledger, new PublicKey(quote.mctpInputContract)))
+			sandwichInstructionInCpiProxy(createAssociatedTokenAccountInstruction(relayer, ledgerAccount, ledger, new PublicKey(quote.mctpInputContract)))
 		);
 		instructions.push(
 			sandwichInstructionInCpiProxy(createSplTransferInstruction(
@@ -581,13 +632,14 @@ export async function createMctpFromSolanaInstructions(
 				amountOutMin: quote.minAmountOut,
 				deadline,
 				feeRateRef: quote.referrerBps,
+				relayerAddress,
 			}), options.skipProxyMayanInstructions));
 			if (!forceSkipCctpInstructions) {
 				const {
 					instruction: _instruction,
 					signer: _signer
 				} = createMctpInitSwapInstruction(
-					ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
+					ledger, quote.toChain, quote.mctpInputContract, relayerAddress, feeSolana
 				);
 				instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 				signers.push(_signer);
@@ -607,6 +659,8 @@ export async function createMctpFromSolanaInstructions(
 				amountInMin64: BigInt(quote.effectiveAmountIn64),
 				mode,
 				referrerAddress,
+				relayerAddress,
+				customPayload: customPayloadAccount,
 			}), options.skipProxyMayanInstructions));
 			if (!forceSkipCctpInstructions) {
 				if (mode === 'WITH_FEE') {
@@ -614,7 +668,7 @@ export async function createMctpFromSolanaInstructions(
 						instruction: _instruction,
 						signers: _signers
 					} = createMctpBridgeWithFeeInstruction(
-						ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
+						ledger, quote.toChain, quote.mctpInputContract, relayerAddress, feeSolana
 					);
 					instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 					signers.push(..._signers);
@@ -623,7 +677,7 @@ export async function createMctpFromSolanaInstructions(
 						instructions: _instructions,
 						signer: _signer
 					} = createMctpBridgeLockFeeInstruction(
-						ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
+						ledger, quote.toChain, quote.mctpInputContract, relayerAddress, feeSolana
 					);
 					instructions.push(sandwichInstructionInCpiProxy(_instructions[0]));
 					instructions.push(sandwichInstructionInCpiProxy(_instructions[1], options.skipProxyMayanInstructions));
@@ -646,13 +700,13 @@ export async function createMctpFromSolanaInstructions(
 			tpmTokenAccount: options?.separateSwapTx ? tmpSwapTokenAccount.publicKey.toString() : null,
 		});
 
-		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection);
+		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection, relayer);
 
 		if (options?.separateSwapTx && clientSwapRaw.maxAccountsFilled) {
 			validateJupSwap(clientSwap, tmpSwapTokenAccount.publicKey, user);
 			createSwapTpmTokenAccountInstructions = await createInitializeRandomTokenAccountInstructions(
 				connection,
-				user,
+				relayer,
 				new PublicKey(quote.mctpInputContract),
 				user,
 				tmpSwapTokenAccount,
@@ -667,14 +721,14 @@ export async function createMctpFromSolanaInstructions(
 			}
 			_swapAddressLookupTables.push(...clientSwap.addressLookupTableAddresses);
 			instructions.push(sandwichInstructionInCpiProxy(createAssociatedTokenAccountInstruction(
-				user, ledgerAccount, ledger, new PublicKey(quote.mctpInputContract)
+				relayer, ledgerAccount, ledger, new PublicKey(quote.mctpInputContract)
 			)));
 			instructions.push(sandwichInstructionInCpiProxy(createTransferAllAndCloseInstruction(
 				user,
 				new PublicKey(quote.mctpInputContract),
 				tmpSwapTokenAccount.publicKey,
 				ledgerAccount,
-				user,
+				relayer,
 			)));
 		} else {
 			validateJupSwap(clientSwap, ledgerAccount, user);
@@ -710,13 +764,14 @@ export async function createMctpFromSolanaInstructions(
 				amountOutMin: quote.minAmountOut,
 				deadline,
 				feeRateRef: quote.referrerBps,
+				relayerAddress,
 			}), options.skipProxyMayanInstructions));
 			if (swapInstructions.length > 0) {
 				const {
 					instruction: _instruction,
 					signer: _signer
 				} = createMctpInitSwapInstruction(
-					ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
+					ledger, quote.toChain, quote.mctpInputContract, relayerAddress, feeSolana
 				);
 				instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 				signers.push(_signer);
@@ -736,6 +791,8 @@ export async function createMctpFromSolanaInstructions(
 				amountInMin64: getAmountOfFractionalAmount(quote.minMiddleAmount, CCTP_TOKEN_DECIMALS),
 				mode,
 				referrerAddress,
+				relayerAddress,
+				customPayload: customPayloadAccount,
 			}), options.skipProxyMayanInstructions));
 			if (swapInstructions.length > 0) {
 				if (mode === 'WITH_FEE') {
@@ -743,7 +800,7 @@ export async function createMctpFromSolanaInstructions(
 						instruction: _instruction,
 						signers: _signers
 					} = createMctpBridgeWithFeeInstruction(
-						ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
+						ledger, quote.toChain, quote.mctpInputContract, relayerAddress, feeSolana
 					);
 					instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 					signers.push(..._signers);
@@ -752,7 +809,7 @@ export async function createMctpFromSolanaInstructions(
 						instructions: _instructions,
 						signer: _signer
 					} = createMctpBridgeLockFeeInstruction(
-						ledger, quote.toChain, quote.mctpInputContract, swapperAddress, feeSolana
+						ledger, quote.toChain, quote.mctpInputContract, relayerAddress, feeSolana
 					);
 					instructions.push(sandwichInstructionInCpiProxy(_instructions[0]));
 					instructions.push(sandwichInstructionInCpiProxy(_instructions[1], options.skipProxyMayanInstructions));
@@ -760,6 +817,13 @@ export async function createMctpFromSolanaInstructions(
 				}
 			}
 		}
+	}
+	if (customPayloadAccount) {
+		instructions.push(sandwichInstructionInCpiProxy(createPayloadWriterCloseInstruction(
+			relayer,
+			customPayloadAccount,
+			customPayloadNonce,
+		)));
 	}
 
 	const totalLookupTables = await getAddressLookupTableAccounts(_lookupTablesAddress.concat(_swapAddressLookupTables), connection);
