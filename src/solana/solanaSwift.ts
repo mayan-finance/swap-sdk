@@ -316,7 +316,7 @@ export async function createSwiftFromSolanaInstructions(
 			fillMaxAccounts: options?.separateSwapTx || false,
 			tpmTokenAccount: options?.separateSwapTx ? tmpSwapTokenAccount.publicKey.toString() : null,
 		});
-		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection);
+		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection, relayer);
 		if (options?.separateSwapTx && clientSwapRaw.maxAccountsFilled) {
 			validateJupSwap(clientSwap, tmpSwapTokenAccount.publicKey, trader);
 			createSwapTpmTokenAccountInstructions = await createInitializeRandomTokenAccountInstructions(

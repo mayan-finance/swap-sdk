@@ -887,26 +887,10 @@ export function sandwichInstructionInCpiProxy(
 	if (skipProxy) {
 		return instruction;
 	}
-	const cpiProxyProgramId: PublicKey = new PublicKey(addresses.CPI_PROXY_PROGRAM_ID);
-	const instructionDataLen = Buffer.alloc(4);
-	instructionDataLen.writeUint32LE(instruction.data.length, 0);
-	const data = Buffer.concat([
-		getAnchorInstructionData('foreign_program_invoker'),
-		instructionDataLen,
-		instruction.data,
-	]);
-	const keys = [
-		{ pubkey: instruction.programId, isSigner: false, isWritable: false },
-		{ pubkey: instruction.programId, isSigner: false, isWritable: false },
-	].concat(instruction.keys.map((key) => ({
-		pubkey: key.pubkey,
-		isSigner: key.isSigner,
-		isWritable: key.isWritable,
-	})));
 
 	return new TransactionInstruction({
-		keys,
-		programId: cpiProxyProgramId,
-		data: data,
+		keys: [{pubkey: instruction.programId, isSigner: false, isWritable: false}].concat(instruction.keys),
+		programId: new PublicKey(addresses.CPI_PROXY_PROGRAM_ID),
+		data: instruction.data,
 	});
 }
