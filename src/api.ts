@@ -7,7 +7,11 @@ import {
 	QuoteOptions,
 	QuoteError,
 	SolanaClientSwap,
-	GetSolanaSwapParams, TokenStandard, GetSuiSwapParams, SuiClientSwap
+	GetSolanaSwapParams,
+	TokenStandard,
+	GetSuiSwapParams,
+	SuiClientSwap,
+	EstimateGasEvmParams
 } from './types';
 import addresses from './addresses';
 import { checkSdkVersionSupport, getSdkVersion } from './utils';
@@ -266,4 +270,31 @@ export async function checkHyperCoreDeposit(destinationAddress: string, tokenAdd
 		throw result;
 	}
 	return result.allowed === true;
+}
+
+export async function getEstimateGasEvm(
+	params: EstimateGasEvmParams
+): Promise<{
+	estimatedGas: bigint;
+	gasPrice: bigint;
+}> {
+	const res = await fetch(`${addresses.GAS_ESTIMATE_URL}/evm`, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({
+			...params,
+			sdkVersion: getSdkVersion(),
+		}),
+	});
+	await check5xxError(res);
+	const result = await res.json();
+	if (res.status !== 200 && res.status !== 201) {
+		throw result;
+	}
+	return {
+		estimatedGas: BigInt(result.estimatedGas),
+		gasPrice: BigInt(result.gasPrice),
+	};
 }

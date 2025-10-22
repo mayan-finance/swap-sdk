@@ -371,3 +371,12 @@ export type SolanaBridgeOptions = {
 	skipProxyMayanInstructions?: boolean;
 	customPayload?: Buffer | Uint8Array | null;
 }
+
+export type EstimateGasEvmParams = {
+	from: string;
+	tokenIn: string;
+	value: string;
+	to: string;
+	data: string;
+	chainId: number;
+}
