@@ -5,7 +5,7 @@ import {
 	Quote,
 	SuiFunctionParameter,
 	SuiFunctionNestedResult,
-	ComposableSuiMoveCallsOptions, ChainName
+	ComposableSuiMoveCallsOptions, ChainName, Token
 } from '../types';
 import {
 	assertArgumentIsImmutable,
@@ -38,6 +38,9 @@ export async function createMctpFromSuiMoveCalls(
 	suiClient: SuiClient,
 	options?: ComposableSuiMoveCallsOptions
 ): Promise<Transaction> {
+	if (!quote.fromToken.verifiedAddress) {
+		throw new Error('from token verified address is not provided');
+	}
 	const [mctpPackageId, feeManagerPackageId] = await Promise.all([
 		fetchMayanSuiPackageId(addresses.SUI_MCTP_STATE, suiClient),
 		quote.hasAuction
@@ -45,10 +48,6 @@ export async function createMctpFromSuiMoveCalls(
 			: null,
 	]);
 
-	const amountInMin = getAmountOfFractionalAmount(
-		quote.minMiddleAmount,
-		CCTP_TOKEN_DECIMALS
-	);
 	let tx: Transaction;
 	let inputCoin:
 		| TransactionResult
@@ -60,7 +59,7 @@ export async function createMctpFromSuiMoveCalls(
 	if (quote.fromToken.contract === quote.mctpInputContract) {
 		tx = options?.builtTransaction ?? new Transaction();
 		inputCoin = await resolveInputCoin(
-			amountInMin,
+			BigInt(quote.effectiveAmountIn64),
 			swapperAddress,
 			quote.mctpInputContract,
 			suiClient,
@@ -187,8 +186,10 @@ export async function addBridgeWithFeeMoveCalls(
 		swapperAddress,
 		destinationAddress,
 		toChain: quote.toChain,
+		effectiveAmountIn64: quote.effectiveAmountIn64,
 		minMiddleAmount: quote.minMiddleAmount,
 		mctpPackageId,
+		fromToken: quote.fromToken,
 		mctpInputContract: quote.mctpInputContract,
 		gasDrop: quote.gasDrop,
 		redeemRelayerFee: quote.redeemRelayerFee,
@@ -212,12 +213,14 @@ export async function addBridgeLockedFeeMoveCalls(
 	const destChainId = getWormholeChainIdByName(quote.toChain);
 	const tx = options?.builtTransaction ?? new Transaction();
 
-	const amountInMin = getAmountOfFractionalAmount(
-		quote.minMiddleAmount,
-		CCTP_TOKEN_DECIMALS
-	);
+	const amountInMin = quote.fromToken.contract === quote.mctpInputContract ?
+		BigInt(quote.effectiveAmountIn64) :
+		getAmountOfFractionalAmount(
+			quote.minMiddleAmount,
+			CCTP_TOKEN_DECIMALS
+		);
 	const inputCoin = await resolveInputCoin(
-		amountInMin,
+		BigInt(quote.effectiveAmountIn64),
 		swapperAddress,
 		quote.mctpInputContract,
 		suiClient,
@@ -310,13 +313,15 @@ export async function addInitOrderMoveCalls(
 	const destChainId = getWormholeChainIdByName(quote.toChain);
 	const tx = options?.builtTransaction ?? new Transaction();
 
-	const amountInMin = getAmountOfFractionalAmount(
-		quote.minMiddleAmount,
-		CCTP_TOKEN_DECIMALS
-	);
+	const amountInMin = quote.fromToken.contract === quote.mctpInputContract ?
+		BigInt(quote.effectiveAmountIn64) :
+		getAmountOfFractionalAmount(
+			quote.minMiddleAmount,
+			CCTP_TOKEN_DECIMALS
+		);
 	const [inputCoin] = await Promise.all([
 		resolveInputCoin(
-			amountInMin,
+			BigInt(quote.effectiveAmountIn64),
 			swapperAddress,
 			quote.mctpInputContract,
 			suiClient,
@@ -478,7 +483,7 @@ async function addPublishWormholeMessage(
 		gasCoin = tx.object(suiCoin.objectId);
 	} else {
 		if (bridgeFee > BigInt(0)) {
-			const { coins, sum } = await fetchAllCoins(
+			const {coins, sum} = await fetchAllCoins(
 				{
 					walletAddress: feePayer,
 					coinType: SUI_TYPE_ARG,
@@ -522,8 +527,10 @@ export async function addBridgeWithFeeMoveCalls2(params:{
 	swapperAddress: string,
 	destinationAddress: string,
 	toChain: ChainName,
+	effectiveAmountIn64: string,
 	minMiddleAmount: number,
 	mctpPackageId: string,
+	fromToken: Token,
 	mctpInputContract: string,
 	gasDrop: number,
 	redeemRelayerFee: number,
@@ -545,18 +552,20 @@ export async function addBridgeWithFeeMoveCalls2(params:{
 	const destChainId = getWormholeChainIdByName(params.toChain);
 	const tx = options?.builtTransaction ?? new Transaction();
 
-	const amountInMin = getAmountOfFractionalAmount(
-		params.minMiddleAmount,
-		CCTP_TOKEN_DECIMALS
-	);
-	const inputCoin = await resolveInputCoin(
-		amountInMin,
-		swapperAddress,
-		params.mctpInputContract,
-		suiClient,
-		tx,
-		options?.inputCoin
-	);
+  const amountInMin = params.fromToken.contract === params.mctpInputContract ?
+    BigInt(params.effectiveAmountIn64) :
+    getAmountOfFractionalAmount(
+      params.minMiddleAmount,
+      CCTP_TOKEN_DECIMALS
+    );
+  const inputCoin = await resolveInputCoin(
+    BigInt(params.effectiveAmountIn64),
+    swapperAddress,
+    params.mctpInputContract,
+    suiClient,
+    tx,
+    options?.inputCoin
+  );
 
 	const payloadType = payload
 		? MCTP_PAYLOAD_TYPE_CUSTOM_PAYLOAD

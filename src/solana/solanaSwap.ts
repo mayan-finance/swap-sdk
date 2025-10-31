@@ -98,9 +98,6 @@ export async function createSwapFromSolanaInstructions(
 		return createMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
 	}
 	if (quote.type === 'SWIFT') {
-		if (options.customPayload) {
-			throw new Error('Custom payload is not supported for SWIFT yet');
-		}
 		return createSwiftFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
 	}
 	if (quote.type === 'MONO_CHAIN') {
@@ -250,6 +247,10 @@ export async function createSwapFromSolanaInstructions(
 		)
 	);
 
+	if (!quote.mintDecimals) {
+		throw new Error('Mint decimals not provided');
+	}
+
 	const minAmountOut = getAmountOfFractionalAmount(
 		quote.minAmountOut, quote.mintDecimals.to);
 	const feeSwap = getAmountOfFractionalAmount(
@@ -320,6 +321,7 @@ export async function swapFromSolana(
 		usdcPermitSignature?: string | null,
 		skipProxyMayanInstructions?: boolean,
 		customPayload?: Buffer | Uint8Array | null,
+		swiftKeyRnd?: Uint8Array,
 	}
 ): Promise<{
 	signature: string,
@@ -346,6 +348,7 @@ export async function swapFromSolana(
 			allowSwapperOffCurve: instructionOptions?.allowSwapperOffCurve,
 			forceSkipCctpInstructions: instructionOptions?.forceSkipCctpInstructions,
 			separateSwapTx: jitoEnabled && jitoOptions?.separateSwapTx,
+			swiftKeyRnd: instructionOptions?.swiftKeyRnd,
 			usdcPermitSignature: instructionOptions?.usdcPermitSignature,
 			skipProxyMayanInstructions: instructionOptions?.skipProxyMayanInstructions === true, // default is false
 			customPayload: instructionOptions?.customPayload,

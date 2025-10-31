@@ -239,7 +239,8 @@ export function getSwapFromEvmTxPayload(
 			destinationAddress,
 			referrerAddress,
 			signerChainId,
-			permit
+			permit,
+			payload,
 		);
 	}
 	if (quote.type === 'SHUTTLE') {
@@ -393,7 +394,8 @@ export async function swapFromEvm(
 			destinationAddress,
 			referrerAddress,
 			signerChainId,
-			permit
+			permit,
+			payload,
 		);
 		const signedOrderHash = await signer.signTypedData(
 			gasLessParams.orderTypedData.domain,

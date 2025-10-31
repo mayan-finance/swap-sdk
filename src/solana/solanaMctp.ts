@@ -561,6 +561,10 @@ export async function createMctpFromSolanaInstructions(
 	);
 
 	const mode = quote.cheaperChain === 'solana' ? 'LOCK_FEE' : 'WITH_FEE';
+
+	if (quote.toChain === 'sui' && !quote.toToken.verifiedAddress) {
+		throw new Error('Missing verified address for SUI coin');
+	}
 	const tokenOut = quote.toChain === 'sui' ? quote.toToken.verifiedAddress : quote.toToken.contract;
 
 	if (options.customPayload && quote.hasAuction) {
