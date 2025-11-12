@@ -91,3 +91,4 @@ dist
 schema.json
 _gen
 lib
+pnpm-lock.yaml
