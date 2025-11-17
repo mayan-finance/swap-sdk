@@ -13,7 +13,7 @@ import { Buffer } from 'buffer';
 
 export type ChainName = 'solana'
 	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' |
-	'base' | 'aptos' | 'sui' | 'unichain' | 'linea' | 'hypercore' | 'sonic' | 'hyperevm' | 'ton';
+	'base' | 'aptos' | 'sui' | 'unichain' | 'linea' | 'hypercore' | 'sonic' | 'hyperevm' | 'fogo' |  'ton';
 
 export type TokenStandard = 'native' | 'erc20' | 'spl' | 'spl2022' | 'suicoin' | 'hypertoken';
 
@@ -133,8 +133,8 @@ export type Quote = {
 	mctpOutputContract: string;
 	hasAuction: boolean;
 	minMiddleAmount?: number;
-	evmSwapRouterAddress?: string;
-	evmSwapRouterCalldata?: string;
+	evmSwapRouterAddress?: string; // only for mono-chain
+	evmSwapRouterCalldata?: string; // only for mono-chain
 	mctpMayanContract?: string;
 	swiftMayanContract?: string;
 	shuttleContract?: string;
@@ -172,6 +172,7 @@ export type Quote = {
 	swiftInputContractStandard: TokenStandard;
 	swiftVerifiedInputAddress: string;
 	swiftVersion: 'V1' | 'V2';
+	quoteId: string;
 };
 
 export type QuoteOptions = {
@@ -210,6 +211,7 @@ type BaseGetSolanaSwapParams = {
 	referrerAddress?: string,
 	fillMaxAccounts?: boolean,
 	tpmTokenAccount?: string,
+	chainName: ChainName,
 }
 
 type MctpGetSolanaSwapParams = BaseGetSolanaSwapParams & {
@@ -249,7 +251,21 @@ type BaseGetSuiSwapParams = {
 	referrerAddress?: string,
 	inputCoin: SuiFunctionParameter,
 	transaction: string,
+	chainName: ChainName,
+	slippageBps: number,
 }
+
+type BaseGetEvmSwapParams = {
+	forwarderAddress: string,
+	chainName: ChainName,
+	amountIn64: string,
+	fromToken: string
+	middleToken: string,
+	referrerAddress?: string,
+	slippageBps: number,
+}
+
+export type GetEvmSwapParams = BaseGetEvmSwapParams;
 
 type MctpGetSuiSwapParams = BaseGetSuiSwapParams & {
 	withWhFee: boolean
@@ -375,7 +391,6 @@ export type SolanaBridgeOptions = {
 	usdcPermitSignature?: string;
 	skipProxyMayanInstructions?: boolean;
 	customPayload?: Buffer | Uint8Array | null;
-	swiftKeyRnd?: Uint8Array,
 }
 
 export type EstimateGasEvmParams = {

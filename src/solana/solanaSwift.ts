@@ -16,7 +16,11 @@ import {
 	getAssociatedTokenAddress,
 	getWormholeChainIdByName,
 	getGasDecimal,
-	SWIFT_PAYLOAD_TYPE_DEFAULT, SWIFT_PAYLOAD_TYPE_CUSTOM_PAYLOAD, getSwiftToTokenHexString, getNormalizeFactor
+	SWIFT_PAYLOAD_TYPE_DEFAULT,
+	SWIFT_PAYLOAD_TYPE_CUSTOM_PAYLOAD,
+	getSwiftToTokenHexString,
+	getNormalizeFactor,
+	createSwiftRandomKey
 } from '../utils';
 import {Buffer} from 'buffer';
 import addresses from '../addresses'
@@ -31,6 +35,7 @@ import {
 	decentralizeClientSwapInstructions,
 	getAddressLookupTableAccounts,
 	getAnchorInstructionData,
+	getLookupTableAddress,
 	sandwichInstructionInCpiProxy,
 	solMint,
 	validateJupSwap
@@ -295,7 +300,6 @@ export async function createSwiftFromSolanaInstructions(
 	connection: Connection, options: {
 		allowSwapperOffCurve?: boolean,
 		separateSwapTx?: boolean,
-		swiftKeyRnd?: Uint8Array,
     skipProxyMayanInstructions?: boolean,
 	} = {},
 	customPayload?: Buffer | Uint8Array | null,
@@ -325,7 +329,7 @@ export async function createSwiftFromSolanaInstructions(
 
 	let _lookupTablesAddress: string[] = [];
 
-	_lookupTablesAddress.push(addresses.LOOKUP_TABLE);
+	_lookupTablesAddress.push(getLookupTableAddress(quote.fromChain));
 
 	// using for the swap via Jito Bundle
 	let _swapAddressLookupTables: string[] = [];
@@ -336,7 +340,7 @@ export async function createSwiftFromSolanaInstructions(
 
 	const trader = new PublicKey(swapperAddress);
 
-	const randomKey = options.swiftKeyRnd ? new PublicKey(options.swiftKeyRnd) : Keypair.generate().publicKey;
+	const randomKey = new PublicKey(createSwiftRandomKey(quote));
 
 	if (!Number(quote.deadline64)) {
 		throw new Error('Swift mode requires a timeout');
@@ -425,6 +429,8 @@ export async function createSwiftFromSolanaInstructions(
 			orderHash: `0x${hash.toString('hex')}`,
 			fillMaxAccounts: options?.separateSwapTx || false,
 			tpmTokenAccount: options?.separateSwapTx ? tmpSwapTokenAccount.publicKey.toString() : null,
+			referrerAddress: referrerAddress || undefined,
+			chainName: quote.fromChain,
 		});
 		if (quote.swiftVersion !== quoteSwiftVersion) {
 			throw new Error('Quote mutation is not allowed');

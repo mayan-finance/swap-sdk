@@ -71,6 +71,8 @@ export async function createSwiftFromSuiMoveCalls(
 			referrerAddress,
 			inputCoin: options?.inputCoin,
 			transaction: options?.builtTransaction ? (await options.builtTransaction.toJSON()) : undefined,
+			slippageBps: quote.slippageBps,
+			chainName: quote.fromChain,
 		});
 		tx = Transaction.from(serializedTx);
 		inputCoin = outCoin;
@@ -179,8 +181,6 @@ export async function addInitSwiftOrderMoveCalls(
 			getWormholeChainIdByName('solana')
 		);
 	}
-	const baseBond = BigInt(quote.swiftBaseBond64);
-	const perBpsBond = BigInt(quote.swiftPerBpsBond64);
 
 	const payloadType = payload ? SWIFT_PAYLOAD_TYPE_CUSTOM_PAYLOAD : SWIFT_PAYLOAD_TYPE_DEFAULT;
 
@@ -204,12 +204,9 @@ export async function addInitSwiftOrderMoveCalls(
 		tx.pure.u64(cancelFee),
 		tx.pure.u64(refundFee),
 		tx.pure.u64(deadline),
-		tx.pure.u16(quote.swiftFulfillPenaltyPeriod),
 		tx.pure.address(referrerHex),
 		tx.pure.u8(quote.referrerBps),
 		tx.pure.u8(quote.swiftAuctionMode),
-		tx.pure.u64(baseBond),
-		tx.pure.u64(perBpsBond),
 	];
 
 	const [feeManagerInitOrderParamsTicket] = tx.moveCall({

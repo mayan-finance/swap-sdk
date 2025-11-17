@@ -1,41 +1,28 @@
 import {
-	AccountMeta,
 	Connection,
 	PublicKey,
 	Keypair,
-	SystemProgram,
 	TransactionInstruction,
 	AddressLookupTableAccount,
-	ComputeBudgetProgram,
 } from '@solana/web3.js';
-import { blob, struct, u16, u8 } from '@solana/buffer-layout';
 import { Quote, SwapMessageV0Params } from '../types';
 import {
-	hexToUint8Array,
-	nativeAddressToHexString,
-	getSafeU64Blob,
 	getAmountOfFractionalAmount,
 	getAssociatedTokenAddress,
-	getWormholeChainIdByName,
-	getGasDecimal,
 } from '../utils';
 import { Buffer } from 'buffer';
 import addresses from '../addresses';
 import { ethers, ZeroAddress } from 'ethers';
 import { getSwapSolana } from '../api';
 import {
-	createAssociatedTokenAccountInstruction,
-	createInitializeRandomTokenAccountInstructions,
-	createSplTransferInstruction,
-	createSyncNativeInstruction,
-	createTransferAllAndCloseInstruction,
 	decentralizeClientSwapInstructions,
 	getAddressLookupTableAccounts,
-	getAnchorInstructionData, sandwichInstructionInCpiProxy,
+	getLookupTableAddress,
+	sandwichInstructionInCpiProxy,
 	solMint,
-	validateJupSwap, validateJupSwapInstructionData
+	validateJupSwap,
+	validateJupSwapInstructionData,
 } from './utils';
-import { swapFromSolana } from './solanaSwap';
 
 export async function createMonoChainFromSolanaInstructions(
 	quote: Quote,
@@ -111,6 +98,7 @@ export async function createMonoChainFromSolanaInstructions(
 		depositMode: 'MONO_CHAIN',
 		referrerAddress: referrerAddress,
 		referrerBps: quote.referrerBps,
+		chainName: quote.fromChain,
 	});
 	const clientSwap = decentralizeClientSwapInstructions(
 		clientSwapRaw,
@@ -127,7 +115,7 @@ export async function createMonoChainFromSolanaInstructions(
 		instructions.push(sandwichInstructionInCpiProxy(clientSwap.cleanupInstruction));
 	}
 	_lookupTablesAddress.push(...clientSwap.addressLookupTableAddresses);
-	_lookupTablesAddress.push(addresses.LOOKUP_TABLE);
+	_lookupTablesAddress.push(getLookupTableAddress(quote.fromChain));
 
 	lookupTables = await getAddressLookupTableAccounts(_lookupTablesAddress, connection);
 

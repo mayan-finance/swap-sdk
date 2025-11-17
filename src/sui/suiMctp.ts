@@ -80,6 +80,8 @@ export async function createMctpFromSuiMoveCalls(
 			referrerAddress,
 			inputCoin: options?.inputCoin,
 			transaction: options?.builtTransaction ? (await options.builtTransaction.toJSON()) : undefined,
+			slippageBps: quote.slippageBps,
+			chainName: quote.fromChain,
 		});
 		tx = Transaction.from(serializedTx);
 		inputCoin = outCoin;

@@ -22,6 +22,7 @@ import addresses from '../addresses';
 import { Buffer } from 'buffer';
 import { CCTP_TOKEN_DECIMALS } from '../cctp';
 import { Erc20Permit } from '../types';
+import { getSwapEvm } from '../api';
 
 function getUsdcDepositInitiatorMctpTxPayload(
 	quote: Quote,
@@ -168,13 +169,13 @@ function getUsdcDepositInitiatorFastMctpTxPayload(
 	};
 }
 
-export function getHyperCoreDepositFromEvmTxPayload(
+export async function getHyperCoreDepositFromEvmTxPayload(
 	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
 	signerChainId: number | string, permit: Erc20Permit | null, payload: Uint8Array | Buffer | null | undefined,
 	options: {
 		usdcPermitSignature?: string;
 	} = {}
-): TransactionRequest & { _forwarder: EvmForwarderParams } {
+): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 
 	if (
 		quote.toToken.contract.toLowerCase() !== addresses.ARBITRUM_USDC_CONTRACT.toLowerCase() ||
@@ -242,8 +243,16 @@ export function getHyperCoreDepositFromEvmTxPayload(
 
 		}
 	} else {
-		const { evmSwapRouterAddress, evmSwapRouterCalldata } = quote;
-		if (!quote.minMiddleAmount || !evmSwapRouterAddress || !evmSwapRouterCalldata) {
+		const { swapRouterCalldata, swapRouterAddress } = await getSwapEvm({
+			fromToken: quote.fromToken.contract,
+			middleToken: quote.hyperCoreParams.initiateTokenContract,
+			chainName: quote.fromChain,
+			amountIn64: quote.effectiveAmountIn64,
+			referrerAddress: referrerAddress,
+			slippageBps: quote.slippageBps,
+			forwarderAddress: addresses.MAYAN_FORWARDER_CONTRACT,
+		});
+		if (!quote.minMiddleAmount) {
 			throw new Error('Fast Mctp swap requires middle amount, router address and calldata');
 		}
 		const minMiddleAmount = getAmountOfFractionalAmount(quote.minMiddleAmount, CCTP_TOKEN_DECIMALS);
@@ -252,8 +261,8 @@ export function getHyperCoreDepositFromEvmTxPayload(
 			const forwarderMethod = 'swapAndForwardEth';
 			const forwarderParams = [
 				BigInt(quote.effectiveAmountIn64),
-				evmSwapRouterAddress,
-				evmSwapRouterCalldata,
+				swapRouterAddress,
+				swapRouterCalldata,
 				quote.hyperCoreParams.initiateTokenContract,
 				minMiddleAmount,
 				initiatorPayloadIx._params.contractAddress,
@@ -276,8 +285,8 @@ export function getHyperCoreDepositFromEvmTxPayload(
 				quote.fromToken.contract,
 				BigInt(quote.effectiveAmountIn64),
 				_permit,
-				evmSwapRouterAddress,
-				evmSwapRouterCalldata,
+				swapRouterAddress,
+				swapRouterCalldata,
 				quote.hyperCoreParams.initiateTokenContract,
 				minMiddleAmount,
 				initiatorPayloadIx._params.contractAddress,

@@ -1,5 +1,5 @@
 import { ethers, zeroPadValue, parseUnits, formatUnits, TypedDataEncoder, JsonRpcProvider, ZeroAddress } from 'ethers';
-import {PublicKey, SystemProgram} from '@solana/web3.js';
+import { Keypair, PublicKey, SystemProgram } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import addresses  from './addresses';
 import { ChainName, Erc20Permit, Quote, ReferrerAddresses, Token, PermitDomain, PermitValue, QuoteType } from './types';
@@ -14,7 +14,7 @@ export const isValidAptosType = (str: string): boolean =>
 
 export function nativeAddressToHexString(
 	address: string, wChainId: number) : string {
-	if (wChainId === chains.solana) {
+	if (wChainId === chains.solana || wChainId === chains.fogo) {
 		return zeroPadValue(new PublicKey(address).toBytes(), 32);
 	} else if (
 		wChainId === chains.ethereum || wChainId === chains.bsc || wChainId === chains.polygon ||
@@ -125,6 +125,7 @@ const chains: { [index in ChainName]: number }  = {
 	hypercore: 65000,
 	sonic: 52,
 	hyperevm: 47,
+	fogo: 51,
 };
 
 export function getWormholeChainIdByName(chain: string) : number | null {
@@ -162,7 +163,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [11, 4, 0];
+const sdkVersion = [12, 0, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -251,7 +252,7 @@ export function getQuoteSuitableReferrerAddress(
 	}
 	if (quote.type === 'SWIFT') {
 		if (quote.swiftVersion === 'V2') {
-			if (quote.fromChain === 'solana') {
+			if (quote.fromChain === 'solana' || quote.fromChain === 'fogo') {
 				return referrerAddresses?.solana || null;
 			}
 			if (quote.fromChain === 'sui') {
@@ -493,4 +494,16 @@ export function getNormalizeFactor(toChain: ChainName, quoteType: QuoteType): nu
 		return Infinity;
 	}
 	return 8;
+}
+
+export function createSwiftRandomKey(quote: Quote) {
+	try {
+		const idBuf = Buffer.from(quote.quoteId.startsWith('0x') ? quote.quoteId.substring(2) : quote.quoteId, 'hex');
+		if (idBuf.length < 32) {
+			const randomBuf = Keypair.generate().publicKey.toBytes();
+			return Buffer.concat([idBuf, randomBuf.slice(0, 32 - idBuf.length)]);
+		}
+		return idBuf.subarray(0, 32);
+	} catch (err: any) {}
+	return Keypair.generate().publicKey.toBuffer();
 }

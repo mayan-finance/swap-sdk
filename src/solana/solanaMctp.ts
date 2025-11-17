@@ -27,13 +27,15 @@ import {getWormholePDAs} from '../wormhole';
 import {getCCTPBridgePDAs, CCTP_TOKEN_DECIMALS} from "../cctp";
 import {
 	createAssociatedTokenAccountInstruction,
-	createInitializeRandomTokenAccountInstructions, createPayloadWriterCloseInstruction,
+	createInitializeRandomTokenAccountInstructions,
+	createPayloadWriterCloseInstruction,
 	createPayloadWriterCreateInstruction,
 	createSplTransferInstruction,
 	createTransferAllAndCloseInstruction,
 	decentralizeClientSwapInstructions,
 	getAddressLookupTableAccounts,
 	getAnchorInstructionData,
+	getLookupTableAddress,
 	sandwichInstructionInCpiProxy,
 	validateJupSwap
 } from './utils';
@@ -44,7 +46,7 @@ const MCTPBridgeWithFeeLayout = struct<any>([
 
 export function createMctpBridgeWithFeeInstruction(
 	ledger: PublicKey, toChain: ChainName, mintAddress: string,
-	relayerAddress: string, feeSolana: bigint,
+	relayerAddress: string, feeSolana: bigint, fromChain: ChainName
 ): {
 	instruction: TransactionInstruction;
 	signers: Keypair[];
@@ -72,7 +74,7 @@ export function createMctpBridgeWithFeeInstruction(
 	}
 
 	const cctpBridgePdas = getCCTPBridgePDAs(mint, toChain);
-	const wormholePDAs = getWormholePDAs(addresses.MCTP_PROGRAM_ID);
+	const wormholePDAs = getWormholePDAs(addresses.MCTP_PROGRAM_ID, fromChain);
 
 	const cctpMessage = Keypair.generate();
 
@@ -538,7 +540,7 @@ export async function createMctpFromSolanaInstructions(
 	const tmpSwapTokenAccount: Keypair = Keypair.generate();
 	let swapMessageV0Params: SwapMessageV0Params | null = null;
 
-	_lookupTablesAddress.push(addresses.LOOKUP_TABLE);
+	_lookupTablesAddress.push(getLookupTableAddress(quote.fromChain));
 
 	const mctpProgram = new PublicKey(addresses.MCTP_PROGRAM_ID);
 	const user = new PublicKey(swapperAddress);
@@ -672,7 +674,7 @@ export async function createMctpFromSolanaInstructions(
 						instruction: _instruction,
 						signers: _signers
 					} = createMctpBridgeWithFeeInstruction(
-						ledger, quote.toChain, quote.mctpInputContract, relayerAddress, feeSolana
+						ledger, quote.toChain, quote.mctpInputContract, relayerAddress, feeSolana, quote.fromChain
 					);
 					instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 					signers.push(..._signers);
@@ -702,6 +704,8 @@ export async function createMctpFromSolanaInstructions(
 			depositMode: quote.hasAuction ? 'SWAP' : mode,
 			fillMaxAccounts: options?.separateSwapTx || false,
 			tpmTokenAccount: options?.separateSwapTx ? tmpSwapTokenAccount.publicKey.toString() : null,
+			referrerAddress: referrerAddress || null,
+			chainName: quote.fromChain,
 		});
 
 		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection, relayer);
@@ -804,7 +808,7 @@ export async function createMctpFromSolanaInstructions(
 						instruction: _instruction,
 						signers: _signers
 					} = createMctpBridgeWithFeeInstruction(
-						ledger, quote.toChain, quote.mctpInputContract, relayerAddress, feeSolana
+						ledger, quote.toChain, quote.mctpInputContract, relayerAddress, feeSolana, quote.fromChain
 					);
 					instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 					signers.push(..._signers);

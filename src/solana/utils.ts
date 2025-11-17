@@ -12,7 +12,14 @@ import {
 	VersionedTransaction, ComputeBudgetProgram
 } from '@solana/web3.js';
 import {getAmountOfFractionalAmount, getAssociatedTokenAddress, getSafeU64Blob, wait} from '../utils';
-import {InstructionInfo, SolanaClientSwap, SolanaTransactionSigner, JitoBundleOptions, Quote} from '../types';
+import {
+	InstructionInfo,
+	SolanaClientSwap,
+	SolanaTransactionSigner,
+	JitoBundleOptions,
+	Quote,
+	ChainName,
+} from '../types';
 import addresses from "../addresses";
 import {Buffer} from "buffer";
 import {blob, struct, u8} from "@solana/buffer-layout";
@@ -54,6 +61,7 @@ export async function submitTransactionWithRetry(
 		if (signature) {
 			try {
 				const status = await Promise.any(connections.map((c) => c.getSignatureStatus(signature!)));
+				console.log('Transaction status check attempt', i, status?.value);
 				if (status && status.value) {
 					if (status.value.err) {
 						if (errorNumber >= errorChance) {
@@ -63,7 +71,7 @@ export async function submitTransactionWithRetry(
 							};
 						}
 						errorNumber++;
-					} else if (status.value.confirmationStatus === 'confirmed') {
+					} else if (status.value.confirmationStatus === 'confirmed' || status.value.confirmationStatus === 'finalized') {
 						return {
 							signature,
 							serializedTrx: trx,
@@ -75,14 +83,19 @@ export async function submitTransactionWithRetry(
 			}
 		}
 		const sendRequests = connections.map((c) => c.sendRawTransaction(trx, options));
+		console.log('Submitting transaction, attempt', i + 1);
 		if (!signature) {
 			try {
 				signature = await Promise.any(sendRequests);
+				console.log('Transaction submitted to fetch signature, signature:', signature);
 			} catch (err) {
+				console.error('Transaction not submitted to fetch signature, remaining attempts:', rate - i - 1);
 				latestError = err;
 				try {
+					console.log('now trying to send to individual connections');
 					const simulated = await connection.sendRawTransaction(trx);
 				} catch (err) {
+					console.error('Simulation individual connections failed', err);
 					console.error('Transaction not submitted, remaining attempts:', rate - i - 1);
 					console.error(err);
 					if (typeof err?.transactionMessage === 'string' && err.transactionMessage.indexOf('transaction has already been processed')) {
@@ -99,7 +112,7 @@ export async function submitTransactionWithRetry(
 				}
 			}
 		}
-		await wait(1000);
+		await wait(5000);
 	}
 
 	if (!signature) {
@@ -893,4 +906,12 @@ export function sandwichInstructionInCpiProxy(
 		programId: new PublicKey(addresses.CPI_PROXY_PROGRAM_ID),
 		data: instruction.data,
 	});
+}
+
+export function getLookupTableAddress(chainName: ChainName): string {
+	if (chainName === 'solana') {
+		return addresses.LOOKUP_TABLE_SOLANA;
+	} else if (chainName === 'fogo') {
+		return addresses.LOOKUP_TABLE_FOGO;
+	}
 }

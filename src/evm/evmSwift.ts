@@ -4,7 +4,7 @@ import {
 	ZeroAddress,
 	TransactionRequest
 } from 'ethers';
-import { Keypair, SystemProgram } from '@solana/web3.js';
+import { Keypair, PublicKey, SystemProgram } from '@solana/web3.js';
 import { Erc20Permit, EvmForwarderParams, Quote, SwiftEvmOrderTypedData } from '../types';
 import {
 	nativeAddressToHexString,
@@ -15,7 +15,7 @@ import {
 	ZeroPermit,
 	SWIFT_PAYLOAD_TYPE_CUSTOM_PAYLOAD,
 	SWIFT_PAYLOAD_TYPE_DEFAULT,
-	getNormalizeFactor, getSwiftToTokenHexString
+	getNormalizeFactor, getSwiftToTokenHexString, createSwiftRandomKey
 } from '../utils';
 import MayanSwiftV2Artifact from './MayanSwiftV2Artifact';
 import MayanSwiftV1Artifact from './MayanSwiftArtifact';
@@ -23,6 +23,7 @@ import addresses from '../addresses';
 import MayanForwarderArtifact from './MayanForwarderArtifact';
 import { createSwiftOrderHash } from '../solana';
 import {Buffer} from "buffer";
+import { getSwapEvm } from '../api';
 
 
 export type SwiftOrderParams = {
@@ -95,7 +96,7 @@ export function getEvmSwiftParams(
 		);
 	}
 
-	const random = nativeAddressToHexString(Keypair.generate().publicKey.toString(), 1);
+	const random = '0x' + createSwiftRandomKey(quote).toString('hex');
 
 	if (quote.toChain === 'sui' && !quote.toToken.verifiedAddress) {
 		throw new Error('Missing verified address for SUI coin');
@@ -143,10 +144,10 @@ export function getEvmSwiftParams(
 	};
 }
 
-export function getSwiftFromEvmTxPayload(
+export async function getSwiftFromEvmTxPayload(
 	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
 	signerChainId: number | string, permit: Erc20Permit | null, customPayload: Buffer | Uint8Array | null | undefined
-): TransactionRequest & { _forwarder: EvmForwarderParams } {
+): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 	if (quote.type !== 'SWIFT') {
 		throw new Error('Quote type is not SWIFT');
 	}
@@ -212,8 +213,16 @@ export function getSwiftFromEvmTxPayload(
 			value = toBeHex(0);
 		}
 	} else {
-		const { evmSwapRouterAddress, evmSwapRouterCalldata } = quote;
-		if (!quote.minMiddleAmount || !evmSwapRouterAddress || !evmSwapRouterCalldata) {
+		const { swapRouterCalldata, swapRouterAddress } = await getSwapEvm({
+			forwarderAddress: addresses.MAYAN_FORWARDER_CONTRACT,
+			slippageBps: quote.slippageBps,
+			referrerAddress: referrerAddress,
+			fromToken: quote.fromToken.contract,
+			middleToken: quote.swiftInputContract,
+			chainName: quote.fromChain,
+			amountIn64: quote.effectiveAmountIn64,
+		});
+		if (!quote.minMiddleAmount) {
 			throw new Error('Swift swap requires middle amount, router address and calldata');
 		}
 		const tokenIn = quote.fromToken.contract;
@@ -224,8 +233,8 @@ export function getSwiftFromEvmTxPayload(
 			forwarderMethod = 'swapAndForwardEth';
 			forwarderParams = [
 				amountIn,
-				evmSwapRouterAddress,
-				evmSwapRouterCalldata,
+				swapRouterAddress,
+				swapRouterCalldata,
 				quote.swiftInputContract,
 				minMiddleAmount,
 				swiftContractAddress,
@@ -238,8 +247,8 @@ export function getSwiftFromEvmTxPayload(
 				tokenIn,
 				amountIn,
 				_permit,
-				evmSwapRouterAddress,
-				evmSwapRouterCalldata,
+				swapRouterAddress,
+				swapRouterCalldata,
 				quote.swiftInputContract,
 				minMiddleAmount,
 				swiftContractAddress,

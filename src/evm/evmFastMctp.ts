@@ -22,6 +22,7 @@ import addresses from '../addresses';
 import { Buffer } from 'buffer';
 import { getCCTPDomain, CCTP_TOKEN_DECIMALS } from '../cctp';
 import { Erc20Permit } from '../types';
+import { getSwapEvm } from '../api';
 
 type EvmFastMctpBridgeParams = {
 	tokenIn: string,
@@ -239,10 +240,10 @@ function getEvmFastMctpCreateOrderTxPayload(
 	};
 }
 
-export function getFastMctpFromEvmTxPayload(
+export async function getFastMctpFromEvmTxPayload(
 	quote: Quote, destinationAddress: string, referrerAddress: string | null | undefined,
 	signerChainId: number | string, permit: Erc20Permit | null, payload: Uint8Array | Buffer | null | undefined,
-): TransactionRequest & { _forwarder: EvmForwarderParams } {
+): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 
 	if (quote.type !== 'FAST_MCTP') {
 		throw new Error('Quote type is not FAST_MCTP');
@@ -310,10 +311,19 @@ export function getFastMctpFromEvmTxPayload(
 			}
 		}
 	} else {
-		const { minMiddleAmount, evmSwapRouterAddress, evmSwapRouterCalldata } = quote;
-		if (!minMiddleAmount || !evmSwapRouterAddress || !evmSwapRouterCalldata) {
+		const { minMiddleAmount } = quote;
+		if (!minMiddleAmount) {
 			throw new Error('Fast Mctp swap requires middle amount, router address and calldata');
 		}
+		const { swapRouterCalldata, swapRouterAddress } = await getSwapEvm({
+			forwarderAddress: addresses.MAYAN_FORWARDER_CONTRACT,
+			fromToken: quote.fromToken.contract,
+			middleToken: quote.fastMctpInputContract,
+			slippageBps: quote.slippageBps,
+			referrerAddress: referrerAddress || undefined,
+			amountIn64: quote.effectiveAmountIn64,
+			chainName: quote.fromChain,
+		})
 		if (quote.hasAuction) {
 			if (!Number(quote.deadline64)) {
 				throw new Error('Fast Mctp order requires timeout');
@@ -327,8 +337,8 @@ export function getFastMctpFromEvmTxPayload(
 				const forwarderMethod = 'swapAndForwardEth';
 				const forwarderParams = [
 					fastMctpPayloadIx._params.amountIn,
-					evmSwapRouterAddress,
-					evmSwapRouterCalldata,
+					swapRouterAddress,
+					swapRouterCalldata,
 					quote.fastMctpInputContract,
 					minMiddleAmount,
 					fastMctpPayloadIx._params.contractAddress,
@@ -351,8 +361,8 @@ export function getFastMctpFromEvmTxPayload(
 					quote.fromToken.contract,
 					fastMctpPayloadIx._params.amountIn,
 					_permit,
-					evmSwapRouterAddress,
-					evmSwapRouterCalldata,
+					swapRouterAddress,
+					swapRouterCalldata,
 					quote.fastMctpInputContract,
 					minMiddleAmount,
 					fastMctpPayloadIx._params.contractAddress,
@@ -380,8 +390,8 @@ export function getFastMctpFromEvmTxPayload(
 				const forwarderMethod = 'swapAndForwardEth';
 				const forwarderParams = [
 					fastMctpPayloadIx._params.amountIn,
-					evmSwapRouterAddress,
-					evmSwapRouterCalldata,
+					swapRouterAddress,
+					swapRouterCalldata,
 					quote.fastMctpInputContract,
 					minMiddleAmount,
 					fastMctpPayloadIx._params.contractAddress,
@@ -404,8 +414,8 @@ export function getFastMctpFromEvmTxPayload(
 					quote.fromToken.contract,
 					fastMctpPayloadIx._params.amountIn,
 					_permit,
-					evmSwapRouterAddress,
-					evmSwapRouterCalldata,
+					swapRouterAddress,
+					swapRouterCalldata,
 					quote.fastMctpInputContract,
 					minMiddleAmount,
 					fastMctpPayloadIx._params.contractAddress,
