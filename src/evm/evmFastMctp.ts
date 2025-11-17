@@ -156,7 +156,7 @@ function getEvmFastMctpCreateOrderParams(
 		throw new Error(`Signer chain id(${Number(signerChainId)}) and quote from chain are not same! ${sourceChainId} !== ${signerWormholeChainId}`);
 	}
 	if (!quote.fastMctpMayanContract) {
-		throw new Error('MCTP contract address is missing');
+		throw new Error('Fast MCTP contract address is missing');
 	}
 	const contractAddress = quote.fastMctpMayanContract;
 

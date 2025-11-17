@@ -100,3 +100,94 @@ export function getCCTPBridgePDAs(mint: PublicKey, destinationChain: ChainName):
 		localToken,
 	}
 }
+
+export function getCCTPV2BridgePDAs(
+	mint: PublicKey,
+	destinationChain: ChainName,
+	ledger: PublicKey,
+	trader: PublicKey,
+): {
+	messageTransmitter: PublicKey,
+	senderAuthority: PublicKey,
+	localToken: PublicKey,
+	tokenMessenger: PublicKey,
+	tokenMinter: PublicKey,
+	remoteTokenMessengerKey: PublicKey,
+	eventAuthCore: PublicKey,
+	eventAuthToken: PublicKey,
+	cctpDenyListAccount: PublicKey,
+	realDenyListAccount: PublicKey,
+} {
+	const cctpV2CoreProgramId = new PublicKey(addresses.CCTPV2_CORE_PROGRAM_ID);
+	const cctpV2TokenProgramId = new PublicKey(addresses.CCTPV2_TOKEN_PROGRAM_ID);
+
+	const [messageTransmitter] = PublicKey.findProgramAddressSync(
+		[Buffer.from('message_transmitter')],
+		cctpV2CoreProgramId,
+	);
+
+	const [senderAuthority] = PublicKey.findProgramAddressSync(
+		[Buffer.from('sender_authority')],
+		cctpV2TokenProgramId,
+	);
+
+	const [localToken] = PublicKey.findProgramAddressSync(
+		[Buffer.from('local_token'), mint.toBytes()],
+		cctpV2TokenProgramId,
+	);
+
+	const [tokenMessenger] = PublicKey.findProgramAddressSync(
+		[Buffer.from('token_messenger')],
+		cctpV2TokenProgramId,
+	);
+	const [tokenMinter] = PublicKey.findProgramAddressSync(
+		[Buffer.from('token_minter')],
+		cctpV2TokenProgramId,
+	);
+
+	const destinationDomain = getCCTPDomain(destinationChain);
+
+	const [remoteTokenMessengerKey] = PublicKey.findProgramAddressSync(
+		[Buffer.from('remote_token_messenger'), Buffer.from(destinationDomain.toString())],
+		cctpV2TokenProgramId,
+	);
+
+	const [eventAuthCore] = PublicKey.findProgramAddressSync(
+		[Buffer.from('__event_authority')],
+		cctpV2CoreProgramId,
+	);
+
+	const [eventAuthToken] = PublicKey.findProgramAddressSync(
+		[Buffer.from('__event_authority')],
+		cctpV2TokenProgramId,
+	);
+
+	const [cctpDenyListAccount] = PublicKey.findProgramAddressSync(
+		[
+			Buffer.from('denylist_account'),
+			ledger.toBytes(),
+		],
+		cctpV2TokenProgramId,
+	);
+
+	const [realDenyListAccount] = PublicKey.findProgramAddressSync(
+		[
+			Buffer.from('denylist_account'),
+			trader.toBytes(),
+		],
+		cctpV2TokenProgramId,
+	);
+
+	return {
+		messageTransmitter,
+		senderAuthority,
+		remoteTokenMessengerKey,
+		tokenMessenger,
+		tokenMinter,
+		eventAuthToken,
+		eventAuthCore,
+		localToken,
+		cctpDenyListAccount,
+		realDenyListAccount,
+	}
+}
