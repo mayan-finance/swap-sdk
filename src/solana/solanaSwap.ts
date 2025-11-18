@@ -49,6 +49,7 @@ import { createSwiftFromSolanaInstructions } from './solanaSwift';
 import bs58 from 'bs58';
 import { createHyperCoreDepositFromSolanaInstructions } from './solanaHyperCore';
 import { createMonoChainFromSolanaInstructions } from './solanaMonoChain';
+import { createFastMctpFromSolanaInstructions } from './solanaFastMctp';
 
 
 const STATE_SIZE = 420;
@@ -105,6 +106,10 @@ export async function createSwapFromSolanaInstructions(
 			throw new Error('Custom payload is not supported for MONO_CHAIN yet');
 		}
 		return createMonoChainFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
+	}
+
+	if (quote.type === 'FAST_MCTP') {
+		return createFastMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
 	}
 
 	if (options.customPayload) {

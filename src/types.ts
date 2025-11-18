@@ -239,9 +239,17 @@ type MonoChainGetSolanaSwapParams = Omit<
 	referrerBps: number;
 };
 
+type FastMctpGetSolanaSwapParams = BaseGetSolanaSwapParams & {
+	userLedger: string,
+	depositMode: 'FAST_MCTP_BRIDGE' | 'FAST_MCTP_ORDER',
+}
 
 export type GetSolanaSwapParams =
-	MctpGetSolanaSwapParams | SwiftGetSolanaSwapParams | HCDepositUSDCGetSolanaSwapParams | MonoChainGetSolanaSwapParams;
+	MctpGetSolanaSwapParams |
+	SwiftGetSolanaSwapParams |
+	HCDepositUSDCGetSolanaSwapParams |
+	MonoChainGetSolanaSwapParams |
+	FastMctpGetSolanaSwapParams;
 
 type BaseGetSuiSwapParams = {
 	amountIn64: string,

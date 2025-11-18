@@ -1,5 +1,6 @@
 export default {
-	"MAYAN_FORWARDER_CONTRACT": "0x2bbEe740846e7aD790Aa3bA15C514Da4222d193F",
+	// "MAYAN_FORWARDER_CONTRACT": "0x2bbEe740846e7aD790Aa3bA15C514Da4222d193F",
+	"MAYAN_FORWARDER_CONTRACT": "0x337685fdaB40D39bd02028545a4FfA7D287cC3E2",
 	"MAYAN_PROGRAM_ID": "FC4eXxkyrMPTjiYUpp4EAnkmwMbQyZ6NDCh1kfLn6vsf",
 	"AUCTION_PROGRAM_ID": "8QJmxZcEzwuYmCPy6XqgN2sHcYCcFq6AEfBMJZZuLo5a",
 	"MCTP_PROGRAM_ID": "dkpZqrxHFrhziEMQ931GLtfy11nFkCsfMftH9u6QwBU",
@@ -32,8 +33,8 @@ export default {
 	"SUI_WORMHOLE_STATE": "0xaeab97f96cf9877fee2883315d459552b2b921edc16d7ceac6eab944dd88919c",
 	"SUI_LOGGER_PACKAGE_ID": "0x05680e9030c147b413a489f7891273acc221d49bd061c433e5771bc170fc37ac",
 	"EXPLORER_URL": "http://192.168.1.107:4000/v3",
-	// "PRICE_URL": "http://192.168.1.107:5000/v3",
-	"PRICE_URL": "https://price-api.mayan.finance/v3",
+	"PRICE_URL": "http://192.168.1.107:5000/v3",
+	// "PRICE_URL": "https://price-api.mayan.finance/v3",
 	"RELAYER_URL": "https://relayer-api.mayan.finance/v3",
 	"SWIFT_RELAYER_URL": "http://192.168.1.107:3001/v3",
 	"GAS_ESTIMATE_URL": "https://gas-estimate.mayan.finance/v2",
