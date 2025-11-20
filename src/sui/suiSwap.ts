@@ -59,6 +59,7 @@ export async function createSwapFromSuiMoveCalls(
 			options
 		);
 	} else if (quote.type === 'SWIFT') {
+		throw new Error('SWIFT swaps are not supported to Sui chain yet');
 		return createSwiftFromSuiMoveCalls(
 			quote,
 			swapperWalletAddress,
