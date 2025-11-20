@@ -1,8 +1,8 @@
-import { ethers, zeroPadValue, parseUnits, formatUnits, TypedDataEncoder, JsonRpcProvider } from 'ethers';
-import {PublicKey, SystemProgram} from '@solana/web3.js';
+import { ethers, zeroPadValue, parseUnits, formatUnits, TypedDataEncoder, JsonRpcProvider, ZeroAddress } from 'ethers';
+import { Keypair, PublicKey, SystemProgram } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import addresses  from './addresses';
-import { ChainName, Erc20Permit, Quote, ReferrerAddresses, Token, PermitDomain, PermitValue } from './types';
+import { ChainName, Erc20Permit, Quote, ReferrerAddresses, Token, PermitDomain, PermitValue, QuoteType } from './types';
 import ERC20Artifact from './evm/ERC20Artifact';
 import * as sha3 from 'js-sha3';
 import { CCTP_TOKEN_DECIMALS } from './cctp';
@@ -14,21 +14,21 @@ export const isValidAptosType = (str: string): boolean =>
 
 export function nativeAddressToHexString(
 	address: string, wChainId: number) : string {
-	if (wChainId === 1) {
+	if (wChainId === chains.solana || wChainId === chains.fogo) {
 		return zeroPadValue(new PublicKey(address).toBytes(), 32);
 	} else if (
 		wChainId === chains.ethereum || wChainId === chains.bsc || wChainId === chains.polygon ||
 		wChainId === chains.avalanche  || wChainId === chains.arbitrum || wChainId === chains.optimism ||
 		wChainId === chains.base || wChainId === chains.unichain || wChainId === chains.linea ||
-		wChainId === chains.sonic || wChainId === chains.hyperevm
+		wChainId === chains.sonic || wChainId === chains.hyperevm || wChainId === chains.monad
 	) {
 		return zeroPadValue(address, 32);
 	} else if (wChainId === chains.aptos && isValidAptosType(address)) {
 		return `0x${sha3_256(address)}`
-	} else if (wChainId === chains.sui) {
+	} else if (wChainId === chains.sui || wChainId === chains.ton) {
 		let addressStr = address.startsWith('0x') ? address.substring(2) : address;
 		if (Buffer.from(addressStr, 'hex').length !== 32) {
-			throw new Error('Invalid sui address: ' + address);
+			throw new Error(`Invalid address: ` + address);
 		}
 		return zeroPadValue(address, 32);
 	} else {
@@ -119,11 +119,14 @@ const chains: { [index in ChainName]: number }  = {
 	base: 30,
 	aptos: 22,
 	sui: 21,
+	ton: 13,
 	unichain: 44,
 	linea: 38,
 	hypercore: 65000,
 	sonic: 52,
 	hyperevm: 47,
+	fogo: 51,
+	monad: 48,
 };
 
 export function getWormholeChainIdByName(chain: string) : number | null {
@@ -142,6 +145,7 @@ const evmChainIdMap: { [index: string]: number }  = {
 	[59144]: 38,
 	[146]: 52,
 	[999]: 47,
+	[143]: 48,
 };
 
 export function getEvmChainIdByName(chain: ChainName) {
@@ -161,7 +165,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [11, 4, 0];
+const sdkVersion = [12, 0, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -190,7 +194,7 @@ export function checkSdkVersionSupport(minimumVersion: [number, number, number])
 }
 
 export function getGasDecimal(chain: ChainName): number {
-	if (chain === 'solana') {
+	if (chain === 'solana' || chain === 'sui' || chain === 'ton') {
 		return 9;
 	}
 	return 18;
@@ -239,7 +243,7 @@ export function getQuoteSuitableReferrerAddress(
 	if (quote.type === 'WH') {
 		return referrerAddresses?.solana || null;
 	}
-	if (quote.type === 'MCTP' || quote.type === 'SWIFT') {
+	if (quote.type === 'MCTP') {
 		if (quote.toChain === 'solana') {
 			return referrerAddresses?.solana || null;
 		}
@@ -248,8 +252,30 @@ export function getQuoteSuitableReferrerAddress(
 		}
 		return referrerAddresses?.evm || null;
 	}
+	if (quote.type === 'SWIFT') {
+		if (quote.swiftVersion === 'V2') {
+			if (quote.fromChain === 'solana' || quote.fromChain === 'fogo') {
+				return referrerAddresses?.solana || null;
+			}
+			if (quote.fromChain === 'sui') {
+				return referrerAddresses?.sui || null;
+			}
+			return referrerAddresses?.evm || null;
+		} else {
+			if (quote.toChain === 'solana') {
+				return referrerAddresses?.solana || null;
+			}
+			if (quote.toChain === 'sui') {
+				throw new Error('Swift V1 does not support SUI');
+			}
+			return referrerAddresses?.evm || null;
+		}
+	}
 	if (quote.type === 'FAST_MCTP') {
-		if (quote.toChain !== 'solana' && quote.toChain !== 'sui') {
+		if (quote.toChain === 'solana') {
+			return referrerAddresses?.solana || null;
+		}
+		if (quote.toChain !== 'sui') {
 			return referrerAddresses?.evm || null;
 		}
 	}
@@ -270,6 +296,8 @@ export const MCTP_INIT_ORDER_PAYLOAD_ID = 1;
 export const FAST_MCTP_PAYLOAD_TYPE_DEFAULT = 1;
 export const FAST_MCTP_PAYLOAD_TYPE_CUSTOM_PAYLOAD = 2;
 export const FAST_MCTP_PAYLOAD_TYPE_ORDER = 3;
+export const SWIFT_PAYLOAD_TYPE_DEFAULT = 1;
+export const SWIFT_PAYLOAD_TYPE_CUSTOM_PAYLOAD = 2;
 
 export async function getPermitDomain(token: Token, provider: JsonRpcProvider): Promise<PermitDomain> {
 	const contract = new ethers.Contract(token.contract, ERC20Artifact.abi, provider);
@@ -440,4 +468,47 @@ export function getHyperCoreUSDCDepositCustomPayload(
 	payload.set(permitSignatureBuf, 44);
 
 	return payload
+}
+
+export function getSwiftToTokenHexString(quote: Quote): string {
+	if (quote.toChain === 'sui') {
+		return  nativeAddressToHexString(quote.toToken.verifiedAddress, getWormholeChainIdByName('sui'));
+	} else if (quote.toChain === 'ton') {
+		if (quote.toToken.contract === ZeroAddress) {
+			return nativeAddressToHexString(SystemProgram.programId.toString(), getWormholeChainIdByName('solana'));
+		} else {
+			//TODO verify
+			return quote.toToken.verifiedAddress;
+			// return '0xe109c7913888a4951a86e7b53ea0d9dfdfe38d71fbacf9948433f2c49c620894'// USDT
+		}
+	} else {
+		if (quote.toToken.contract === ZeroAddress) {
+			return nativeAddressToHexString(SystemProgram.programId.toString(), getWormholeChainIdByName('solana'));
+		} else {
+			return nativeAddressToHexString(quote.toToken.contract, getWormholeChainIdByName(quote.toChain));
+		}
+	}
+}
+
+
+export function getNormalizeFactor(toChain: ChainName, quoteType: QuoteType): number {
+	if (toChain === 'ton') {
+		if (quoteType !== 'SWIFT') {
+			throw new Error('Unsupported quote type for Tonchain destination');
+		}
+		return Infinity;
+	}
+	return 8;
+}
+
+export function createSwiftRandomKey(quote: Quote) {
+	try {
+		const idBuf = Buffer.from(quote.quoteId.startsWith('0x') ? quote.quoteId.substring(2) : quote.quoteId, 'hex');
+		if (idBuf.length < 32) {
+			const randomBuf = Keypair.generate().publicKey.toBytes();
+			return Buffer.concat([idBuf, randomBuf.slice(0, 32 - idBuf.length)]);
+		}
+		return idBuf.subarray(0, 32);
+	} catch (err: any) {}
+	return Keypair.generate().publicKey.toBuffer();
 }

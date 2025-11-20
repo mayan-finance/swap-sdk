@@ -11,7 +11,16 @@ import { Quote, SwapMessageV0Params } from '../types';
 import {
 	hexToUint8Array,
 	nativeAddressToHexString,
-	getSafeU64Blob, getAmountOfFractionalAmount, getAssociatedTokenAddress, getWormholeChainIdByName, getGasDecimal
+	getSafeU64Blob,
+	getAmountOfFractionalAmount,
+	getAssociatedTokenAddress,
+	getWormholeChainIdByName,
+	getGasDecimal,
+	SWIFT_PAYLOAD_TYPE_DEFAULT,
+	SWIFT_PAYLOAD_TYPE_CUSTOM_PAYLOAD,
+	getSwiftToTokenHexString,
+	getNormalizeFactor,
+	createSwiftRandomKey
 } from '../utils';
 import {Buffer} from 'buffer';
 import addresses from '../addresses'
@@ -26,6 +35,7 @@ import {
 	decentralizeClientSwapInstructions,
 	getAddressLookupTableAccounts,
 	getAnchorInstructionData,
+	getLookupTableAddress,
 	sandwichInstructionInCpiProxy,
 	solMint,
 	validateJupSwap
@@ -33,24 +43,33 @@ import {
 
 export function createSwiftOrderHash(
 	quote: Quote, swapperAddress: string, destinationAddress: string,
-	referrerAddress: string | null | undefined, randomKeyHex: string
+	referrerAddress: string | null | undefined, randomKeyHex: string,
+	customPayload: undefined | null | Uint8Array | Buffer
 ): Buffer {
-	const orderDataSize = 239;
+	const orderDataSize = quote.swiftVersion === 'V2' ? 272 : 239;
 	const data = Buffer.alloc(orderDataSize);
 	let offset = 0;
 
+	if (quote.swiftVersion === 'V2') {
+		const payload_type = customPayload ? SWIFT_PAYLOAD_TYPE_CUSTOM_PAYLOAD : SWIFT_PAYLOAD_TYPE_DEFAULT;
+		data.writeUInt8(payload_type, offset);
+		offset += 1;
+	}
+
 	const sourceChainId = getWormholeChainIdByName(quote.fromChain);
 	const trader = Buffer.from(hexToUint8Array(nativeAddressToHexString(swapperAddress, sourceChainId)));
-	data.set(trader, 0);
+	data.set(trader, offset);
 	offset += 32;
 
 
 	data.writeUInt16BE(sourceChainId, offset);
 	offset += 2;
 
-	const _tokenIn = quote.swiftInputContract === ZeroAddress ?
-		nativeAddressToHexString(SystemProgram.programId.toString(), getWormholeChainIdByName('solana')) :
-		nativeAddressToHexString(quote.swiftInputContract, sourceChainId);
+	const fromTokenContract = quote.fromChain === 'sui' ? quote.swiftVerifiedInputAddress : quote.swiftInputContract;
+	const _tokenIn =
+		fromTokenContract === ZeroAddress ?
+			nativeAddressToHexString(SystemProgram.programId.toString(), getWormholeChainIdByName('solana')) :
+			nativeAddressToHexString(fromTokenContract, sourceChainId);
 	const tokenIn = Buffer.from(hexToUint8Array(_tokenIn));
 	data.set(tokenIn, offset);
 	offset += 32;
@@ -63,19 +82,27 @@ export function createSwiftOrderHash(
 	data.writeUInt16BE(destinationChainId, offset);
 	offset += 2;
 
-	const _tokenOut =
-		quote.toToken.contract === ZeroAddress ?
-			nativeAddressToHexString(SystemProgram.programId.toString(), getWormholeChainIdByName('solana')) :
-			nativeAddressToHexString(quote.toToken.contract, destinationChainId);
+	if (quote.toChain === 'sui' && !quote.toToken.verifiedAddress) {
+		throw new Error('Missing verified address for SUI coin');
+	}
+	const _tokenOut = getSwiftToTokenHexString(quote);
 	const tokenOut = Buffer.from(hexToUint8Array(_tokenOut));
 	data.set(tokenOut, offset);
 	offset += 32;
 
-	data.writeBigUInt64BE(getAmountOfFractionalAmount(quote.minAmountOut, Math.min(quote.toToken.decimals, 8)), offset);
+	data.writeBigUInt64BE(getAmountOfFractionalAmount(
+		quote.minAmountOut, Math.min(quote.toToken.decimals, getNormalizeFactor(quote.toChain, quote.type)
+		)), offset);
 	offset += 8;
 
-	data.writeBigUInt64BE(getAmountOfFractionalAmount(quote.gasDrop, Math.min(getGasDecimal(quote.toChain), 8)), offset);
+	data.writeBigUInt64BE(getAmountOfFractionalAmount(
+		quote.gasDrop, Math.min(getGasDecimal(quote.toChain), getNormalizeFactor(quote.toChain, quote.type)
+		)), offset);
 	offset += 8;
+
+	if (!quote.cancelRelayerFee64 || !quote.refundRelayerFee64) {
+		throw new Error('Missing relayer fees');
+	}
 
 	data.writeBigUInt64BE(BigInt(quote.cancelRelayerFee64), offset);
 	offset += 8;
@@ -86,8 +113,9 @@ export function createSwiftOrderHash(
 	data.writeBigUInt64BE(BigInt(quote.deadline64), offset);
 	offset += 8;
 
+	const referrerChainId = quote.swiftVersion === 'V2' ? sourceChainId : destinationChainId
 	const refAddress = referrerAddress ?
-		Buffer.from(hexToUint8Array(nativeAddressToHexString(referrerAddress, destinationChainId))) :
+		Buffer.from(hexToUint8Array(nativeAddressToHexString(referrerAddress, referrerChainId))) :
 		SystemProgram.programId.toBuffer();
 	data.set(refAddress, offset);
 	offset += 32;
@@ -103,8 +131,23 @@ export function createSwiftOrderHash(
 	offset += 1;
 
 	const _randomKey = Buffer.from(hexToUint8Array(randomKeyHex));
+	if (_randomKey.length !== 32) {
+		throw new Error('Invalid random key length');
+	}
 	data.set(_randomKey, offset);
 	offset += 32;
+
+	if (quote.swiftVersion === 'V2') {
+		let customPayloadHash: Buffer;
+		if (customPayload) {
+			customPayloadHash = Buffer.from(hexToUint8Array(ethers.keccak256(Buffer.from(customPayload))));
+		} else {
+			customPayloadHash = SystemProgram.programId.toBuffer();
+		}
+
+		data.set(customPayloadHash, offset);
+		offset += 32;
+	}
 
 	if (offset !== orderDataSize) {
 		throw new Error(`Invalid order data size: ${offset}`);
@@ -125,6 +168,9 @@ type CreateInitSwiftInstructionParams = {
 	destinationAddress: string,
 	deadline: bigint,
 	referrerAddress: string | null | undefined,
+	customPayload?: Buffer | Uint8Array | null,
+	customPayloadAccount?: PublicKey | null,
+	tokenProgramId: PublicKey,
 }
 
 const InitSwiftLayout = struct<any>([
@@ -147,6 +193,7 @@ const InitSwiftLayout = struct<any>([
 	blob(32, 'randomKey'),
 ]);
 
+
 function createSwiftInitInstruction(
 	params: CreateInitSwiftInstructionParams,
 ): TransactionInstruction {
@@ -158,28 +205,63 @@ function createSwiftInitInstruction(
 	if (destinationChainId !== quote.toToken.wChainId) {
 		throw new Error(`Destination chain ID mismatch: ${destinationChainId} != ${quote.toToken.wChainId}`);
 	}
-	const accounts: AccountMeta[] = [
-		{ pubkey: params.trader, isWritable: false, isSigner: true },
-		{ pubkey: params.relayer, isWritable: true, isSigner: true },
-		{ pubkey: params.state, isWritable: true, isSigner: false },
-		{ pubkey: params.stateAccount, isWritable: true, isSigner: false },
-		{ pubkey: params.relayerAccount, isWritable: true, isSigner: false },
-		{ pubkey: mint, isWritable: false, isSigner: false },
-		{ pubkey: new PublicKey(addresses.FEE_MANAGER_PROGRAM_ID), isWritable: false, isSigner: false },
-		{ pubkey: new PublicKey(addresses.TOKEN_PROGRAM_ID), isWritable: false, isSigner: false },
-		{ pubkey: SystemProgram.programId, isWritable: false, isSigner: false },
+
+	if (params.customPayload && !params.customPayloadAccount) {
+		throw new Error('Custom payload account is required when custom payload is provided');
+	}
+
+	const accounts: AccountMeta[] = quote.swiftVersion === 'V2' ? [
+		{pubkey: params.trader, isWritable: false, isSigner: false},
+		{pubkey: params.relayer, isWritable: true, isSigner: true},
+		{pubkey: params.state, isWritable: true, isSigner: false},
+		{pubkey: params.stateAccount, isWritable: true, isSigner: false},
+		{pubkey: params.relayerAccount, isWritable: true, isSigner: false},
+		{
+			pubkey: params.customPayloadAccount || new PublicKey(addresses.SWIFT_V2_PROGRAM_ID),
+			isWritable: false,
+			isSigner: false
+		},
+		{pubkey: mint, isWritable: false, isSigner: false},
+		{pubkey: new PublicKey(addresses.FEE_MANAGER_PROGRAM_ID), isWritable: false, isSigner: false},
+		{pubkey: params.tokenProgramId, isWritable: false, isSigner: false},
+		{pubkey: SystemProgram.programId, isWritable: false, isSigner: false},
+	] : [
+		{pubkey: params.trader, isWritable: false, isSigner: true},
+		{pubkey: params.relayer, isWritable: true, isSigner: true},
+		{pubkey: params.state, isWritable: true, isSigner: false},
+		{pubkey: params.stateAccount, isWritable: true, isSigner: false},
+		{pubkey: params.relayerAccount, isWritable: true, isSigner: false},
+		{pubkey: mint, isWritable: false, isSigner: false},
+		{pubkey: new PublicKey(addresses.FEE_MANAGER_PROGRAM_ID), isWritable: false, isSigner: false},
+		{pubkey: new PublicKey(addresses.TOKEN_PROGRAM_ID), isWritable: false, isSigner: false},
+		{pubkey: SystemProgram.programId, isWritable: false, isSigner: false},
 	];
 
+	accounts.forEach((account, index) => {
+		console.log(index, account.pubkey);
+	});
 	const data = Buffer.alloc(InitSwiftLayout.span);
 
+	const referrerChainId = quote.swiftVersion === 'V2' ? getWormholeChainIdByName('solana') : destinationChainId;
 	const refAddress = params.referrerAddress ?
-		Buffer.from(hexToUint8Array(nativeAddressToHexString(params.referrerAddress, destinationChainId))) :
+		Buffer.from(hexToUint8Array(nativeAddressToHexString(params.referrerAddress, referrerChainId))) :
 		SystemProgram.programId.toBuffer();
 
 	const minMiddleAmount: bigint =
 		quote.fromToken.contract === quote.swiftInputContract ?
 			BigInt(quote.effectiveAmountIn64) :
 			getAmountOfFractionalAmount(quote.minMiddleAmount, quote.swiftInputDecimals);
+
+
+	if (quote.toChain === 'sui' && !quote.toToken.verifiedAddress) {
+		throw new Error('Missing verified address for SUI coin');
+	}
+
+	if (!quote.cancelRelayerFee64 || !quote.refundRelayerFee64) {
+		throw new Error('Missing relayer fees');
+	}
+
+	const _tokenOut = getSwiftToTokenHexString(quote);
 
 	InitSwiftLayout.encode({
 		instruction: getAnchorInstructionData('init_order'),
@@ -188,9 +270,13 @@ function createSwiftInitInstruction(
 		feeSubmit: getSafeU64Blob(BigInt(quote.submitRelayerFee64)),
 		destAddress: Buffer.from(hexToUint8Array(nativeAddressToHexString(params.destinationAddress, destinationChainId))),
 		destinationChain: destinationChainId,
-		tokenOut: Buffer.from(hexToUint8Array(nativeAddressToHexString(quote.toToken.contract, destinationChainId))),
-		amountOutMin: getSafeU64Blob(getAmountOfFractionalAmount(quote.minAmountOut, Math.min(quote.toToken.decimals, 8))),
-		gasDrop: getSafeU64Blob(getAmountOfFractionalAmount(quote.gasDrop, Math.min(getGasDecimal(quote.toChain), 8))),
+		tokenOut: Buffer.from(hexToUint8Array(_tokenOut)),
+		amountOutMin: getSafeU64Blob(getAmountOfFractionalAmount(
+			quote.minAmountOut, Math.min(quote.toToken.decimals, getNormalizeFactor(quote.toChain, quote.type))
+		)),
+		gasDrop: getSafeU64Blob(getAmountOfFractionalAmount(
+			quote.gasDrop, Math.min(getGasDecimal(quote.toChain), getNormalizeFactor(quote.toChain, quote.type))
+		)),
 		feeCancel: getSafeU64Blob(BigInt(quote.cancelRelayerFee64)),
 		feeRefund: getSafeU64Blob(BigInt(quote.refundRelayerFee64)),
 		deadline: getSafeU64Blob(params.deadline),
@@ -204,7 +290,7 @@ function createSwiftInitInstruction(
 	return new TransactionInstruction({
 		keys: accounts,
 		data,
-		programId: new PublicKey(addresses.SWIFT_PROGRAM_ID)
+		programId: new PublicKey(quote.swiftVersion === 'V2' ? addresses.SWIFT_V2_PROGRAM_ID : addresses.SWIFT_PROGRAM_ID),
 	});
 }
 
@@ -214,12 +300,14 @@ export async function createSwiftFromSolanaInstructions(
 	connection: Connection, options: {
 		allowSwapperOffCurve?: boolean,
 		separateSwapTx?: boolean,
-		skipProxyMayanInstructions?: boolean,
-	} = {}
+    skipProxyMayanInstructions?: boolean,
+	} = {},
+	customPayload?: Buffer | Uint8Array | null,
+	customPayloadAccount?: string | null,
 ): Promise<{
 	instructions: TransactionInstruction[],
 	signers: Keypair[],
-	lookupTables:  AddressLookupTableAccount[],
+	lookupTables: AddressLookupTableAccount[],
 	swapMessageV0Params: SwapMessageV0Params | null,
 }> {
 
@@ -229,6 +317,10 @@ export async function createSwiftFromSolanaInstructions(
 	if (quote.toChain === 'solana') {
 		throw new Error('Unsupported destination chain: ' + quote.toChain);
 	}
+	if (quote.swiftVersion !== 'V2' && (quote.toChain === 'sui' || quote.toChain === 'ton')) {
+		throw new Error('Swift V2 is required for SUI and TON chain');
+	}
+	const quoteSwiftVersion = quote.swiftVersion;
 
 	const allowSwapperOffCurve = options.allowSwapperOffCurve || false;
 
@@ -237,7 +329,7 @@ export async function createSwiftFromSolanaInstructions(
 
 	let _lookupTablesAddress: string[] = [];
 
-	_lookupTablesAddress.push(addresses.LOOKUP_TABLE);
+	_lookupTablesAddress.push(getLookupTableAddress(quote.fromChain));
 
 	// using for the swap via Jito Bundle
 	let _swapAddressLookupTables: string[] = [];
@@ -246,33 +338,54 @@ export async function createSwiftFromSolanaInstructions(
 	const tmpSwapTokenAccount: Keypair = Keypair.generate();
 	let swapMessageV0Params: SwapMessageV0Params | null = null;
 
-	const swiftProgram = new PublicKey(addresses.SWIFT_PROGRAM_ID);
 	const trader = new PublicKey(swapperAddress);
 
-	const randomKey = Keypair.generate();
+	const randomKey = new PublicKey(createSwiftRandomKey(quote));
 
 	if (!Number(quote.deadline64)) {
 		throw new Error('Swift mode requires a timeout');
 	}
 	const deadline = BigInt(quote.deadline64);
 
+	if (customPayload && !customPayloadAccount) {
+		throw new Error('Custom payload account is required when custom payload is provided');
+	}
+
 	const hash = createSwiftOrderHash(
 		quote, swapperAddress, destinationAddress,
-		referrerAddress, randomKey.publicKey.toBuffer().toString('hex')
+		referrerAddress, randomKey.toBuffer().toString('hex'),
+		customPayload
 	);
-	const [state] = PublicKey.findProgramAddressSync(
-		[Buffer.from('STATE_SOURCE'), hash],
-		swiftProgram,
-	);
+
+	const chainDestBuffer = Buffer.alloc(2);
+	chainDestBuffer.writeUInt16LE(getWormholeChainIdByName(quote.toChain));
+	const [state] = quote.swiftVersion === 'V2' ?
+		PublicKey.findProgramAddressSync(
+			[Buffer.from('STATE_SOURCE'), hash, chainDestBuffer],
+			new PublicKey(addresses.SWIFT_V2_PROGRAM_ID),
+		) : PublicKey.findProgramAddressSync(
+			[Buffer.from('STATE_SOURCE'), hash],
+			new PublicKey(addresses.SWIFT_PROGRAM_ID),
+		);
+
+	let tokenProgramId: PublicKey;
+	if (quote.swiftVersion === 'V2') {
+		tokenProgramId = quote.swiftInputContractStandard === 'spl2022' ?
+			new PublicKey(addresses.TOKEN_2022_PROGRAM_ID) :
+			new PublicKey(addresses.TOKEN_PROGRAM_ID);
+	} else {
+		tokenProgramId = new PublicKey(addresses.TOKEN_PROGRAM_ID);
+	}
+	console.log({tokenProgramId})
 
 	const swiftInputMint = quote.swiftInputContract === ZeroAddress ? solMint : new PublicKey(quote.swiftInputContract);
 
 	const stateAccount = getAssociatedTokenAddress(
-		swiftInputMint, state, true
+		swiftInputMint, state, true, tokenProgramId
 	);
 
 	const relayer = quote.gasless ? new PublicKey(quote.relayer) : trader;
-	const relayerAccount = getAssociatedTokenAddress(swiftInputMint, relayer, false);
+	const relayerAccount = getAssociatedTokenAddress(swiftInputMint, relayer, false, tokenProgramId);
 	if (quote.fromToken.contract === quote.swiftInputContract) {
 		if (quote.suggestedPriorityFee > 0) {
 			instructions.push(ComputeBudgetProgram.setComputeUnitPrice({
@@ -280,7 +393,7 @@ export async function createSwiftFromSolanaInstructions(
 			}))
 		}
 		instructions.push(
-			sandwichInstructionInCpiProxy(createAssociatedTokenAccountInstruction(relayer, stateAccount, state, swiftInputMint))
+			sandwichInstructionInCpiProxy(createAssociatedTokenAccountInstruction(relayer, stateAccount, state, swiftInputMint, tokenProgramId))
 		);
 		if (quote.swiftInputContract === ZeroAddress) {
 			instructions.push(
@@ -295,11 +408,12 @@ export async function createSwiftFromSolanaInstructions(
 			instructions.push(
 				sandwichInstructionInCpiProxy(createSplTransferInstruction(
 					getAssociatedTokenAddress(
-						swiftInputMint, trader, allowSwapperOffCurve
+						swiftInputMint, trader, allowSwapperOffCurve, tokenProgramId
 					),
 					stateAccount,
 					trader,
 					BigInt(quote.effectiveAmountIn64),
+          tokenProgramId,
 				))
 			);
 		}
@@ -315,7 +429,12 @@ export async function createSwiftFromSolanaInstructions(
 			orderHash: `0x${hash.toString('hex')}`,
 			fillMaxAccounts: options?.separateSwapTx || false,
 			tpmTokenAccount: options?.separateSwapTx ? tmpSwapTokenAccount.publicKey.toString() : null,
+			referrerAddress: referrerAddress || undefined,
+			chainName: quote.fromChain,
 		});
+		if (quote.swiftVersion !== quoteSwiftVersion) {
+			throw new Error('Quote mutation is not allowed');
+		}
 		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection, relayer);
 		if (options?.separateSwapTx && clientSwapRaw.maxAccountsFilled) {
 			validateJupSwap(clientSwap, tmpSwapTokenAccount.publicKey, trader);
@@ -325,7 +444,11 @@ export async function createSwiftFromSolanaInstructions(
 				swiftInputMint,
 				trader,
 				tmpSwapTokenAccount,
+				tokenProgramId,
 			);
+			if (quote.swiftVersion !== quoteSwiftVersion) {
+				throw new Error('Quote mutation is not allowed');
+			}
 			swapInstructions.push(...clientSwap.computeBudgetInstructions);
 			if (clientSwap.setupInstructions) {
 				swapInstructions.push(...clientSwap.setupInstructions);
@@ -336,7 +459,7 @@ export async function createSwiftFromSolanaInstructions(
 			}
 			_swapAddressLookupTables.push(...clientSwap.addressLookupTableAddresses);
 			instructions.push(sandwichInstructionInCpiProxy(
-				createAssociatedTokenAccountInstruction(relayer, stateAccount, state, swiftInputMint)
+				createAssociatedTokenAccountInstruction(relayer, stateAccount, state, swiftInputMint, tokenProgramId)
 			));
 			instructions.push(sandwichInstructionInCpiProxy(createTransferAllAndCloseInstruction(
 				trader,
@@ -344,6 +467,7 @@ export async function createSwiftFromSolanaInstructions(
 				tmpSwapTokenAccount.publicKey,
 				stateAccount,
 				relayer,
+        tokenProgramId,
 			)));
 		} else {
 			validateJupSwap(clientSwap, stateAccount, trader);
@@ -364,12 +488,15 @@ export async function createSwiftFromSolanaInstructions(
 		state,
 		trader,
 		stateAccount,
-		randomKey: randomKey.publicKey,
+		randomKey: randomKey,
 		relayerAccount,
 		relayer,
 		destinationAddress,
 		deadline,
 		referrerAddress,
+    tokenProgramId,
+    customPayload,
+    customPayloadAccount: customPayloadAccount ? new PublicKey(customPayloadAccount) : undefined,
 	}), options.skipProxyMayanInstructions));
 
 	const totalLookupTables = await getAddressLookupTableAccounts(_lookupTablesAddress.concat(_swapAddressLookupTables), connection);
@@ -387,6 +514,15 @@ export async function createSwiftFromSolanaInstructions(
 			tmpTokenAccount: tmpSwapTokenAccount,
 		};
 	}
+
+  console.log({
+    randomKey: randomKey.toBuffer().toString('hex'),
+    hash: hash.toString('hex'),
+  })
+
+  if (quote.swiftVersion !== quoteSwiftVersion) {
+    throw new Error('Quote mutation is not allowed');
+  }
 
 	return { instructions, signers: [], lookupTables, swapMessageV0Params };
 }

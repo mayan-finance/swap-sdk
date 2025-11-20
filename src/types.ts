@@ -13,7 +13,7 @@ import { Buffer } from 'buffer';
 
 export type ChainName = 'solana'
 	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' |
-	'base' | 'aptos' | 'sui' | 'unichain' | 'linea' | 'hypercore' | 'sonic' | 'hyperevm';
+	'base' | 'aptos' | 'sui' | 'unichain' | 'linea' | 'hypercore' | 'sonic' | 'hyperevm' | 'fogo' |  'ton' | 'monad';
 
 export type TokenStandard = 'native' | 'erc20' | 'spl' | 'spl2022' | 'suicoin' | 'hypertoken';
 
@@ -29,10 +29,10 @@ export type Token = {
 	coingeckoId: string,
 	realOriginChainId?: number,
 	realOriginContractAddress?: string,
-	supportsPermit: boolean,
+	supportsPermit?: boolean,
 	verified: boolean;
 	standard: TokenStandard,
-	verifiedAddress: string,
+	verifiedAddress?: string,
 };
 
 export type QuoteParams = {
@@ -72,15 +72,16 @@ export type QuoteError = {
 	data: any,
 }
 
+export type QuoteType = 'WH' | 'SWIFT' | 'MCTP' | 'SHUTTLE' | 'FAST_MCTP' | 'MONO_CHAIN';
 export type Quote = {
-	type: 'WH' | 'SWIFT' | 'MCTP' | 'SHUTTLE' | 'FAST_MCTP' | 'MONO_CHAIN';
+	type: QuoteType;
 	/**
 	 * @deprecated Use the new property {@link effectiveAmountIn64} instead
 	 */
 	effectiveAmountIn: number;
 	effectiveAmountIn64: string;
 	expectedAmountOut: number;
-	priceImpact: number;
+	priceImpact?: number | null;
 	minAmountOut: number;
 	minReceived: number;
 	gasDrop: number;
@@ -89,10 +90,11 @@ export type Quote = {
 	redeemRelayerFee: number;
 	refundRelayerFee: number;
 	solanaRelayerFee: number;
-	redeemRelayerFee64: string;
-	refundRelayerFee64: string;
-	cancelRelayerFee64: string;
-	submitRelayerFee64: string;
+	swapRelayerFee64?: string | null;
+	redeemRelayerFee64?: string | null;
+	refundRelayerFee64?: string | null;
+	cancelRelayerFee64: string | null;
+	submitRelayerFee64: string | null;
 	solanaRelayerFee64: string;
 	clientRelayerFeeSuccess: number | null;
 	clientRelayerFeeRefund: number | null;
@@ -108,10 +110,10 @@ export type Quote = {
 		ratio: number;
 		status: 'GOOD' | 'NORMAL' | 'BAD';
 	}
-	mintDecimals: {
+	mintDecimals?: {
 		from: number;
 		to: number;
-	};
+	} | null;
 	bridgeFee: number;
 	suggestedPriorityFee: number;
 	meta: {
@@ -131,8 +133,8 @@ export type Quote = {
 	mctpOutputContract: string;
 	hasAuction: boolean;
 	minMiddleAmount?: number;
-	evmSwapRouterAddress?: string;
-	evmSwapRouterCalldata?: string;
+	evmSwapRouterAddress?: string; // only for mono-chain
+	evmSwapRouterCalldata?: string; // only for mono-chain
 	mctpMayanContract?: string;
 	swiftMayanContract?: string;
 	shuttleContract?: string;
@@ -143,7 +145,7 @@ export type Quote = {
 	relayer: string;
 	sendTransactionCost: number;
 	maxUserGasDrop: number;
-	rentCost?: bigint;
+	rentCost?: string;
 	shuttleParams : {
 		maxLLFee: string;
 		maxRelayingFee: string;
@@ -167,6 +169,10 @@ export type Quote = {
 		failureGasDrop: number;
 	};
 	monoChainMayanContract: string;
+	swiftInputContractStandard: TokenStandard;
+	swiftVerifiedInputAddress: string;
+	swiftVersion: 'V1' | 'V2';
+	quoteId: string;
 };
 
 export type QuoteOptions = {
@@ -205,6 +211,7 @@ type BaseGetSolanaSwapParams = {
 	referrerAddress?: string,
 	fillMaxAccounts?: boolean,
 	tpmTokenAccount?: string,
+	chainName: ChainName,
 }
 
 type MctpGetSolanaSwapParams = BaseGetSolanaSwapParams & {
@@ -232,9 +239,17 @@ type MonoChainGetSolanaSwapParams = Omit<
 	referrerBps: number;
 };
 
+type FastMctpGetSolanaSwapParams = BaseGetSolanaSwapParams & {
+	userLedger: string,
+	depositMode: 'FAST_MCTP_BRIDGE' | 'FAST_MCTP_ORDER',
+}
 
 export type GetSolanaSwapParams =
-	MctpGetSolanaSwapParams | SwiftGetSolanaSwapParams | HCDepositUSDCGetSolanaSwapParams | MonoChainGetSolanaSwapParams;
+	MctpGetSolanaSwapParams |
+	SwiftGetSolanaSwapParams |
+	HCDepositUSDCGetSolanaSwapParams |
+	MonoChainGetSolanaSwapParams |
+	FastMctpGetSolanaSwapParams;
 
 type BaseGetSuiSwapParams = {
 	amountIn64: string,
@@ -244,7 +259,21 @@ type BaseGetSuiSwapParams = {
 	referrerAddress?: string,
 	inputCoin: SuiFunctionParameter,
 	transaction: string,
+	chainName: ChainName,
+	slippageBps: number,
 }
+
+type BaseGetEvmSwapParams = {
+	forwarderAddress: string,
+	chainName: ChainName,
+	amountIn64: string,
+	fromToken: string
+	middleToken: string,
+	referrerAddress?: string,
+	slippageBps: number,
+}
+
+export type GetEvmSwapParams = BaseGetEvmSwapParams;
 
 type MctpGetSuiSwapParams = BaseGetSuiSwapParams & {
 	withWhFee: boolean

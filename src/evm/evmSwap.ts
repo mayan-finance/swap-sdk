@@ -36,7 +36,6 @@ import {
 	getSwiftFromEvmTxPayload,
 } from './evmSwift';
 import { getEstimateGasEvm, submitSwiftEvmSwap } from '../api';
-import { getShuttleFromEvmTxPayload } from './evmShuttle';
 import { getFastMctpFromEvmTxPayload } from './evmFastMctp';
 import { getHyperCoreDepositFromEvmTxPayload } from './evmHyperCore';
 import { getMonoChainFromEvmTxPayload } from './evmMonoChain';
@@ -181,7 +180,7 @@ function getEvmSwapParams(
 	};
 }
 
-export function getSwapFromEvmTxPayload(
+export async function getSwapFromEvmTxPayload(
 	quote: Quote,
 	swapperAddress: string,
 	destinationAddress: string,
@@ -193,7 +192,7 @@ export function getSwapFromEvmTxPayload(
 	options?: {
 		usdcPermitSignature?: string;
 	}
-): TransactionRequest & { _forwarder: EvmForwarderParams } {
+): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 	const signerWormholeChainId = getWormholeChainIdById(Number(signerChainId));
 	const fromChainId = getWormholeChainIdByName(quote.fromChain);
 	if (fromChainId !== signerWormholeChainId) {
@@ -239,16 +238,12 @@ export function getSwapFromEvmTxPayload(
 			destinationAddress,
 			referrerAddress,
 			signerChainId,
-			permit
+			permit,
+			payload,
 		);
 	}
 	if (quote.type === 'SHUTTLE') {
-		return getShuttleFromEvmTxPayload(
-			quote,
-			destinationAddress,
-			signerChainId,
-			permit
-		);
+		throw new Error('SHUTTLE quote type is not supported on EVM');
 	}
 
 	if (quote.type === 'FAST_MCTP') {
@@ -393,7 +388,8 @@ export async function swapFromEvm(
 			destinationAddress,
 			referrerAddress,
 			signerChainId,
-			permit
+			permit,
+			payload,
 		);
 		const signedOrderHash = await signer.signTypedData(
 			gasLessParams.orderTypedData.domain,
@@ -403,7 +399,7 @@ export async function swapFromEvm(
 		await submitSwiftEvmSwap(gasLessParams, signedOrderHash);
 		return gasLessParams.orderHash;
 	}
-	const transactionRequest = getSwapFromEvmTxPayload(
+	const transactionRequest = await getSwapFromEvmTxPayload(
 		quote,
 		swapperAddress,
 		destinationAddress,
@@ -455,7 +451,7 @@ export async function estimateQuoteRequiredGas(
 	if (quote.type === 'SWIFT' && quote.gasless) {
 		return BigInt(0);
 	}
-	const transactionRequest = getSwapFromEvmTxPayload(
+	const transactionRequest = await getSwapFromEvmTxPayload(
 		quote,
 		swapperAddress,
 		sampleDestinationAddress,
@@ -491,7 +487,7 @@ export async function estimateQuoteRequiredGasAprox(
 	if (quote.type === 'SWIFT' && quote.gasless) {
 		return BigInt(0);
 	}
-	const transactionRequest = getSwapFromEvmTxPayload(
+	const transactionRequest = await getSwapFromEvmTxPayload(
 		quote,
 		signerAddress,
 		sampleDestinationAddress,
@@ -529,7 +525,7 @@ export async function estimateQuoteRequiredGasAprox2(
 			requiredNative: BigInt(0),
 		}
 	}
-	const transactionRequest = getSwapFromEvmTxPayload(
+	const transactionRequest = await getSwapFromEvmTxPayload(
 		quote,
 		signerAddress,
 		sampleDestinationAddress,

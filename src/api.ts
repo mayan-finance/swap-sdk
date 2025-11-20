@@ -11,7 +11,8 @@ import {
 	TokenStandard,
 	GetSuiSwapParams,
 	SuiClientSwap,
-	EstimateGasEvmParams
+	EstimateGasEvmParams,
+	GetEvmSwapParams,
 } from './types';
 import addresses from './addresses';
 import { checkSdkVersionSupport, getSdkVersion } from './utils';
@@ -216,6 +217,28 @@ export async function getSwapSui(params : GetSuiSwapParams): Promise<SuiClientSw
 	return result;
 }
 
+export async function getSwapEvm(
+	params: GetEvmSwapParams
+): Promise<{
+	swapRouterAddress: string;
+	swapRouterCalldata: string;
+}> {
+	const query = toQueryString({
+		...params,
+		sdkVersion: getSdkVersion(),
+	});
+	const res = await fetch(`${addresses.PRICE_URL}/get-swap/evm?${query}`, {
+		method: 'GET',
+		redirect: 'follow',
+	});
+	await check5xxError(res);
+	const result = await res.json();
+	if (res.status !== 200 && res.status !== 201) {
+		throw result;
+	}
+	return result;
+}
+
 export async function submitSwiftEvmSwap(params: SwiftEvmGasLessParams, signature: string): Promise<void> {
 	const res = await fetch(`${addresses.EXPLORER_URL}/submit/evm`, {
 		method: 'POST',
@@ -235,14 +258,15 @@ export async function submitSwiftEvmSwap(params: SwiftEvmGasLessParams, signatur
 	await check5xxError(res);
 }
 
-export async function submitSwiftSolanaSwap(signedTx: string): Promise<{ orderHash: string }> {
-	const res = await fetch(`${addresses.EXPLORER_URL}/submit/solana`, {
+export async function submitSwiftSolanaSwap(signedTx: string, chainName: ChainName): Promise<{ orderHash: string }> {
+	const res = await fetch(`${addresses.EXPLORER_URL}/submit/v2/svm`, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
 		},
 		body: JSON.stringify({
 			signedTx,
+			chainName,
 		}),
 	});
 	await check5xxError(res);
@@ -297,4 +321,31 @@ export async function getEstimateGasEvm(
 		estimatedGas: BigInt(result.estimatedGas),
 		gasPrice: BigInt(result.gasPrice),
 	};
+}
+
+
+export async function getSvmDurableNonce(
+	chainName: ChainName,
+	swapperAddress: string,
+): Promise<{
+	nonce: string;
+	publicKey: string;
+}> {
+	const res = await fetch(`${addresses.SWIFT_RELAYER_URL}/nonces/assign`, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({
+			chainName,
+			swapperAddress,
+			sdkVersion: getSdkVersion(),
+		}),
+	});
+	await check5xxError(res);
+	const result = await res.json();
+	if (res.status !== 200 && res.status !== 201) {
+		throw result;
+	}
+	return result;
 }

@@ -32,7 +32,7 @@ import {
 import {Buffer} from 'buffer';
 import addresses from '../addresses'
 import {ZeroAddress} from 'ethers';
-import { submitSwiftSolanaSwap } from '../api';
+import { getSvmDurableNonce, submitSwiftSolanaSwap } from '../api';
 import {
 	createAssociatedTokenAccountInstruction,
 	createSyncNativeInstruction,
@@ -49,6 +49,7 @@ import { createSwiftFromSolanaInstructions } from './solanaSwift';
 import bs58 from 'bs58';
 import { createHyperCoreDepositFromSolanaInstructions } from './solanaHyperCore';
 import { createMonoChainFromSolanaInstructions } from './solanaMonoChain';
+import { createFastMctpFromSolanaInstructions } from './solanaFastMctp';
 
 
 const STATE_SIZE = 420;
@@ -98,9 +99,6 @@ export async function createSwapFromSolanaInstructions(
 		return createMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
 	}
 	if (quote.type === 'SWIFT') {
-		if (options.customPayload) {
-			throw new Error('Custom payload is not supported for SWIFT yet');
-		}
 		return createSwiftFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
 	}
 	if (quote.type === 'MONO_CHAIN') {
@@ -108,6 +106,10 @@ export async function createSwapFromSolanaInstructions(
 			throw new Error('Custom payload is not supported for MONO_CHAIN yet');
 		}
 		return createMonoChainFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
+	}
+
+	if (quote.type === 'FAST_MCTP') {
+		return createFastMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
 	}
 
 	if (options.customPayload) {
@@ -250,6 +252,10 @@ export async function createSwapFromSolanaInstructions(
 		)
 	);
 
+	if (!quote.mintDecimals) {
+		throw new Error('Mint decimals not provided');
+	}
+
 	const minAmountOut = getAmountOfFractionalAmount(
 		quote.minAmountOut, quote.mintDecimals.to);
 	const feeSwap = getAmountOfFractionalAmount(
@@ -335,8 +341,12 @@ export async function swapFromSolana(
 		jitoOptions.signAllTransactions
 	);
 
+	let instructions: Array<TransactionInstruction> = [];
+	let feePayer: PublicKey;
+	let recentBlockhash: string;
+	let lastValidBlockHeight: number;
 	const {
-		instructions,
+		instructions: _instructions,
 		signers,
 		lookupTables,
 		swapMessageV0Params,
@@ -352,37 +362,56 @@ export async function swapFromSolana(
 		}
 	);
 
+
+	if (quote.gasless) {
+		feePayer = new PublicKey(quote.relayer);
+		const {
+			publicKey: noncePubkey,
+			nonce,
+		} = await getSvmDurableNonce(quote.fromChain, swapperWalletAddress);
+		instructions = [SystemProgram.nonceAdvance({
+			noncePubkey: new PublicKey(noncePubkey),
+			authorizedPubkey: feePayer,
+		}), ..._instructions];
+		recentBlockhash = nonce;
+	} else {
+		feePayer = new PublicKey(swapperWalletAddress);
+		instructions = _instructions;
+		const latestBlockHash = await connection.getLatestBlockhash();
+		recentBlockhash = latestBlockHash.blockhash;
+		lastValidBlockHeight = latestBlockHash.lastValidBlockHeight;
+	}
+
 	const swapper = new PublicKey(swapperWalletAddress);
 
-	const feePayer = quote.gasless ? new PublicKey(quote.relayer) : swapper;
 
-	const {blockhash, lastValidBlockHeight} = await connection.getLatestBlockhash();
+
 	const message = MessageV0.compile({
 		instructions,
 		payerKey: feePayer,
-		recentBlockhash: blockhash,
+		recentBlockhash,
 		addressLookupTableAccounts: lookupTables,
 	});
 	const transaction = new VersionedTransaction(message);
 	transaction.sign(signers);
 	let signedTrx: Transaction | VersionedTransaction;
-	if (jitoEnabled) {
+	if (jitoEnabled && !quote.gasless) {
 		const allTransactions: Array<Transaction | VersionedTransaction> = [];
 		if (swapMessageV0Params) {
 			const createTmpTokenAccount = new Transaction({
 				feePayer: swapper,
-				blockhash,
+				blockhash: recentBlockhash,
 				lastValidBlockHeight,
 			}).add(...swapMessageV0Params.createTmpTokenAccountIxs);
 			createTmpTokenAccount.partialSign(swapMessageV0Params.tmpTokenAccount);
 			allTransactions.push(createTmpTokenAccount);
 			const swapMessage = MessageV0.compile({
 				...swapMessageV0Params.messageV0,
-				recentBlockhash: blockhash,
+				recentBlockhash,
 			});
 			allTransactions.push(new VersionedTransaction(swapMessage));
 		}
-		const jitoTipTransfer = getJitoTipTransfer(swapperWalletAddress, blockhash, lastValidBlockHeight, jitoOptions);
+		const jitoTipTransfer = getJitoTipTransfer(swapperWalletAddress, recentBlockhash, lastValidBlockHeight, jitoOptions);
 		allTransactions.push(transaction);
 		allTransactions.push(jitoTipTransfer);
 		const signedTrxs = await jitoOptions.signAllTransactions(allTransactions);
@@ -416,7 +445,7 @@ export async function swapFromSolana(
 	}
 	if (quote.gasless) {
 		const serializedTrx = Buffer.from(signedTrx.serialize()).toString('base64');
-		const { orderHash } = await submitSwiftSolanaSwap(serializedTrx);
+		const { orderHash } = await submitSwiftSolanaSwap(serializedTrx, quote.fromChain);
 		return { signature: orderHash, serializedTrx: null };
 	}
 

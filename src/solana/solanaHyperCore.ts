@@ -22,8 +22,9 @@ import {
 	createTransferAllAndCloseInstruction,
 	decentralizeClientSwapInstructions,
 	getAddressLookupTableAccounts,
+	getLookupTableAddress,
 	sandwichInstructionInCpiProxy,
-	validateJupSwap,
+	validateJupSwap
 } from './utils';
 import { createMctpBridgeLedgerInstruction, createMctpBridgeWithFeeInstruction } from './solanaMctp';
 
@@ -64,7 +65,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 
 	let _lookupTablesAddress: string[] = [];
 
-	_lookupTablesAddress.push(addresses.LOOKUP_TABLE);
+	_lookupTablesAddress.push(getLookupTableAddress(quote.fromChain));
 
 	// using for the swap via Jito Bundle
 	let _swapAddressLookupTables: string[] = [];
@@ -167,6 +168,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			quote.hyperCoreParams.initiateTokenContract,
 			relayerAddress,
 			BigInt(0),
+			quote.fromChain,
 		);
 		instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 		signers.push(..._signers);
@@ -185,7 +187,9 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			amountIn64: quote.effectiveAmountIn64,
 			depositMode: 'HC_USDC',
 			fillMaxAccounts: options?.separateSwapTx || false,
-			tpmTokenAccount: tmpSwapTokenAccount.publicKey.toString()
+			tpmTokenAccount: tmpSwapTokenAccount.publicKey.toString(),
+			referrerAddress: referrerAddress || undefined,
+			chainName: quote.fromChain,
 		});
 		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection);
 
@@ -308,6 +312,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 				quote.hyperCoreParams.initiateTokenContract,
 				relayerAddress,
 				BigInt(0),
+				quote.fromChain,
 			);
 			instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 			signers.push(..._signers);

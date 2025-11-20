@@ -9,6 +9,7 @@ import { getQuoteSuitableReferrerAddress } from '../utils';
 import { createMctpFromSuiMoveCalls } from './suiMctp';
 import { Buffer } from 'buffer';
 import { createHyperCoreDepositFromSuiMoveCalls } from './suiHyperCore';
+import {createSwiftFromSuiMoveCalls} from "./suiSwift";
 
 export async function createSwapFromSuiMoveCalls(
 	quote: Quote,
@@ -49,6 +50,16 @@ export async function createSwapFromSuiMoveCalls(
 
 	if (quote.type === 'MCTP') {
 		return createMctpFromSuiMoveCalls(
+			quote,
+			swapperWalletAddress,
+			destinationAddress,
+			referrerAddress,
+			payload,
+			suiClient,
+			options
+		);
+	} else if (quote.type === 'SWIFT') {
+		return createSwiftFromSuiMoveCalls(
 			quote,
 			swapperWalletAddress,
 			destinationAddress,
