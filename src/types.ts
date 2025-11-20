@@ -13,7 +13,7 @@ import { Buffer } from 'buffer';
 
 export type ChainName = 'solana'
 	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' |
-	'base' | 'aptos' | 'sui' | 'unichain' | 'linea' | 'hypercore' | 'sonic' | 'hyperevm' | 'fogo' |  'ton';
+	'base' | 'aptos' | 'sui' | 'unichain' | 'linea' | 'hypercore' | 'sonic' | 'hyperevm' | 'fogo' |  'ton' | 'monad';
 
 export type TokenStandard = 'native' | 'erc20' | 'spl' | 'spl2022' | 'suicoin' | 'hypertoken';
 

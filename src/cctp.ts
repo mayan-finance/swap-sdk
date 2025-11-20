@@ -30,6 +30,8 @@ export function getCCTPDomain(chain: ChainName): number {
 			return 13;
 		case 'hyperevm':
 			return 19;
+		case 'monad':
+			return 15;
 		default:
 			throw new Error('unsupported chain for cctp');
 	}

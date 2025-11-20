@@ -20,7 +20,7 @@ export function nativeAddressToHexString(
 		wChainId === chains.ethereum || wChainId === chains.bsc || wChainId === chains.polygon ||
 		wChainId === chains.avalanche  || wChainId === chains.arbitrum || wChainId === chains.optimism ||
 		wChainId === chains.base || wChainId === chains.unichain || wChainId === chains.linea ||
-		wChainId === chains.sonic || wChainId === chains.hyperevm
+		wChainId === chains.sonic || wChainId === chains.hyperevm || wChainId === chains.monad
 	) {
 		return zeroPadValue(address, 32);
 	} else if (wChainId === chains.aptos && isValidAptosType(address)) {
@@ -126,6 +126,7 @@ const chains: { [index in ChainName]: number }  = {
 	sonic: 52,
 	hyperevm: 47,
 	fogo: 51,
+	monad: 48,
 };
 
 export function getWormholeChainIdByName(chain: string) : number | null {
@@ -144,6 +145,7 @@ const evmChainIdMap: { [index: string]: number }  = {
 	[59144]: 38,
 	[146]: 52,
 	[999]: 47,
+	[143]: 48,
 };
 
 export function getEvmChainIdByName(chain: ChainName) {
@@ -270,7 +272,10 @@ export function getQuoteSuitableReferrerAddress(
 		}
 	}
 	if (quote.type === 'FAST_MCTP') {
-		if (quote.toChain !== 'solana' && quote.toChain !== 'sui') {
+		if (quote.toChain === 'solana') {
+			return referrerAddresses?.solana || null;
+		}
+		if (quote.toChain !== 'sui') {
 			return referrerAddresses?.evm || null;
 		}
 	}

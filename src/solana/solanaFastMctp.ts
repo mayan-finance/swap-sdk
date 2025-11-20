@@ -54,7 +54,7 @@ export function createFastMctpBridgeInstruction(
 	const TOKEN_PROGRAM_ID = new PublicKey(addresses.TOKEN_PROGRAM_ID);
 	const cctpCoreProgramId = new PublicKey(addresses.CCTPV2_CORE_PROGRAM_ID);
 	const cctpTokenProgramId = new PublicKey(addresses.CCTPV2_TOKEN_PROGRAM_ID);
-	const mctpProgram = new PublicKey(addresses.FAST_MCTP_PROGRAM_ID);
+	const fastMctpProgram = new PublicKey(addresses.FAST_MCTP_PROGRAM_ID);
 
 	const relayer = new PublicKey(relayerAddress);
 	const mint = new PublicKey(mintAddress);
@@ -111,7 +111,7 @@ export function createFastMctpBridgeInstruction(
 	const bridgeIns = new TransactionInstruction({
 		keys: accounts,
 		data,
-		programId: mctpProgram,
+		programId: fastMctpProgram,
 	});
 
 	return {instruction: bridgeIns, signers: [cctpMessage]};
@@ -130,7 +130,7 @@ function createFastMctpInitOrderInstruction(
 	const TOKEN_PROGRAM_ID = new PublicKey(addresses.TOKEN_PROGRAM_ID);
 	const cctpCoreProgramId = new PublicKey(addresses.CCTPV2_CORE_PROGRAM_ID);
 	const cctpTokenProgramId = new PublicKey(addresses.CCTPV2_TOKEN_PROGRAM_ID);
-	const mctpProgram = new PublicKey(addresses.FAST_MCTP_PROGRAM_ID);
+	const fastMctpProgram = new PublicKey(addresses.FAST_MCTP_PROGRAM_ID);
 
 
 	const relayer = new PublicKey(relayerAddress);
@@ -189,13 +189,13 @@ function createFastMctpInitOrderInstruction(
 	const initOrderIns = new TransactionInstruction({
 		keys: accounts,
 		data,
-		programId: mctpProgram,
+		programId: fastMctpProgram,
 	});
 
 	return {instruction: initOrderIns, signer: cctpMessage};
 }
 
-const MctpBridgeLedgerLayout = struct<any>([
+const FastMctpBridgeLedgerLayout = struct<any>([
 	blob(8, 'instruction'),
 	blob(32, 'destAddress'),
 	blob(8, 'amountInMin'),
@@ -211,7 +211,7 @@ const MctpBridgeLedgerLayout = struct<any>([
 	u8('mode'),
 ]);
 
-type CreateMctpBridgeLedgerInstructionParams = {
+type CreateFastMctpBridgeLedgerInstructionParams = {
 	ledger: PublicKey,
 	swapperAddress: string,
 	mintAddress: string,
@@ -230,7 +230,7 @@ type CreateMctpBridgeLedgerInstructionParams = {
 	minFinalityThreshold: number,
 }
 
-export function createFastMctpBridgeLedgerInstruction(params: CreateMctpBridgeLedgerInstructionParams): TransactionInstruction {
+export function createFastMctpBridgeLedgerInstruction(params: CreateFastMctpBridgeLedgerInstructionParams): TransactionInstruction {
 	const user = new PublicKey(params.swapperAddress);
 	const relayer =  new PublicKey(params.relayerAddress);
 	const mint = new PublicKey(params.mintAddress);
@@ -264,8 +264,8 @@ export function createFastMctpBridgeLedgerInstruction(params: CreateMctpBridgeLe
 		{pubkey: mint, isWritable: false, isSigner: false},
 		{pubkey: SystemProgram.programId, isWritable: false, isSigner: false},
 	];
-	const data = Buffer.alloc(MctpBridgeLedgerLayout.span);
-	MctpBridgeLedgerLayout.encode(
+	const data = Buffer.alloc(FastMctpBridgeLedgerLayout.span);
+	FastMctpBridgeLedgerLayout.encode(
 		{
 			instruction: getAnchorInstructionData('init_bridge_ledger'),
 			destAddress,
@@ -298,16 +298,16 @@ const FastMctpOrderLedgerLayout = struct<any>([
 	blob(8, 'feeRedeem'),
 	blob(8, 'feeRefund'),
 	blob(8, 'feeSolana'),
-	u16('destDomain'),
+	u32('destDomain'),
 	u16('keyRnd'),
-	blob(8, 'maxCircleFee'),
-	u32('minFinalityThreshold'),
 	u8('mode'),
 	blob(32, 'tokenOut'),
 	blob(8, 'amountOutMin'),
 	blob(8, 'deadline'),
 	blob(32, 'refAddress'),
 	u8('feeRateRef'),
+	blob(8, 'maxCircleFee'),
+	u32('minFinalityThreshold'),
 ]);
 
 type CreateFastMctpOrderLedgerInstructionParams = {
@@ -484,7 +484,7 @@ export async function createFastMctpFromSolanaInstructions(
 	}
 
 	if (options.customPayload && quote.hasAuction) {
-		throw new Error('Cannot use customPayload with create Mctp swap');
+		throw new Error('Cannot use customPayload with create Fast Mctp swap');
 	}
 
 	let customPayloadAccount: PublicKey | null = null;
@@ -522,12 +522,12 @@ export async function createFastMctpFromSolanaInstructions(
 			}))
 		}
 		instructions.push(
-			sandwichInstructionInCpiProxy(createAssociatedTokenAccountInstruction(relayer, ledgerAccount, ledger, new PublicKey(quote.mctpInputContract)))
+			sandwichInstructionInCpiProxy(createAssociatedTokenAccountInstruction(relayer, ledgerAccount, ledger, new PublicKey(quote.fastMctpInputContract)))
 		);
 		instructions.push(
 			sandwichInstructionInCpiProxy(createSplTransferInstruction(
 				getAssociatedTokenAddress(
-					new PublicKey(quote.mctpInputContract), user, allowSwapperOffCurve
+					new PublicKey(quote.fastMctpInputContract), user, allowSwapperOffCurve
 				),
 				ledgerAccount,
 				user,
@@ -538,7 +538,7 @@ export async function createFastMctpFromSolanaInstructions(
 			instructions.push(sandwichInstructionInCpiProxy(createFastMctpOrderLedgerInstruction({
 				ledger,
 				swapperAddress,
-				mintAddress: quote.mctpInputContract,
+				mintAddress: quote.fastMctpInputContract,
 				randomKey,
 				toChain: quote.toChain,
 				destinationAddress,
@@ -572,7 +572,7 @@ export async function createFastMctpFromSolanaInstructions(
 			instructions.push(sandwichInstructionInCpiProxy(createFastMctpBridgeLedgerInstruction({
 				ledger,
 				swapperAddress,
-				mintAddress: quote.mctpInputContract,
+				mintAddress: quote.fastMctpInputContract,
 				randomKey,
 				toChain: quote.toChain,
 				destinationAddress,
@@ -592,7 +592,7 @@ export async function createFastMctpFromSolanaInstructions(
 					instruction: _instruction,
 					signers: _signers
 				} = createFastMctpBridgeInstruction(
-					ledger, user, quote.toChain, quote.mctpInputContract, relayerAddress, feeSolana, quote.fromChain
+					ledger, user, quote.toChain, quote.fastMctpInputContract, relayerAddress, feeSolana, quote.fromChain
 				);
 				instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 				signers.push(..._signers);
@@ -602,7 +602,7 @@ export async function createFastMctpFromSolanaInstructions(
 	else {
 		const clientSwapRaw = await getSwapSolana({
 			minMiddleAmount: quote.minMiddleAmount,
-			middleToken: quote.mctpInputContract,
+			middleToken: quote.fastMctpInputContract,
 			userWallet: swapperAddress,
 			userLedger: ledger.toString(),
 			slippageBps: quote.slippageBps,
@@ -622,7 +622,7 @@ export async function createFastMctpFromSolanaInstructions(
 			createSwapTpmTokenAccountInstructions = await createInitializeRandomTokenAccountInstructions(
 				connection,
 				relayer,
-				new PublicKey(quote.mctpInputContract),
+				new PublicKey(quote.fastMctpInputContract),
 				user,
 				tmpSwapTokenAccount,
 			);
@@ -636,11 +636,11 @@ export async function createFastMctpFromSolanaInstructions(
 			}
 			_swapAddressLookupTables.push(...clientSwap.addressLookupTableAddresses);
 			instructions.push(sandwichInstructionInCpiProxy(createAssociatedTokenAccountInstruction(
-				relayer, ledgerAccount, ledger, new PublicKey(quote.mctpInputContract)
+				relayer, ledgerAccount, ledger, new PublicKey(quote.fastMctpInputContract)
 			)));
 			instructions.push(sandwichInstructionInCpiProxy(createTransferAllAndCloseInstruction(
 				user,
-				new PublicKey(quote.mctpInputContract),
+				new PublicKey(quote.fastMctpInputContract),
 				tmpSwapTokenAccount.publicKey,
 				ledgerAccount,
 				relayer,
@@ -665,7 +665,7 @@ export async function createFastMctpFromSolanaInstructions(
 			instructions.push(sandwichInstructionInCpiProxy(createFastMctpOrderLedgerInstruction({
 				ledger,
 				swapperAddress,
-				mintAddress: quote.mctpInputContract,
+				mintAddress: quote.fastMctpInputContract,
 				randomKey,
 				toChain: quote.toChain,
 				destinationAddress,
@@ -689,7 +689,7 @@ export async function createFastMctpFromSolanaInstructions(
 					instruction: _instruction,
 					signer: _signer
 				} = createFastMctpInitOrderInstruction(
-					ledger, user, quote.toChain, quote.mctpInputContract, relayerAddress, feeSolana
+					ledger, user, quote.toChain, quote.fastMctpInputContract, relayerAddress, feeSolana
 				);
 				instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 				signers.push(_signer);
@@ -699,7 +699,7 @@ export async function createFastMctpFromSolanaInstructions(
 			instructions.push(sandwichInstructionInCpiProxy(createFastMctpBridgeLedgerInstruction({
 				ledger,
 				swapperAddress,
-				mintAddress: quote.mctpInputContract,
+				mintAddress: quote.fastMctpInputContract,
 				randomKey,
 				toChain: quote.toChain,
 				destinationAddress,
@@ -719,7 +719,7 @@ export async function createFastMctpFromSolanaInstructions(
 					instruction: _instruction,
 					signers: _signers
 				} = createFastMctpBridgeInstruction(
-					ledger, user, quote.toChain, quote.mctpInputContract, relayerAddress, feeSolana, quote.fromChain
+					ledger, user, quote.toChain, quote.fastMctpInputContract, relayerAddress, feeSolana, quote.fromChain
 				);
 				instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 				signers.push(..._signers);
