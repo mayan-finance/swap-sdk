@@ -68,17 +68,17 @@ export interface IdlTypeDef {
 	name: string;
 	type:
 		| {
-		kind: 'struct';
-		fields: IdlField[];
-	}
+				kind: 'struct';
+				fields: IdlField[];
+		  }
 		| {
-		kind: 'enum';
-		variants: Array<{
-			name: string;
-			/** optional payload fields */
-			fields?: IdlField[];
-		}>;
-	};
+				kind: 'enum';
+				variants: Array<{
+					name: string;
+					/** optional payload fields */
+					fields?: IdlField[];
+				}>;
+		  };
 }
 
 /**
@@ -93,10 +93,15 @@ export function decodeInstructionArgs(
 	const disc = data.subarray(0, 8);
 
 	// 2. find instruction args definition
-	const ix = idl.instructions.find((ix) =>
-		Buffer.from(ix.discriminator).toString('hex').toLowerCase() === Buffer.from(disc).toString('hex').toLowerCase()
+	const ix = idl.instructions.find(
+		(ix) =>
+			Buffer.from(ix.discriminator).toString('hex').toLowerCase() ===
+			Buffer.from(disc).toString('hex').toLowerCase()
 	);
-	if (!ix) throw new Error(`Instruction ${Buffer.from(disc).toString('hex')} not in IDL`);
+	if (!ix)
+		throw new Error(
+			`Instruction ${Buffer.from(disc).toString('hex')} not in IDL`
+		);
 	const argsDef = ix.args || [];
 
 	// 3. decode each arg in sequence
@@ -216,7 +221,6 @@ function decodeType(
 
 	throw new Error(`Unsupported type shape: ${JSON.stringify(type)}`);
 }
-
 
 export function decodeJupiterV6InsArgs(args: Uint8Array) {
 	return decodeInstructionArgs(jupV6Idl, Buffer.from(args));
@@ -1146,4 +1150,3 @@ const jupV6Idl: Idl & any = {
 		},
 	],
 };
-
