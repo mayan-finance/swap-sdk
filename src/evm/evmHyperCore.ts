@@ -30,6 +30,9 @@ function getUsdcDepositInitiatorMctpTxPayload(
 	destinationAddress: string,
 	usdcPermitSignature: string,
 ): TransactionRequest & { _params: { amountIn: bigint, contractAddress: string } } {
+	if (!quote.hyperCoreParams) {
+		throw new Error('HyperCore parameters are missing');
+	}
 	if (!quote.hyperCoreParams.initiateContractAddress) {
 		throw new Error('HyperCore initiate contract address is missing');
 	}
@@ -96,6 +99,9 @@ function getUsdcDepositInitiatorFastMctpTxPayload(
 	usdcPermitSignature: string,
 ): TransactionRequest & { _params: { amountIn: bigint, contractAddress: string } } {
 	const destChainId = getWormholeChainIdByName('arbitrum');
+	if (!quote.hyperCoreParams) {
+		throw new Error('HyperCore parameters are missing');
+	}
 	if (!quote.hyperCoreParams.initiateContractAddress) {
 		throw new Error('HyperCore initiate contract address is missing');
 	}
@@ -171,7 +177,7 @@ function getUsdcDepositInitiatorFastMctpTxPayload(
 
 export async function getHyperCoreDepositFromEvmTxPayload(
 	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
-	signerChainId: number | string, permit: Erc20Permit | null, payload: Uint8Array | Buffer | null | undefined,
+	signerChainId: number | string, permit: Erc20Permit | null | undefined, payload: Uint8Array | Buffer | null | undefined,
 	options: {
 		usdcPermitSignature?: string;
 	} = {}

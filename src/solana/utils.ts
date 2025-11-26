@@ -98,6 +98,7 @@ export async function submitTransactionWithRetry(
 					console.error('Simulation individual connections failed', err);
 					console.error('Transaction not submitted, remaining attempts:', rate - i - 1);
 					console.error(err);
+					// @ts-ignore
 					if (typeof err?.transactionMessage === 'string' && err.transactionMessage.indexOf('transaction has already been processed')) {
 						if (signature) {
 							return {
@@ -417,7 +418,7 @@ export async function getAddressLookupTableAccounts(
 
 type SolanaClientSwapInstructions = {
 	swapInstruction: TransactionInstruction,
-	cleanupInstruction: TransactionInstruction,
+	cleanupInstruction?: TransactionInstruction | null,
 	computeBudgetInstructions: TransactionInstruction[],
 	setupInstructions: TransactionInstruction[],
 	addressLookupTableAddresses: string[]
@@ -618,7 +619,7 @@ async function getJitoBundleStatuses(bundleIds: string[], jitoApiUrl: string) {
 			}
 
 			return data.result;
-		} catch (error) {
+		} catch (error: any) {
 			attempt++;
 			await wait(1000);
 			if (attempt >= maxRetries) {
@@ -676,7 +677,7 @@ export async function broadcastJitoBundleId(bundleId: string): Promise<void> {
 	}
 }
 
-function validateJupCleanupInstruction(instruction: TransactionInstruction, validCleanReceiverAddress?: PublicKey) {
+function validateJupCleanupInstruction(instruction?: TransactionInstruction | null, validCleanReceiverAddress?: PublicKey) {
 	if (!instruction) {
 		return;
 	}
@@ -751,14 +752,28 @@ function validateJupSwapInstruction(instruction: TransactionInstruction, validDe
 		if (!instruction.keys[6].pubkey.equals(validDestAccount)) {
 			throw new Error(`Invalid swap instruction shared_accounts_route:: dest account`);
 		}
+	} else if (instruction.data.subarray(0, 8).toString('hex') === getAnchorInstructionData('shared_accounts_route_v2').toString('hex')) {
+		if (!instruction.keys[5].pubkey.equals(validDestAccount)) {
+			throw new Error(`Invalid swap instruction shared_accounts_route_v2:: dest account`);
+		}
 	} else if (instruction.data.subarray(0, 8).toString('hex') === getAnchorInstructionData('route').toString('hex')) {
 		if (sameSourceAndDestWallet) {
-			if (!instruction.keys[4].pubkey.equals(JUP_PROGRAM_ID) && !instruction.keys[3].pubkey.equals(validDestAccount)) {
+			if (!instruction.keys[4].pubkey.equals(JUP_PROGRAM_ID) || !instruction.keys[3].pubkey.equals(validDestAccount)) {
 				throw new Error('Invalid swap instruction route:: dest account');
 			}
 		} else {
 			if (!instruction.keys[4].pubkey.equals(validDestAccount)) {
 				throw new Error('Invalid swap instruction route:: dest account');
+			}
+		}
+	} else if (instruction.data.subarray(0, 8).toString('hex') === getAnchorInstructionData('route_v2').toString('hex')) {
+		if (sameSourceAndDestWallet) {
+			if (!instruction.keys[7].pubkey.equals(JUP_PROGRAM_ID) || !instruction.keys[2].pubkey.equals(validDestAccount)) {
+				throw new Error('Invalid swap instruction route_v2:: dest account');
+			}
+		} else {
+			if (!instruction.keys[7].pubkey.equals(validDestAccount)) {
+				throw new Error('Invalid swap instruction route_v2:: dest account');
 			}
 		}
 	} else {
@@ -914,4 +929,5 @@ export function getLookupTableAddress(chainName: ChainName): string {
 	} else if (chainName === 'fogo') {
 		return addresses.LOOKUP_TABLE_FOGO;
 	}
+	throw new Error(`Unsupported chain name for lookup table: ${chainName}`);
 }

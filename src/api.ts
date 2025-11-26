@@ -27,7 +27,7 @@ function toQueryString(params: Record<string, any>): string {
 
 async function check5xxError(res: Response): Promise<void> {
 	if (res.status.toString().startsWith('5')) {
-		let error: Error | QuoteError;
+		let error: Error | QuoteError = new Error('Internal server error');
 		try {
 			const err = await res.json();
 			if ((err?.code || err?.statusCode) && (err?.message || err?.msg)) {
@@ -87,6 +87,9 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 	const { gasDrop, referrerBps } = params;
 	let slippageBps = params.slippageBps;
 	if (slippageBps !== 'auto' && !Number.isFinite(slippageBps)) {
+		if (params.slippage === undefined || params.slippage === null || !Number.isFinite(params.slippage)) {
+			throw new Error('Either slippageBps or slippage must be provided');
+		}
 		slippageBps = params.slippage * 100;
 	}
 	const _quoteOptions: QuoteOptions = {

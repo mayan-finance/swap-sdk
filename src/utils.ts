@@ -129,8 +129,12 @@ const chains: { [index in ChainName]: number }  = {
 	monad: 48,
 };
 
-export function getWormholeChainIdByName(chain: string) : number | null {
-	return chains[chain];
+export function getWormholeChainIdByName(chain: ChainName) : number {
+	const result = chains[chain];
+	if (!result) {
+		throw new Error(`Chain Id not found for chain: ${chain}`);
+	}
+	return result;
 }
 
 const evmChainIdMap: { [index: string]: number }  = {
@@ -235,7 +239,7 @@ export function wait(time: number): Promise<void> {
 
 export function getQuoteSuitableReferrerAddress(
 	quote: Quote,
-	referrerAddresses?: ReferrerAddresses,
+	referrerAddresses?: ReferrerAddresses | null,
 ): string | null {
 	if (!quote || !referrerAddresses) {
 		return null;
@@ -461,6 +465,9 @@ export function getHyperCoreUSDCDepositCustomPayload(
 	if (permitSignatureBuf.length !== 65) {
 		throw new Error('Invalid USDC permit signature length, expected 65 bytes');
 	}
+	if (!quote.redeemRelayerFee64 || !quote.hyperCoreParams) {
+		throw new Error('Invalid quote for HyperCore USDC deposit custom payload');
+	}
 	payload.writeBigUInt64BE(BigInt(quote.redeemRelayerFee64), 0)
 	payload.set(destAddressBuf, 8);
 	payload.writeBigUInt64BE(BigInt(quote.hyperCoreParams.depositAmountUSDC64), 28);
@@ -472,12 +479,18 @@ export function getHyperCoreUSDCDepositCustomPayload(
 
 export function getSwiftToTokenHexString(quote: Quote): string {
 	if (quote.toChain === 'sui') {
+		if (!quote.toToken.verifiedAddress) {
+			throw new Error('To token verified address is required for SUI');
+		}
 		return  nativeAddressToHexString(quote.toToken.verifiedAddress, getWormholeChainIdByName('sui'));
 	} else if (quote.toChain === 'ton') {
 		if (quote.toToken.contract === ZeroAddress) {
 			return nativeAddressToHexString(SystemProgram.programId.toString(), getWormholeChainIdByName('solana'));
 		} else {
 			//TODO verify
+			if (!quote.toToken.verifiedAddress) {
+				throw new Error('To token verified address is required for Ton chain');
+			}
 			return quote.toToken.verifiedAddress;
 			// return '0xe109c7913888a4951a86e7b53ea0d9dfdfe38d71fbacf9948433f2c49c620894'// USDT
 		}

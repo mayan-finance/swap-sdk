@@ -237,7 +237,6 @@ const jupV6Idl: Idl & any = {
 	instructions: [
 		{
 			name: 'route',
-			docs: ['route_plan Topologically sorted trade DAG'],
 			discriminator: [229, 23, 203, 151, 122, 227, 173, 42],
 			accounts: [
 				{
@@ -308,9 +307,6 @@ const jupV6Idl: Idl & any = {
 		},
 		{
 			name: 'shared_accounts_route',
-			docs: [
-				'Route by using program owned token accounts and open orders accounts.',
-			],
 			discriminator: [193, 32, 155, 51, 65, 214, 156, 129],
 			accounts: [
 				{
@@ -396,43 +392,168 @@ const jupV6Idl: Idl & any = {
 			],
 			returns: 'u64',
 		},
+		{
+			name: 'route_v2',
+			discriminator: [187, 100, 250, 204, 49, 196, 175, 20],
+			accounts: [
+				{
+					name: 'user_transfer_authority',
+					signer: true,
+				},
+				{
+					name: 'user_source_token_account',
+					writable: true,
+				},
+				{
+					name: 'user_destination_token_account',
+					writable: true,
+				},
+				{
+					name: 'source_mint',
+				},
+				{
+					name: 'destination_mint',
+				},
+				{
+					name: 'source_token_program',
+				},
+				{
+					name: 'destination_token_program',
+				},
+				{
+					name: 'destination_token_account',
+					writable: true,
+					optional: true,
+				},
+				{
+					name: 'event_authority',
+					address: 'D8cy77BBepLMngZx6ZukaTff5hCt1HrWyKk3Hnd9oitf',
+				},
+				{
+					name: 'program',
+				},
+			],
+			args: [
+				{
+					name: 'in_amount',
+					type: 'u64',
+				},
+				{
+					name: 'quoted_out_amount',
+					type: 'u64',
+				},
+				{
+					name: 'slippage_bps',
+					type: 'u16',
+				},
+				{
+					name: 'platform_fee_bps',
+					type: 'u16',
+				},
+				{
+					name: 'positive_slippage_bps',
+					type: 'u16',
+				},
+				{
+					name: 'route_plan',
+					type: {
+						vec: {
+							defined: {
+								name: 'RoutePlanStepV2',
+							},
+						},
+					},
+				},
+			],
+			returns: 'u64',
+		},
+		{
+			name: 'shared_accounts_route_v2',
+			discriminator: [209, 152, 83, 147, 124, 254, 216, 233],
+			accounts: [
+				{
+					name: 'program_authority',
+				},
+				{
+					name: 'user_transfer_authority',
+					signer: true,
+				},
+				{
+					name: 'source_token_account',
+					writable: true,
+				},
+				{
+					name: 'program_source_token_account',
+					writable: true,
+				},
+				{
+					name: 'program_destination_token_account',
+					writable: true,
+				},
+				{
+					name: 'destination_token_account',
+					writable: true,
+				},
+				{
+					name: 'source_mint',
+				},
+				{
+					name: 'destination_mint',
+				},
+				{
+					name: 'source_token_program',
+				},
+				{
+					name: 'destination_token_program',
+				},
+				{
+					name: 'event_authority',
+					address: 'D8cy77BBepLMngZx6ZukaTff5hCt1HrWyKk3Hnd9oitf',
+				},
+				{
+					name: 'program',
+				},
+			],
+			args: [
+				{
+					name: 'id',
+					type: 'u8',
+				},
+				{
+					name: 'in_amount',
+					type: 'u64',
+				},
+				{
+					name: 'quoted_out_amount',
+					type: 'u64',
+				},
+				{
+					name: 'slippage_bps',
+					type: 'u16',
+				},
+				{
+					name: 'platform_fee_bps',
+					type: 'u16',
+				},
+				{
+					name: 'positive_slippage_bps',
+					type: 'u16',
+				},
+				{
+					name: 'route_plan',
+					type: {
+						vec: {
+							defined: {
+								name: 'RoutePlanStepV2',
+							},
+						},
+					},
+				},
+			],
+			returns: 'u64',
+		},
 	],
 	types: [
-		{
-			name: 'AccountsType',
-			type: {
-				kind: 'enum',
-				variants: [
-					{
-						name: 'TransferHookA',
-					},
-					{
-						name: 'TransferHookB',
-					},
-					{
-						name: 'TransferHookReward',
-					},
-					{
-						name: 'TransferHookInput',
-					},
-					{
-						name: 'TransferHookIntermediate',
-					},
-					{
-						name: 'TransferHookOutput',
-					},
-					{
-						name: 'SupplementalTickArrays',
-					},
-					{
-						name: 'SupplementalTickArraysOne',
-					},
-					{
-						name: 'SupplementalTickArraysTwo',
-					},
-				],
-			},
-		},
 		{
 			name: 'FeeEvent',
 			type: {
@@ -478,15 +599,78 @@ const jupV6Idl: Idl & any = {
 				fields: [
 					{
 						name: 'accounts_type',
-						type: {
-							defined: {
-								name: 'AccountsType',
-							},
-						},
+						type: 'u8',
 					},
 					{
 						name: 'length',
 						type: 'u8',
+					},
+				],
+			},
+		},
+		{
+			name: 'AccountsType',
+			type: {
+				kind: 'enum',
+				variants: [
+					{
+						name: 'TransferHookA',
+					},
+					{
+						name: 'TransferHookB',
+					},
+					{
+						name: 'TransferHookReward',
+					},
+					{
+						name: 'TransferHookInput',
+					},
+					{
+						name: 'TransferHookIntermediate',
+					},
+					{
+						name: 'TransferHookOutput',
+					},
+					{
+						name: 'SupplementalTickArrays',
+					},
+					{
+						name: 'SupplementalTickArraysOne',
+					},
+					{
+						name: 'SupplementalTickArraysTwo',
+					},
+				],
+			},
+		},
+		{
+			name: 'DefiTunaAccountsType',
+			type: {
+				kind: 'enum',
+				variants: [
+					{
+						name: 'TransferHookA',
+					},
+					{
+						name: 'TransferHookB',
+					},
+					{
+						name: 'TransferHookInput',
+					},
+					{
+						name: 'TransferHookIntermediate',
+					},
+					{
+						name: 'TransferHookOutput',
+					},
+					{
+						name: 'SupplementalTickArrays',
+					},
+					{
+						name: 'SupplementalTickArraysOne',
+					},
+					{
+						name: 'SupplementalTickArraysTwo',
 					},
 				],
 			},
@@ -507,6 +691,34 @@ const jupV6Idl: Idl & any = {
 					{
 						name: 'percent',
 						type: 'u8',
+					},
+					{
+						name: 'input_index',
+						type: 'u8',
+					},
+					{
+						name: 'output_index',
+						type: 'u8',
+					},
+				],
+			},
+		},
+		{
+			name: 'RoutePlanStepV2',
+			type: {
+				kind: 'struct',
+				fields: [
+					{
+						name: 'swap',
+						type: {
+							defined: {
+								name: 'Swap',
+							},
+						},
+					},
+					{
+						name: 'bps',
+						type: 'u16',
 					},
 					{
 						name: 'input_index',
@@ -876,10 +1088,10 @@ const jupV6Idl: Idl & any = {
 						name: 'OneIntro',
 					},
 					{
-						name: 'PumpdotfunWrappedBuy',
+						name: 'PumpWrappedBuy',
 					},
 					{
-						name: 'PumpdotfunWrappedSell',
+						name: 'PumpWrappedSell',
 					},
 					{
 						name: 'PerpsV2',
@@ -983,10 +1195,10 @@ const jupV6Idl: Idl & any = {
 						],
 					},
 					{
-						name: 'PumpdotfunAmmBuy',
+						name: 'PumpSwapBuy',
 					},
 					{
-						name: 'PumpdotfunAmmSell',
+						name: 'PumpSwapSell',
 					},
 					{
 						name: 'Gamma',
@@ -1099,7 +1311,182 @@ const jupV6Idl: Idl & any = {
 						],
 					},
 					{
-						name: 'RaydiumStable',
+						name: 'PumpWrappedBuyV2',
+					},
+					{
+						name: 'PumpWrappedSellV2',
+					},
+					{
+						name: 'PumpSwapBuyV2',
+					},
+					{
+						name: 'PumpSwapSellV2',
+					},
+					{
+						name: 'Heaven',
+						fields: [
+							{
+								name: 'a_to_b',
+								type: 'bool',
+							},
+						],
+					},
+					{
+						name: 'SolFiV2',
+						fields: [
+							{
+								name: 'is_quote_to_base',
+								type: 'bool',
+							},
+						],
+					},
+					{
+						name: 'Aquifer',
+					},
+					{
+						name: 'PumpWrappedBuyV3',
+					},
+					{
+						name: 'PumpWrappedSellV3',
+					},
+					{
+						name: 'PumpSwapBuyV3',
+					},
+					{
+						name: 'PumpSwapSellV3',
+					},
+					{
+						name: 'JupiterLendDeposit',
+					},
+					{
+						name: 'JupiterLendRedeem',
+					},
+					{
+						name: 'DefiTuna',
+						fields: [
+							{
+								name: 'a_to_b',
+								type: 'bool',
+							},
+							{
+								name: 'remaining_accounts_info',
+								type: {
+									option: {
+										defined: {
+											name: 'RemainingAccountsInfo',
+										},
+									},
+								},
+							},
+						],
+					},
+					{
+						name: 'AlphaQ',
+						fields: [
+							{
+								name: 'a_to_b',
+								type: 'bool',
+							},
+						],
+					},
+					{
+						name: 'RaydiumV2',
+					},
+					{
+						name: 'SarosDlmm',
+						fields: [
+							{
+								name: 'swap_for_y',
+								type: 'bool',
+							},
+						],
+					},
+					{
+						name: 'Futarchy',
+						fields: [
+							{
+								name: 'side',
+								type: {
+									defined: {
+										name: 'Side',
+									},
+								},
+							},
+						],
+					},
+					{
+						name: 'MeteoraDammV2WithRemainingAccounts',
+					},
+					{
+						name: 'Obsidian',
+					},
+					{
+						name: 'WhaleStreet',
+						fields: [
+							{
+								name: 'side',
+								type: {
+									defined: {
+										name: 'Side',
+									},
+								},
+							},
+						],
+					},
+					{
+						name: 'DynamicV1',
+						fields: [
+							{
+								name: 'candidate_swaps',
+								type: {
+									vec: {
+										defined: {
+											name: 'CandidateSwap',
+										},
+									},
+								},
+							},
+						],
+					},
+					{
+						name: 'PumpWrappedBuyV4',
+					},
+					{
+						name: 'PumpWrappedSellV4',
+					},
+				],
+			},
+		},
+		{
+			name: 'CandidateSwap',
+			type: {
+				kind: 'enum',
+				variants: [
+					{
+						name: 'HumidiFi',
+						fields: [
+							{
+								name: 'swap_id',
+								type: 'u64',
+							},
+							{
+								name: 'is_base_to_quote',
+								type: 'bool',
+							},
+						],
+					},
+					{
+						name: 'TesseraV',
+						fields: [
+							{
+								name: 'side',
+								type: {
+									defined: {
+										name: 'Side',
+									},
+								},
+							},
+						],
 					},
 				],
 			},
@@ -1133,6 +1520,48 @@ const jupV6Idl: Idl & any = {
 			},
 		},
 		{
+			name: 'SwapEventV2',
+			type: {
+				kind: 'struct',
+				fields: [
+					{
+						name: 'input_mint',
+						type: 'pubkey',
+					},
+					{
+						name: 'input_amount',
+						type: 'u64',
+					},
+					{
+						name: 'output_mint',
+						type: 'pubkey',
+					},
+					{
+						name: 'output_amount',
+						type: 'u64',
+					},
+				],
+			},
+		},
+		{
+			name: 'SwapsEvent',
+			type: {
+				kind: 'struct',
+				fields: [
+					{
+						name: 'swap_events',
+						type: {
+							vec: {
+								defined: {
+									name: 'SwapEventV2',
+								},
+							},
+						},
+					},
+				],
+			},
+		},
+		{
 			name: 'TokenLedger',
 			type: {
 				kind: 'struct',
@@ -1144,6 +1573,56 @@ const jupV6Idl: Idl & any = {
 					{
 						name: 'amount',
 						type: 'u64',
+					},
+				],
+			},
+		},
+		{
+			name: 'BestSwapOutAmountViolation',
+			type: {
+				kind: 'struct',
+				fields: [
+					{
+						name: 'expected_out_amount',
+						type: 'u64',
+					},
+					{
+						name: 'out_amount',
+						type: 'u64',
+					},
+				],
+			},
+		},
+		{
+			name: 'CandidateSwapResult',
+			type: {
+				kind: 'enum',
+				variants: [
+					{
+						name: 'OutAmount',
+						fields: ['u64'],
+					},
+					{
+						name: 'ProgramError',
+						fields: ['u64'],
+					},
+				],
+			},
+		},
+		{
+			name: 'CandidateSwapResults',
+			type: {
+				kind: 'struct',
+				fields: [
+					{
+						name: 'results',
+						type: {
+							vec: {
+								defined: {
+									name: 'CandidateSwapResult',
+								},
+							},
+						},
 					},
 				],
 			},
