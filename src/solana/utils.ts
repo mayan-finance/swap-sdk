@@ -98,8 +98,7 @@ export async function submitTransactionWithRetry(
 					console.error('Simulation individual connections failed', err);
 					console.error('Transaction not submitted, remaining attempts:', rate - i - 1);
 					console.error(err);
-					// @ts-ignore
-					if (typeof err?.transactionMessage === 'string' && err.transactionMessage.indexOf('transaction has already been processed')) {
+					if (err && typeof err === 'object' && 'transactionMessage' in err && typeof err.transactionMessage === 'string' && err.transactionMessage.indexOf('transaction has already been processed')) {
 						if (signature) {
 							return {
 								signature,
