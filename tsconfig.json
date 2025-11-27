@@ -6,7 +6,7 @@
 		],
 		"target": "es2021",
 		// TODO: Add this back
-		"strict": false,
+		"strict": true,
 		"esModuleInterop": true,
 		"skipLibCheck": true,
 		"forceConsistentCasingInFileNames": true,

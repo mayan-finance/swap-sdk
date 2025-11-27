@@ -176,7 +176,7 @@ export async function resolveInputCoin(
 	coinType: string,
 	suiClient: SuiClient,
 	tx: Transaction,
-	preparedCoin: SuiFunctionParameter
+	preparedCoin?: SuiFunctionParameter | null
 ) {
 	let inputCoin:
 		| TransactionResult

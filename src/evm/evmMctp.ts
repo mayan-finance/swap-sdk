@@ -178,11 +178,15 @@ function getEvmMctpCreateOrderParams(
 
 	const deadline = BigInt(quote.deadline64);
 
+	if (quote.toChain === 'sui' && !quote.toToken.verifiedAddress) {
+		throw new Error('To token verified address is missing for SUI');
+	}
+
 	const tokenOut =
 		quote.toToken.contract === ZeroAddress ?
 			nativeAddressToHexString(SystemProgram.programId.toString(), getWormholeChainIdByName('solana')) :
 			nativeAddressToHexString(
-				quote.toChain === 'sui' ? quote.toToken.verifiedAddress : quote.toToken.contract,
+				quote.toChain === 'sui' ? quote.toToken.verifiedAddress! : quote.toToken.contract,
 				quote.toToken.wChainId,
 			);
 
@@ -232,7 +236,7 @@ function getEvmMctpCreateOrderTxPayload(
 
 export async function getMctpFromEvmTxPayload(
 	quote: Quote, destinationAddress: string, referrerAddress: string | null | undefined,
-	signerChainId: number | string, permit: Erc20Permit | null, payload: Uint8Array | Buffer | null | undefined,
+	signerChainId: number | string, permit: Erc20Permit | null | undefined, payload: Uint8Array | Buffer | null | undefined,
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 
 	if (quote.type !== 'MCTP') {
@@ -327,6 +331,9 @@ export async function getMctpFromEvmTxPayload(
 			const mctpPayloadIx = getEvmMctpCreateOrderTxPayload(
 				quote, destinationAddress, referrerAddress, signerChainId
 			);
+			if (!quote.minMiddleAmount) {
+				throw new Error('MCTP swap requires middle amount');
+			}
 			const minMiddleAmount = getAmountOfFractionalAmount(quote.minMiddleAmount, CCTP_TOKEN_DECIMALS);
 
 			if (quote.fromToken.contract === ZeroAddress) {
@@ -391,6 +398,9 @@ export async function getMctpFromEvmTxPayload(
 			const mctpPayloadIx = getEvmMctpBridgeTxPayload(
 				quote, destinationAddress, signerChainId, payload
 			);
+			if (!quote.minMiddleAmount) {
+				throw new Error('MCTP swap requires middle amount');
+			}
 			const minMiddleAmount = getAmountOfFractionalAmount(quote.minMiddleAmount, CCTP_TOKEN_DECIMALS);
 
 			if (quote.fromToken.contract === ZeroAddress) {

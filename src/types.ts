@@ -23,7 +23,7 @@ export type Token = {
 	mint: string,
 	contract: string,
 	chainId: number,
-	wChainId?: number,
+	wChainId: number,
 	decimals: number,
 	logoURI: string,
 	coingeckoId: string,
@@ -173,6 +173,8 @@ export type Quote = {
 	swiftVerifiedInputAddress: string;
 	swiftVersion: 'V1' | 'V2';
 	quoteId: string;
+	expectedAmountOutBaseUnits: string;
+	minReceivedBaseUnits: string;
 };
 
 export type QuoteOptions = {
@@ -208,9 +210,9 @@ type BaseGetSolanaSwapParams = {
 	middleToken: string,
 	userWallet: string,
 	slippageBps: number,
-	referrerAddress?: string,
+	referrerAddress?: string | null,
 	fillMaxAccounts?: boolean,
-	tpmTokenAccount?: string,
+	tpmTokenAccount?: string | null,
 	chainName: ChainName,
 }
 
@@ -256,9 +258,9 @@ type BaseGetSuiSwapParams = {
 	inputCoinType: string,
 	middleCoinType: string,
 	userWallet: string,
-	referrerAddress?: string,
-	inputCoin: SuiFunctionParameter,
-	transaction: string,
+	referrerAddress?: string | null,
+	inputCoin?: SuiFunctionParameter | null,
+	transaction?: string | null,
 	chainName: ChainName,
 	slippageBps: number,
 }
@@ -269,7 +271,7 @@ type BaseGetEvmSwapParams = {
 	amountIn64: string,
 	fromToken: string
 	middleToken: string,
-	referrerAddress?: string,
+	referrerAddress?: string | null,
 	slippageBps: number,
 }
 
@@ -365,10 +367,10 @@ export type JitoBundleOptions = {
 }
 
 export type ComposableSuiMoveCallsOptions = {
-	builtTransaction?: SuiTransaction;
-	inputCoin?: SuiFunctionParameter;
-	whFeeCoin?: SuiFunctionParameter;
-	usdcPermitSignature?: string;
+	builtTransaction?: SuiTransaction | null;
+	inputCoin?: SuiFunctionParameter | null;
+	whFeeCoin?: SuiFunctionParameter | null;
+	usdcPermitSignature?: string | null;
 };
 
 export type SwapMessageV0Params = {
@@ -396,7 +398,7 @@ export type SolanaBridgeOptions = {
 	allowSwapperOffCurve?: boolean,
 	forceSkipCctpInstructions?: boolean,
 	separateSwapTx?: boolean,
-	usdcPermitSignature?: string;
+	usdcPermitSignature?: string | null;
 	skipProxyMayanInstructions?: boolean;
 	customPayload?: Buffer | Uint8Array | null;
 }

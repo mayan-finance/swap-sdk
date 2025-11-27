@@ -50,16 +50,12 @@ export async function createHyperCoreDepositFromSuiMoveCalls(
 		fetchMayanSuiPackageId(addresses.SUI_MCTP_STATE, suiClient),
 	]);
 
-	const amountInMin = getAmountOfFractionalAmount(
-		quote.minMiddleAmount,
-		CCTP_TOKEN_DECIMALS
-	);
 	let tx: Transaction;
 	let inputCoin:
 		| TransactionResult
 		| SuiFunctionNestedResult
 		| { $kind: 'Input'; Input: number; type?: 'object' };
-	let whFeeCoin: SuiFunctionParameter;
+	let whFeeCoin: SuiFunctionParameter | null = null;
 
 	// Setup tx based on we should have client swap or not
 	if (quote.fromToken.contract === quote.hyperCoreParams.initiateTokenContract) {
@@ -86,6 +82,8 @@ export async function createHyperCoreDepositFromSuiMoveCalls(
 			referrerAddress,
 			inputCoin: options?.inputCoin,
 			transaction: options?.builtTransaction ? (await options.builtTransaction.toJSON()) : undefined,
+			chainName: 'sui',
+			slippageBps: quote.slippageBps,
 		});
 		tx = Transaction.from(serializedTx);
 		const [initiateCoin] = tx.splitCoins(
@@ -130,6 +128,10 @@ export async function createHyperCoreDepositFromSuiMoveCalls(
 	// Log initial coin and amount
 	const amountIn = BigInt(quote.effectiveAmountIn64);
 	const _payload = Uint8Array.from(payload);
+
+	if (!quote.fromToken.verifiedAddress) {
+		throw new Error('From token verified address is required from Sui');
+	}
 	tx.moveCall({
 		package: mctpPackageId,
 		module: 'init_order',
@@ -146,7 +148,7 @@ export async function createHyperCoreDepositFromSuiMoveCalls(
 		// Log referrer
 		let referrerHex: string;
 		if (referrerAddress) {
-			referrerHex = nativeAddressToHexString(referrerAddress, getWormholeChainIdByName(quote.toChain));
+			referrerHex = nativeAddressToHexString(referrerAddress, getWormholeChainIdByName('arbitrum'));
 		} else {
 			referrerHex = nativeAddressToHexString(
 				SystemProgram.programId.toString(),

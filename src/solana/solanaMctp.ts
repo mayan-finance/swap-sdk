@@ -221,7 +221,10 @@ function createMctpBridgeLockFeeInstruction(
 	});
 	instructions[1] = bridgeIns;
 
-	return {instructions, signer: cctpMessage};
+	return {
+		instructions: instructions as [TransactionInstruction, TransactionInstruction],
+		signer: cctpMessage
+	};
 }
 
 const MctpInitSwapLayout = struct<any>([
@@ -425,10 +428,10 @@ type CreateMctpSwapLedgerInstructionParams = {
 	feeSolana: bigint,
 	feeRedeem: number,
 	gasDrop: number,
-	amountInMin64?: bigint,
+	amountInMin64: bigint,
 	tokenOut: string,
 	tokenOutDecimals: number,
-	referrerAddress: string,
+	referrerAddress?: string | null,
 	amountOutMin: number,
 	deadline: bigint,
 	feeRateRef: number,
@@ -568,6 +571,9 @@ export async function createMctpFromSolanaInstructions(
 		throw new Error('Missing verified address for SUI coin');
 	}
 	const tokenOut = quote.toChain === 'sui' ? quote.toToken.verifiedAddress : quote.toToken.contract;
+	if (!tokenOut) {
+		throw new Error('Missing token out address');
+	}
 
 	if (options.customPayload && quote.hasAuction) {
 		throw new Error('Cannot use customPayload with create Mctp swap');
@@ -637,7 +643,7 @@ export async function createMctpFromSolanaInstructions(
 				referrerAddress: referrerAddress,
 				amountOutMin: quote.minAmountOut,
 				deadline,
-				feeRateRef: quote.referrerBps,
+				feeRateRef: quote.referrerBps || 0,
 				relayerAddress,
 			}), options.skipProxyMayanInstructions));
 			if (!forceSkipCctpInstructions) {
@@ -693,6 +699,9 @@ export async function createMctpFromSolanaInstructions(
 		}
 	}
 	else {
+		if (!quote.minMiddleAmount) {
+			throw new Error('Missing minMiddleAmount for swap');
+		}
 		const clientSwapRaw = await getSwapSolana({
 			minMiddleAmount: quote.minMiddleAmount,
 			middleToken: quote.mctpInputContract,
@@ -771,7 +780,7 @@ export async function createMctpFromSolanaInstructions(
 				referrerAddress: referrerAddress,
 				amountOutMin: quote.minAmountOut,
 				deadline,
-				feeRateRef: quote.referrerBps,
+				feeRateRef: quote.referrerBps || 0,
 				relayerAddress,
 			}), options.skipProxyMayanInstructions));
 			if (swapInstructions.length > 0) {

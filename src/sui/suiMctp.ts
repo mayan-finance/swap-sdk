@@ -53,7 +53,7 @@ export async function createMctpFromSuiMoveCalls(
 		| TransactionResult
 		| SuiFunctionNestedResult
 		| { $kind: 'Input'; Input: number; type?: 'object' };
-	let whFeeCoin: SuiFunctionParameter;
+	let whFeeCoin: SuiFunctionParameter | null = null;
 
 	// Setup tx based on we should have client swap or not
 	if (quote.fromToken.contract === quote.mctpInputContract) {
@@ -90,6 +90,9 @@ export async function createMctpFromSuiMoveCalls(
 
 	// Adding move calls based on quote type
 	if (quote.hasAuction) {
+		if (!feeManagerPackageId) {
+			throw new Error('Fee manager package ID is not found for swap quote');
+		}
 		await addInitOrderMoveCalls(
 			quote,
 			swapperAddress,
@@ -215,12 +218,19 @@ export async function addBridgeLockedFeeMoveCalls(
 	const destChainId = getWormholeChainIdByName(quote.toChain);
 	const tx = options?.builtTransaction ?? new Transaction();
 
-	const amountInMin = quote.fromToken.contract === quote.mctpInputContract ?
-		BigInt(quote.effectiveAmountIn64) :
-		getAmountOfFractionalAmount(
+	let amountInMin: bigint;
+	if (quote.fromToken.contract === quote.mctpInputContract) {
+		amountInMin = BigInt(quote.effectiveAmountIn64)
+	} else {
+		if (!quote.minMiddleAmount) {
+			throw new Error('minMiddleAmount is required for bridge locked fee when fromToken is different than mctpInputContract');
+		}
+		amountInMin = getAmountOfFractionalAmount(
 			quote.minMiddleAmount,
 			CCTP_TOKEN_DECIMALS
 		);
+	}
+
 	const inputCoin = await resolveInputCoin(
 		BigInt(quote.effectiveAmountIn64),
 		swapperAddress,
@@ -315,12 +325,19 @@ export async function addInitOrderMoveCalls(
 	const destChainId = getWormholeChainIdByName(quote.toChain);
 	const tx = options?.builtTransaction ?? new Transaction();
 
-	const amountInMin = quote.fromToken.contract === quote.mctpInputContract ?
-		BigInt(quote.effectiveAmountIn64) :
-		getAmountOfFractionalAmount(
+	let amountInMin: bigint;
+	if (quote.fromToken.contract === quote.mctpInputContract) {
+		amountInMin = BigInt(quote.effectiveAmountIn64)
+	} else {
+		if (!quote.minMiddleAmount) {
+			throw new Error('minMiddleAmount is required for init order when fromToken is different than mctpInputContract');
+		}
+		amountInMin = getAmountOfFractionalAmount(
 			quote.minMiddleAmount,
 			CCTP_TOKEN_DECIMALS
 		);
+	}
+
 	const [inputCoin] = await Promise.all([
 		resolveInputCoin(
 			BigInt(quote.effectiveAmountIn64),
@@ -384,7 +401,7 @@ export async function addInitOrderMoveCalls(
 		tx.pure.u64(redeemFee),
 		tx.pure.u64(deadline),
 		tx.pure.address(referrerHex),
-		tx.pure.u8(quote.referrerBps),
+		tx.pure.u8(quote.referrerBps || 0),
 	];
 
 	const [feeManagerInitOrderParamsTicket] = tx.moveCall({
@@ -473,7 +490,7 @@ async function addPublishWormholeMessage(
 	suiClient: SuiClient,
 	bridgeFee: bigint,
 	feePayer: string,
-	suiCoin?: SuiFunctionParameter
+	suiCoin?: SuiFunctionParameter | null
 ): Promise<Transaction> {
 	let gasCoin:
 		| TransactionResult
@@ -530,7 +547,7 @@ export async function addBridgeWithFeeMoveCalls2(params:{
 	destinationAddress: string,
 	toChain: ChainName,
 	effectiveAmountIn64: string,
-	minMiddleAmount: number,
+	minMiddleAmount?: number | null,
 	mctpPackageId: string,
 	fromToken: Token,
 	mctpInputContract: string,
@@ -554,12 +571,19 @@ export async function addBridgeWithFeeMoveCalls2(params:{
 	const destChainId = getWormholeChainIdByName(params.toChain);
 	const tx = options?.builtTransaction ?? new Transaction();
 
-  const amountInMin = params.fromToken.contract === params.mctpInputContract ?
-    BigInt(params.effectiveAmountIn64) :
-    getAmountOfFractionalAmount(
-      params.minMiddleAmount,
-      CCTP_TOKEN_DECIMALS
-    );
+	let amountInMin: bigint;
+	if (params.fromToken.contract === params.mctpInputContract) {
+		amountInMin = BigInt(params.effectiveAmountIn64);
+	} else {
+		if (!params.minMiddleAmount) {
+			throw new Error('minMiddleAmount is required for bridge with fee when fromToken is different than mctpInputContract');
+		}
+		amountInMin = getAmountOfFractionalAmount(
+			params.minMiddleAmount,
+			CCTP_TOKEN_DECIMALS
+		);
+	}
+
   const inputCoin = await resolveInputCoin(
     BigInt(params.effectiveAmountIn64),
     swapperAddress,

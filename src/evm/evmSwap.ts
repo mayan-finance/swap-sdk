@@ -161,6 +161,9 @@ function getEvmSwapParams(
 			Math.min(8, quote.fromToken.decimals)
 		),
 	};
+	if (!quote.toToken.realOriginContractAddress || !quote.toToken.realOriginChainId) {
+		throw new Error('Missing toToken real origin contract address');
+	}
 	const tokenOut = nativeAddressToHexString(
 		quote.toToken.realOriginContractAddress,
 		quote.toToken.realOriginChainId
@@ -410,6 +413,7 @@ export async function swapFromEvm(
 		permit,
 		options
 	);
+	// @ts-ignore
 	delete transactionRequest._forwarder;
 
 	if (overrides?.gasPrice) {
@@ -447,7 +451,7 @@ export async function estimateQuoteRequiredGas(
 		quote.toChain === 'solana'
 			? 'ENsytooJVSZyNHbxvueUeX8Am8gcNqPivVVE8USCBiy5'
 			: '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
-	const signerChainId = Number((await signer.provider.getNetwork()).chainId);
+	const signerChainId = Number((await signer.provider!.getNetwork()).chainId);
 	if (quote.type === 'SWIFT' && quote.gasless) {
 		return BigInt(0);
 	}
@@ -461,6 +465,7 @@ export async function estimateQuoteRequiredGas(
 		payload,
 		permit
 	);
+	// @ts-ignore
 	delete transactionRequest._forwarder;
 
 	let baseGas = await signer.estimateGas(transactionRequest);
@@ -497,6 +502,7 @@ export async function estimateQuoteRequiredGasAprox(
 		payload,
 		permit
 	);
+	// @ts-ignore
 	delete transactionRequest._forwarder;
 
 	return provider.estimateGas(transactionRequest);

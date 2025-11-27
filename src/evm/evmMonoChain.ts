@@ -68,7 +68,7 @@ export function getMonoChainFromEvmTxPayload(
 	destinationAddress: string,
 	referrerAddress: string | null | undefined,
 	signerChainId: number | string,
-	permit: Erc20Permit | null,
+	permit: Erc20Permit | null | undefined,
 ): TransactionRequest & { _forwarder: EvmForwarderParams } {
 	if (quote.type !== 'MONO_CHAIN') {
 		throw new Error('Quote type is not MONO_CHAIN');

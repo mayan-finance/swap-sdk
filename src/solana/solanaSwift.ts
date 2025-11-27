@@ -120,12 +120,16 @@ export function createSwiftOrderHash(
 	data.set(refAddress, offset);
 	offset += 32;
 
-	data.writeUInt8(quote.referrerBps, offset);
+	data.writeUInt8(quote.referrerBps || 0, offset);
 	offset += 1;
 
-	const feeRateMayan = quote.protocolBps;
+	const feeRateMayan = quote.protocolBps || 0;
 	data.writeUInt8(feeRateMayan, offset);
 	offset += 1;
+
+	if (!quote.swiftAuctionMode) {
+		throw new Error('Missing swift auction mode');
+	}
 
 	data.writeUInt8(quote.swiftAuctionMode, offset);
 	offset += 1;
@@ -247,6 +251,10 @@ function createSwiftInitInstruction(
 		Buffer.from(hexToUint8Array(nativeAddressToHexString(params.referrerAddress, referrerChainId))) :
 		SystemProgram.programId.toBuffer();
 
+	if (!quote.minMiddleAmount) {
+		throw new Error('Missing min middle amount');
+	}
+
 	const minMiddleAmount: bigint =
 		quote.fromToken.contract === quote.swiftInputContract ?
 			BigInt(quote.effectiveAmountIn64) :
@@ -262,6 +270,10 @@ function createSwiftInitInstruction(
 	}
 
 	const _tokenOut = getSwiftToTokenHexString(quote);
+
+	if (!quote.submitRelayerFee64) {
+		throw new Error('Missing submit relayer fee');
+	}
 
 	InitSwiftLayout.encode({
 		instruction: getAnchorInstructionData('init_order'),
@@ -418,6 +430,9 @@ export async function createSwiftFromSolanaInstructions(
 			);
 		}
 	} else {
+		if (!quote.minMiddleAmount) {
+			throw new Error('Missing min middle amount for swap');
+		}
 		const clientSwapRaw = await getSwapSolana({
 			minMiddleAmount: quote.minMiddleAmount,
 			middleToken: quote.swiftInputContract,

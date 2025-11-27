@@ -80,7 +80,7 @@ function getEvmFastMctpBridgeParams(
 		destAddr: destinationAddressHex,
 		destDomain,
 		referrerAddr: referrerHex,
-		referrerBps: quote.referrerBps,
+		referrerBps: quote.referrerBps || 0,
 		payloadType: customPayload ? FAST_MCTP_PAYLOAD_TYPE_CUSTOM_PAYLOAD : FAST_MCTP_PAYLOAD_TYPE_DEFAULT,
 		customPayload: customPayload ? `0x${Buffer.from(customPayload).toString('hex')}` : '0x',
 		minFinalityThreshold: Number(quote.fastMctpMinFinality),
@@ -173,6 +173,9 @@ function getEvmFastMctpCreateOrderParams(
 	}
 
 	const redeemFee = getAmountOfFractionalAmount(quote.redeemRelayerFee, CCTP_TOKEN_DECIMALS);
+	if (!quote.refundRelayerFee64) {
+		throw new Error('Refund relayer fee is missing in quote');
+	}
 	const refundFee = BigInt(quote.refundRelayerFee64);
 	const circleMaxFee = BigInt(quote.circleMaxFee64);
 	const gasDrop = getAmountOfFractionalAmount(quote.gasDrop, Math.min(getGasDecimal(quote.toChain), 8));
@@ -185,11 +188,14 @@ function getEvmFastMctpCreateOrderParams(
 
 	const deadline = BigInt(quote.deadline64);
 
+	if (quote.toChain === 'sui' && !quote.toToken.verifiedAddress) {
+		throw new Error('To token verified address is missing for SUI');
+	}
 	const tokenOut =
 		quote.toToken.contract === ZeroAddress ?
 			nativeAddressToHexString(SystemProgram.programId.toString(), getWormholeChainIdByName('solana')) :
 			nativeAddressToHexString(
-				quote.toChain === 'sui' ? quote.toToken.verifiedAddress : quote.toToken.contract,
+				quote.toChain === 'sui' ? quote.toToken.verifiedAddress! : quote.toToken.contract,
 				quote.toToken.wChainId,
 			);
 
@@ -242,7 +248,7 @@ function getEvmFastMctpCreateOrderTxPayload(
 
 export async function getFastMctpFromEvmTxPayload(
 	quote: Quote, destinationAddress: string, referrerAddress: string | null | undefined,
-	signerChainId: number | string, permit: Erc20Permit | null, payload: Uint8Array | Buffer | null | undefined,
+	signerChainId: number | string, permit: Erc20Permit | null | undefined, payload: Uint8Array | Buffer | null | undefined,
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 
 	if (quote.type !== 'FAST_MCTP') {
@@ -331,6 +337,9 @@ export async function getFastMctpFromEvmTxPayload(
 			const fastMctpPayloadIx = getEvmFastMctpCreateOrderTxPayload(
 				quote, destinationAddress, referrerAddress, signerChainId
 			);
+			if (!quote.minMiddleAmount) {
+				throw new Error('minMiddleAmount is required for Fast MCTP swap');
+			}
 			const minMiddleAmount = getAmountOfFractionalAmount(quote.minMiddleAmount, CCTP_TOKEN_DECIMALS);
 
 			if (quote.fromToken.contract === ZeroAddress) {
@@ -384,6 +393,9 @@ export async function getFastMctpFromEvmTxPayload(
 			const fastMctpPayloadIx = getEvmFastMctpBridgeTxPayload(
 				quote, destinationAddress, referrerAddress, signerChainId, payload
 			);
+			if (!quote.minMiddleAmount) {
+				throw new Error('minMiddleAmount is required for Fast MCTP swap');
+			}
 			const minMiddleAmount = getAmountOfFractionalAmount(quote.minMiddleAmount, CCTP_TOKEN_DECIMALS);
 
 			if (quote.fromToken.contract === ZeroAddress) {

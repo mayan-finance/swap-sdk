@@ -118,6 +118,10 @@ export function getEvmSwiftParams(
 
 	const destinationAddressHex = nativeAddressToHexString(destinationAddress, destChainId);
 
+	if (!quote.swiftAuctionMode) {
+		throw new Error('Swift order requires auction mode');
+	}
+
 	const orderParams: SwiftOrderParams = {
 		payloadType: customPayload ? SWIFT_PAYLOAD_TYPE_CUSTOM_PAYLOAD : SWIFT_PAYLOAD_TYPE_DEFAULT,
 		trader: nativeAddressToHexString(swapperAddress, sourceChainId),
@@ -146,7 +150,7 @@ export function getEvmSwiftParams(
 
 export async function getSwiftFromEvmTxPayload(
 	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
-	signerChainId: number | string, permit: Erc20Permit | null, customPayload: Buffer | Uint8Array | null | undefined
+	signerChainId: number | string, permit: Erc20Permit | null | undefined, customPayload: Buffer | Uint8Array | null | undefined
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 	if (quote.type !== 'SWIFT') {
 		throw new Error('Quote type is not SWIFT');
@@ -279,6 +283,12 @@ export function getSwiftOrderTypeData(
 		throw new Error('Invalid signer chain id');
 	}
 
+	if (!quote.submitRelayerFee64) {
+		throw new Error('Swift gasless order requires submit relayer fee');
+	}
+	if (!quote.swiftMayanContract) {
+		throw new Error('Swift contract address is missing in quote');
+	}
 	const totalAmountIn = BigInt(quote.effectiveAmountIn64);
 	const submitFee = BigInt(quote.submitRelayerFee64);
 	return {
@@ -304,7 +314,7 @@ export function getSwiftOrderTypeData(
 
 export type SwiftEvmGasLessParams = {
 	swiftVersion: string;
-	permitParams: Erc20Permit;
+	permitParams: Erc20Permit | null | undefined;
 	orderHash: string;
 	orderParams: {
 		trader: string;
@@ -331,7 +341,7 @@ export type SwiftEvmGasLessParams = {
 
 export function getSwiftFromEvmGasLessParams(
 	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
-	signerChainId: number | string, permit: Erc20Permit | null, customPayload: Buffer | Uint8Array | null | undefined
+	signerChainId: number | string, permit: Erc20Permit | null | undefined, customPayload: Buffer | Uint8Array | null | undefined
 ): SwiftEvmGasLessParams {
 	if (quote.type !== 'SWIFT') {
 		throw new Error('Quote type is not SWIFT');
@@ -351,6 +361,10 @@ export function getSwiftFromEvmGasLessParams(
 
 	if (quote.fromToken.contract !== quote.swiftInputContract) {
 		throw new Error('Swift gasless order creation does not support source swap');
+	}
+
+	if (!quote.submitRelayerFee64) {
+		throw new Error('Swift gasless order requires submit relayer fee');
 	}
 
 	const {

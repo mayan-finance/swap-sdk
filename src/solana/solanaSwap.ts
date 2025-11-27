@@ -75,7 +75,7 @@ const SwapLayout = struct<any>([
 export async function createSwapFromSolanaInstructions(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
 	referrerAddresses: ReferrerAddresses | null | undefined,
-	connection?: Connection, options: SolanaBridgeOptions = {}
+	connection: Connection, options: SolanaBridgeOptions = {}
 ): Promise<{
 	instructions: Array<TransactionInstruction>,
 	signers: Array<Keypair>,
@@ -316,7 +316,7 @@ export async function swapFromSolana(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
 	referrerAddresses: ReferrerAddresses | null | undefined,
 	signTransaction: SolanaTransactionSigner,
-	connection?: Connection,
+	connection: Connection,
 	extraRpcs?: string[],
 	sendOptions?: SendOptions,
 	jitoOptions?: JitoBundleOptions,
@@ -331,8 +331,6 @@ export async function swapFromSolana(
 	signature: string,
 	serializedTrx: Uint8Array | null,
 }> {
-	const solanaConnection = connection ??
-		new Connection('https://rpc.ankr.com/solana');
 
 	const jitoEnabled = !!(
 		!quote.gasless &&
@@ -374,6 +372,7 @@ export async function swapFromSolana(
 			authorizedPubkey: feePayer,
 		}), ..._instructions];
 		recentBlockhash = nonce;
+		lastValidBlockHeight = 0;
 	} else {
 		feePayer = new PublicKey(swapperWalletAddress);
 		instructions = _instructions;
@@ -398,6 +397,9 @@ export async function swapFromSolana(
 	if (jitoEnabled && !quote.gasless) {
 		const allTransactions: Array<Transaction | VersionedTransaction> = [];
 		if (swapMessageV0Params) {
+			if (!lastValidBlockHeight) {
+				throw new Error('lastValidBlockHeight is missing');
+			}
 			const createTmpTokenAccount = new Transaction({
 				feePayer: swapper,
 				blockhash: recentBlockhash,
@@ -418,6 +420,7 @@ export async function swapFromSolana(
 		signedTrx = signedTrxs[signedTrxs.length - 2];
 		let mayanTxHash = null;
 		if (signedTrx instanceof Transaction && signedTrx?.signatures[0]?.publicKey) {
+			// @ts-ignore
 			mayanTxHash = bs58.encode(Uint8Array.from(signedTrx.signatures[0].signature));
 		} else if (signedTrx instanceof VersionedTransaction && signedTrx?.signatures[0]) {
 			mayanTxHash = bs58.encode(Uint8Array.from(signedTrx.signatures[0]));
@@ -451,7 +454,7 @@ export async function swapFromSolana(
 
 	return await submitTransactionWithRetry({
 		trx: signedTrx.serialize(),
-		connection: solanaConnection,
+		connection,
 		extraRpcs: extraRpcs ?? [],
 		errorChance: 2,
 		options: sendOptions,

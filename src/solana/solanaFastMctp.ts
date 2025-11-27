@@ -321,10 +321,10 @@ type CreateFastMctpOrderLedgerInstructionParams = {
 	feeRedeem: bigint,
 	feeRefund: bigint,
 	gasDrop: number,
-	amountInMin64?: bigint,
+	amountInMin64: bigint,
 	tokenOut: string,
 	tokenOutDecimals: number,
-	referrerAddress: string,
+	referrerAddress?: string | null,
 	amountOutMin: number,
 	deadline: bigint,
 	feeRateRef: number,
@@ -478,6 +478,9 @@ export async function createFastMctpFromSolanaInstructions(
 	}
 
 	const tokenOut = quote.toChain === 'sui' ? quote.toToken.verifiedAddress : quote.toToken.contract;
+	if (!tokenOut) {
+		throw new Error('Missing tokenOut address in quote');
+	}
 
 	if (quote.toChain === 'sui') {
 		throw new Error('Fast MCTP does not support SUI as destination chain');
@@ -513,6 +516,9 @@ export async function createFastMctpFromSolanaInstructions(
 		);
 	}
 
+	if (!quote.redeemRelayerFee64) {
+		throw new Error('Missing redeem relayer fee in quote');
+	}
 	if (quote.fromToken.contract === quote.fastMctpInputContract) {
 		// If forceSkip is false then user will execute the cctp instructions by themselves
 		const feeSolana: bigint = forceSkipCctpInstructions ? BigInt(quote.solanaRelayerFee64) : BigInt(0);
@@ -535,6 +541,9 @@ export async function createFastMctpFromSolanaInstructions(
 			))
 		);
 		if (quote.hasAuction) {
+			if (!quote.refundRelayerFee64) {
+				throw new Error('Missing refund relayer fee in quote');
+			}
 			instructions.push(sandwichInstructionInCpiProxy(createFastMctpOrderLedgerInstruction({
 				ledger,
 				swapperAddress,
@@ -552,7 +561,7 @@ export async function createFastMctpFromSolanaInstructions(
 				referrerAddress: referrerAddress,
 				amountOutMin: quote.minAmountOut,
 				deadline,
-				feeRateRef: quote.referrerBps,
+				feeRateRef: quote.referrerBps || 0,
 				relayerAddress,
 				maxCircleFee: BigInt(quote.circleMaxFee64),
 				minFinalityThreshold: quote.fastMctpMinFinality,
@@ -583,7 +592,7 @@ export async function createFastMctpFromSolanaInstructions(
 				referrerAddress,
 				relayerAddress,
 				customPayload: customPayloadAccount,
-				feeRateRef: quote.referrerBps,
+				feeRateRef: quote.referrerBps || 0,
 				maxCircleFee: BigInt(quote.circleMaxFee64),
 				minFinalityThreshold: quote.fastMctpMinFinality,
 			}), options.skipProxyMayanInstructions));
@@ -600,6 +609,9 @@ export async function createFastMctpFromSolanaInstructions(
 		}
 	}
 	else {
+		if (!quote.minMiddleAmount) {
+			throw new Error('Missing min middle amount in quote');
+		}
 		const clientSwapRaw = await getSwapSolana({
 			minMiddleAmount: quote.minMiddleAmount,
 			middleToken: quote.fastMctpInputContract,
@@ -662,6 +674,9 @@ export async function createFastMctpFromSolanaInstructions(
 
 
 		if (quote.hasAuction) {
+			if (!quote.refundRelayerFee64) {
+				throw new Error('Missing refund relayer fee in quote');
+			}
 			instructions.push(sandwichInstructionInCpiProxy(createFastMctpOrderLedgerInstruction({
 				ledger,
 				swapperAddress,
@@ -679,7 +694,7 @@ export async function createFastMctpFromSolanaInstructions(
 				referrerAddress: referrerAddress,
 				amountOutMin: quote.minAmountOut,
 				deadline,
-				feeRateRef: quote.referrerBps,
+				feeRateRef: quote.referrerBps || 0,
 				relayerAddress,
 				maxCircleFee: BigInt(quote.circleMaxFee64),
 				minFinalityThreshold: quote.fastMctpMinFinality,
@@ -708,7 +723,7 @@ export async function createFastMctpFromSolanaInstructions(
 				gasDrop: quote.gasDrop,
 				amountInMin64: getAmountOfFractionalAmount(quote.minMiddleAmount, CCTP_TOKEN_DECIMALS),
 				referrerAddress,
-				feeRateRef: quote.referrerBps,
+				feeRateRef: quote.referrerBps || 0,
 				relayerAddress,
 				customPayload: customPayloadAccount,
 				maxCircleFee: BigInt(quote.circleMaxFee64),

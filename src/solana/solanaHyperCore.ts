@@ -178,6 +178,9 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			payloadNonce,
 		)));
 	} else {
+		if (!quote.minMiddleAmount) {
+			throw new Error('minMiddleAmount is required for swap');
+		}
 		const clientSwapRaw = await getSwapSolana({
 			minMiddleAmount: quote.minMiddleAmount,
 			middleToken: quote.hyperCoreParams.initiateTokenContract,
