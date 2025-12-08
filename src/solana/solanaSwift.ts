@@ -251,15 +251,15 @@ function createSwiftInitInstruction(
 		Buffer.from(hexToUint8Array(nativeAddressToHexString(params.referrerAddress, referrerChainId))) :
 		SystemProgram.programId.toBuffer();
 
-	if (!quote.minMiddleAmount) {
-		throw new Error('Missing min middle amount');
+	let minMiddleAmount: bigint;
+	if (quote.fromToken.contract === quote.swiftInputContract) {
+		minMiddleAmount = BigInt(quote.effectiveAmountIn64);
+	} else {
+		if (!quote.minMiddleAmount) {
+			throw new Error('Missing min middle amount');
+		}
+		minMiddleAmount = getAmountOfFractionalAmount(quote.minMiddleAmount, quote.swiftInputDecimals);
 	}
-
-	const minMiddleAmount: bigint =
-		quote.fromToken.contract === quote.swiftInputContract ?
-			BigInt(quote.effectiveAmountIn64) :
-			getAmountOfFractionalAmount(quote.minMiddleAmount, quote.swiftInputDecimals);
-
 
 	if (quote.toChain === 'sui' && !quote.toToken.verifiedAddress) {
 		throw new Error('Missing verified address for SUI coin');
@@ -326,11 +326,15 @@ export async function createSwiftFromSolanaInstructions(
 	if (quote.type !== 'SWIFT') {
 		throw new Error('Unsupported quote type for Swift: ' + quote.type);
 	}
-	if (quote.toChain === 'solana') {
-		throw new Error('Unsupported destination chain: ' + quote.toChain);
+	if (quote.toChain === quote.fromChain) {
+		throw new Error('Unsupported same chains: ' + quote.toChain);
 	}
-	if (quote.swiftVersion !== 'V2' && (quote.toChain === 'sui' || quote.toChain === 'ton')) {
-		throw new Error('Swift V2 is required for SUI and TON chain');
+	if (
+		quote.swiftVersion !== 'V2' && (
+			quote.toChain === 'sui' || quote.toChain === 'ton' || quote.toChain !== 'fogo'
+		)
+	) {
+		throw new Error('Swift V2 is required for' + quote.toChain);
 	}
 	const quoteSwiftVersion = quote.swiftVersion;
 
@@ -441,11 +445,11 @@ export async function createSwiftFromSolanaInstructions(
 			fromToken: quote.fromToken.contract,
 			amountIn64: quote.effectiveAmountIn64,
 			depositMode: quote.gasless ? 'SWIFT_GASLESS' : 'SWIFT',
-			orderHash: `0x${hash.toString('hex')}`,
 			fillMaxAccounts: options?.separateSwapTx || false,
 			tpmTokenAccount: options?.separateSwapTx ? tmpSwapTokenAccount.publicKey.toString() : null,
 			referrerAddress: referrerAddress || undefined,
 			chainName: quote.fromChain,
+			userLedger: state.toString(),
 		});
 		if (quote.swiftVersion !== quoteSwiftVersion) {
 			throw new Error('Quote mutation is not allowed');

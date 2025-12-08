@@ -222,8 +222,8 @@ type MctpGetSolanaSwapParams = BaseGetSolanaSwapParams & {
 }
 
 type SwiftGetSolanaSwapParams = BaseGetSolanaSwapParams & {
-	orderHash: string,
 	depositMode: 'SWIFT' | 'SWIFT_GASLESS',
+	userLedger: string,
 }
 
 type HCDepositUSDCGetSolanaSwapParams = BaseGetSolanaSwapParams & {
