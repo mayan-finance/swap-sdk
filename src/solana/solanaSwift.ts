@@ -331,7 +331,7 @@ export async function createSwiftFromSolanaInstructions(
 	}
 	if (
 		quote.swiftVersion !== 'V2' && (
-			quote.toChain === 'sui' || quote.toChain === 'ton' || quote.toChain !== 'fogo'
+			quote.toChain === 'sui' || quote.toChain === 'ton' || quote.toChain === 'fogo'
 		)
 	) {
 		throw new Error('Swift V2 is required for' + quote.toChain);
