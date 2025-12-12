@@ -786,7 +786,6 @@ export function validateJupSwapInstructionData(instruction: TransactionInstructi
 		quoted_out_amount: bigint;
 		slippage_bps: number;
 		platform_fee_bps: number;
-		route_plan: Array<{ swap: object, percent: number, input_index: number, output_index: number }>;
 	};
 	if (args.in_amount > BigInt(quote.effectiveAmountIn64)) {
 		throw new Error('Invalid swap instruction:: amount in');
