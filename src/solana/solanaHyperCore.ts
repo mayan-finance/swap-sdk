@@ -229,7 +229,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			if (clientSwap.setupInstructions) {
 				instructions.push(...(clientSwap.setupInstructions.map(ins => sandwichInstructionInCpiProxy(ins))));
 			}
-			instructions.push(sandwichInstructionInCpiProxy(clientSwap.swapInstruction));
+			instructions.push(clientSwap.swapInstruction);
 			if (clientSwap.cleanupInstruction) {
 				instructions.push(sandwichInstructionInCpiProxy(clientSwap.cleanupInstruction));
 			}

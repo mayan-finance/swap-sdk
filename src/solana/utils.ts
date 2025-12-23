@@ -41,7 +41,7 @@ export async function submitTransactionWithRetry(
 		errorChance,
 		extraRpcs,
 		options,
-		rate = 8,
+		rate = 4,
 	}: {
 		trx: Uint8Array;
 		connection: Connection;
@@ -112,7 +112,7 @@ export async function submitTransactionWithRetry(
 				}
 			}
 		}
-		await wait(5000);
+		await wait(3000);
 	}
 
 	if (!signature) {
@@ -533,13 +533,7 @@ export function getJitoTipTransfer(
 }
 
 const defaultJitoSendBundleUrls = [
-	'https://mainnet.block-engine.jito.wtf/api/v1/bundles',
-	'https://amsterdam.mainnet.block-engine.jito.wtf/api/v1/bundles',
-	'https://frankfurt.mainnet.block-engine.jito.wtf/api/v1/bundles',
-	'https://london.mainnet.block-engine.jito.wtf/api/v1/bundles',
-	'https://ny.mainnet.block-engine.jito.wtf/api/v1/bundles',
-	'https://tokyo.mainnet.block-engine.jito.wtf/api/v1/bundles',
-	'https://slc.mainnet.block-engine.jito.wtf/api/v1/bundles',
+	'https://mayan-jito.mayan.finance/v1/bundles',
 ]
 
 async function postJitoBundle(
@@ -639,7 +633,7 @@ export async function confirmJitoBundleId(
 	const timeout = 30 * 3000;
 	const startTime = Date.now();
 	while (Date.now() - startTime < timeout && (await connection.getBlockHeight()) <= lastValidBlockHeight) {
-		await wait(1050);
+		await wait(2050);
 		const urls = options.jitoSendUrl ? [options.jitoSendUrl] : defaultJitoSendBundleUrls;
 		const bundleStatuses = await Promise.any(urls.map(url => getJitoBundleStatuses([bundleId], url)));
 

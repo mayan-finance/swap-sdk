@@ -110,7 +110,7 @@ export async function createMonoChainFromSolanaInstructions(
 	if (clientSwap.setupInstructions) {
 		instructions.push(...(clientSwap.setupInstructions.map(ins => sandwichInstructionInCpiProxy(ins))));
 	}
-	instructions.push(sandwichInstructionInCpiProxy(clientSwap.swapInstruction, options?.skipProxyMayanInstructions));
+	instructions.push(clientSwap.swapInstruction);
 	if (clientSwap.cleanupInstruction) {
 		instructions.push(sandwichInstructionInCpiProxy(clientSwap.cleanupInstruction));
 	}
