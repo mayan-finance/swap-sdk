@@ -92,7 +92,7 @@ If you need more control over the transaction and manually send the trx you can 
 ### Bridge from EVM:
 
 ```javascript
-swapTrx = await swapFromEvm(quotes[0], destinationWalletAddress, referrerAddress, provider, signer, permit?)
+swapTrx = await swapFromEvm(quotes[0], swapperAddress, destinationWalletAddress, referrerAddress, provider, signer, permit?)
 ```
 
 #### ERC20 Allowance
