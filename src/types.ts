@@ -64,6 +64,7 @@ export type QuoteParams = {
 	gasDrop?: number;
 	referrer?: string;
 	referrerBps?: number;
+	destinationAddress?: string;
 };
 
 export type QuoteError = {
@@ -229,6 +230,8 @@ type SwiftGetSolanaSwapParams = BaseGetSolanaSwapParams & {
 type HCDepositUSDCGetSolanaSwapParams = BaseGetSolanaSwapParams & {
 	tpmTokenAccount: string,
 	depositMode: 'HC_USDC',
+	userLedger: string,
+	quoteType: 'MCTP' | 'FAST_MCTP'
 }
 
 type MonoChainGetSolanaSwapParams = Omit<
@@ -382,8 +385,9 @@ export type SwapMessageV0Params = {
 export type PermitDomain = {
 	name: string;
 	version: string;
-	chainId: number;
 	verifyingContract: string;
+	chainId?: number;
+	salt?: string;
 };
 
 export type PermitValue = {

@@ -169,7 +169,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [12, 2, 3];
+const sdkVersion = [12, 2, 4];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -304,11 +304,18 @@ export const SWIFT_PAYLOAD_TYPE_DEFAULT = 1;
 export const SWIFT_PAYLOAD_TYPE_CUSTOM_PAYLOAD = 2;
 
 export async function getPermitDomain(token: Token, provider: JsonRpcProvider): Promise<PermitDomain> {
-	const contract = new ethers.Contract(token.contract, ERC20Artifact.abi, provider);
+	const contract = new ethers.Contract(
+		token.contract,
+		ERC20Artifact.abi,
+		provider
+	);
 	let domainSeparator: string;
 	let name: string;
 	try {
-		let [_domainSeparator, _name] = await Promise.all([contract.DOMAIN_SEPARATOR(), contract.name()]);
+		let [_domainSeparator, _name] = await Promise.all([
+			contract.DOMAIN_SEPARATOR(),
+			contract.name(),
+		]);
 		domainSeparator = _domainSeparator;
 		name = _name;
 	} catch (err) {
@@ -328,6 +335,77 @@ export async function getPermitDomain(token: Token, provider: JsonRpcProvider): 
 		domain.version = String(i);
 		const hash = TypedDataEncoder.hashDomain(domain);
 		if (hash.toLowerCase() === domainSeparator.toLowerCase()) {
+			return domain;
+		}
+	}
+	/// now trying to catch legacy domain
+	const salt = ethers.zeroPadValue(ethers.toBeHex(token.chainId), 32);
+	const LEGACY_DOMAIN_TYPEHASH = ethers.keccak256(
+		ethers.toUtf8Bytes(
+			'EIP712Domain(string name,string version,address verifyingContract,bytes32 salt)'
+		)
+	);
+	if (
+		token.realOriginChainId &&
+		token.realOriginContractAddress &&
+		token.wChainId !== token.realOriginChainId
+	) {
+		// Wormhole Token Bridge Wrapped Token
+		const whChainId2Bytes = new Uint8Array(2);
+		whChainId2Bytes[0] = (token.realOriginChainId >> 8) & 0xff;
+		whChainId2Bytes[1] = token.realOriginChainId & 0xff;
+
+		const packed = new Uint8Array(2 + 32);
+		packed.set(whChainId2Bytes, 0);
+		packed.set(
+			ethers.getBytes(ethers.zeroPadValue(token.realOriginContractAddress, 32)),
+			2
+		);
+
+		const salt = ethers.keccak256(packed);
+		const DOMAIN_TYPEHASH = ethers.keccak256(
+			ethers.toUtf8Bytes(
+				'EIP712Domain(string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)'
+			)
+		);
+		for (let i = 0; i < 11; i++) {
+			const hash = ethers.keccak256(
+				new ethers.AbiCoder().encode(
+					['bytes32', 'bytes32', 'bytes32', 'uint256', 'address', 'bytes32'],
+					[
+						DOMAIN_TYPEHASH,
+						ethers.keccak256(ethers.toUtf8Bytes(name)),
+						ethers.keccak256(ethers.toUtf8Bytes(String(i))),
+						token.chainId,
+						token.contract,
+						salt,
+					]
+				)
+			);
+			if (hash.toLowerCase() === domainSeparator.toLowerCase()) {
+				domain.version = String(i);
+				domain.salt = salt;
+				return domain;
+			}
+		}
+	}
+	for (let i = 0; i < 11; i++) {
+		const hash = ethers.keccak256(
+			new ethers.AbiCoder().encode(
+				['bytes32', 'bytes32', 'bytes32', 'address', 'bytes32'],
+				[
+					LEGACY_DOMAIN_TYPEHASH,
+					ethers.keccak256(ethers.toUtf8Bytes(name)),
+					ethers.keccak256(ethers.toUtf8Bytes(String(i))),
+					token.contract,
+					salt,
+				]
+			)
+		);
+		if (hash.toLowerCase() === domainSeparator.toLowerCase()) {
+			delete domain.chainId;
+			domain.version = String(i);
+			domain.salt = salt;
 			return domain;
 		}
 	}

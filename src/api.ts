@@ -118,6 +118,7 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		referrer: params.referrer,
 		referrerBps: Number.isFinite(referrerBps) ? referrerBps : undefined,
 		gasDrop: Number.isFinite(gasDrop) ? gasDrop : undefined,
+		destinationAddress: params.destinationAddress ?? undefined,
 		sdkVersion: getSdkVersion(),
 	};
 	const baseUrl = `${addresses.PRICE_URL}/quote?`;
