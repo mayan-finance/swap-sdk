@@ -45,7 +45,7 @@ const FastMctpBridgeLayout = struct<any>([
 
 export function createFastMctpBridgeInstruction(
 	ledger: PublicKey, trader: PublicKey, toChain: ChainName, mintAddress: string,
-	relayerAddress: string, feeSolana: bigint, fromChain: ChainName
+	relayerAddress: string, feeSolana: bigint
 ): {
 	instruction: TransactionInstruction;
 	signers: Keypair[];
@@ -601,7 +601,7 @@ export async function createFastMctpFromSolanaInstructions(
 					instruction: _instruction,
 					signers: _signers
 				} = createFastMctpBridgeInstruction(
-					ledger, user, quote.toChain, quote.fastMctpInputContract, relayerAddress, feeSolana, quote.fromChain
+					ledger, user, quote.toChain, quote.fastMctpInputContract, relayerAddress, feeSolana
 				);
 				instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 				signers.push(..._signers);
@@ -734,7 +734,7 @@ export async function createFastMctpFromSolanaInstructions(
 					instruction: _instruction,
 					signers: _signers
 				} = createFastMctpBridgeInstruction(
-					ledger, user, quote.toChain, quote.fastMctpInputContract, relayerAddress, feeSolana, quote.fromChain
+					ledger, user, quote.toChain, quote.fastMctpInputContract, relayerAddress, feeSolana
 				);
 				instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
 				signers.push(..._signers);

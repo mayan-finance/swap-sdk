@@ -27,6 +27,7 @@ import {
 	validateJupSwap
 } from './utils';
 import { createMctpBridgeLedgerInstruction, createMctpBridgeWithFeeInstruction } from './solanaMctp';
+import { createFastMctpBridgeLedgerInstruction, createFastMctpBridgeInstruction } from './solanaFastMctp';
 
 export async function createHyperCoreDepositFromSolanaInstructions(
 	quote: Quote,
@@ -43,7 +44,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 }> {
 	if (
 		quote.toToken.contract.toLowerCase() !== addresses.ARBITRUM_USDC_CONTRACT.toLowerCase() ||
-		quote.type !== 'MCTP'
+		(quote.type !== 'MCTP' && quote.type !== 'FAST_MCTP')
 	) {
 		throw new Error('Unsupported quote type for USDC deposit: ' + quote.type);
 	}
@@ -94,18 +95,44 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 	);
 	const payload = getHyperCoreUSDCDepositCustomPayload(quote, destinationAddress, options.usdcPermitSignature);
 
-	const mctpRandomKey = Keypair.generate();
 
+	const mctpRandomKey = Keypair.generate();
 	const mctpProgram = new PublicKey(addresses.MCTP_PROGRAM_ID);
 
-	const [ledger] = PublicKey.findProgramAddressSync(
-		[
-			Buffer.from('LEDGER_BRIDGE'),
-			trader.toBytes(),
-			mctpRandomKey.publicKey.toBytes(),
-		],
-		mctpProgram
-	);
+	const fastMctpRandomKey = Math.floor(Math.random() * 65000);
+	const fastMctpProgram = new PublicKey(addresses.FAST_MCTP_PROGRAM_ID);
+
+	let ledger: PublicKey | undefined = undefined;
+	if (quote.type === 'MCTP') {
+		const [_ledger] = PublicKey.findProgramAddressSync(
+			[
+				Buffer.from('LEDGER_BRIDGE'),
+				trader.toBytes(),
+				mctpRandomKey.publicKey.toBytes(),
+			],
+			mctpProgram
+		);
+		ledger = _ledger;
+	} else if (quote.type === 'FAST_MCTP') {
+		const [_ledger] = PublicKey.findProgramAddressSync(
+			[
+				Buffer.from('LEDGER_BRIDGE'),
+				trader.toBytes(),
+				(() => {
+					const buf = Buffer.alloc(2);
+					buf.writeUInt16LE(fastMctpRandomKey, 0);
+					return buf;
+				})(),
+			],
+			fastMctpProgram
+		);
+		ledger = _ledger;
+	}
+
+	if (!ledger) {
+		throw new Error('Unsupported quote type for USDC deposit: ' + quote.type);
+	}
+
 	const ledgerAccount = getAssociatedTokenAddress(
 		inputMint, ledger, true
 	);
@@ -141,37 +168,87 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 				payloadNonce
 			))
 		);
-		instructions.push(
-			sandwichInstructionInCpiProxy(createMctpBridgeLedgerInstruction({
-				ledger,
-				randomKey: mctpRandomKey.publicKey,
-				swapperAddress: trader.toString(),
-				mintAddress: inputMint.toString(),
-				mode: 'WITH_FEE',
-				feeSolana: BigInt(0),
-				amountInMin64: BigInt(quote.hyperCoreParams.bridgeAmountUSDC64),
-				customPayload: payloadAccount,
-				destinationAddress: addresses.HC_ARBITRUM_DEPOSIT_PROCESSOR,
-				referrerAddress,
-				feeRedeem: 0,
-				gasDrop: quote.hyperCoreParams.failureGasDrop,
-				toChain: 'arbitrum',
-				relayerAddress,
-			}), options.skipProxyMayanInstructions)
-		);
-		const {
-			instruction: _instruction,
-			signers: _signers
-		} = createMctpBridgeWithFeeInstruction(
-			ledger,
-			'arbitrum',
-			quote.hyperCoreParams.initiateTokenContract,
-			relayerAddress,
-			BigInt(0),
-			quote.fromChain,
-		);
-		instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
-		signers.push(..._signers);
+		if (quote.type === 'MCTP') {
+			instructions.push(
+				sandwichInstructionInCpiProxy(
+					createMctpBridgeLedgerInstruction({
+						ledger,
+						randomKey: mctpRandomKey.publicKey,
+						swapperAddress: trader.toString(),
+						mintAddress: inputMint.toString(),
+						mode: 'WITH_FEE',
+						feeSolana: BigInt(0),
+						amountInMin64: BigInt(quote.hyperCoreParams.bridgeAmountUSDC64),
+						customPayload: payloadAccount,
+						destinationAddress: addresses.HC_ARBITRUM_DEPOSIT_PROCESSOR,
+						referrerAddress,
+						feeRedeem: 0,
+						gasDrop: quote.hyperCoreParams.failureGasDrop,
+						toChain: 'arbitrum',
+						relayerAddress,
+					}),
+					options.skipProxyMayanInstructions
+				)
+			);
+			const { instruction: _instruction, signers: _signers } =
+				createMctpBridgeWithFeeInstruction(
+					ledger,
+					'arbitrum',
+					quote.hyperCoreParams.initiateTokenContract,
+					relayerAddress,
+					BigInt(0),
+					quote.fromChain
+				);
+			instructions.push(
+				sandwichInstructionInCpiProxy(
+					_instruction,
+					options.skipProxyMayanInstructions
+				)
+			);
+			signers.push(..._signers);
+		} else if (quote.type === 'FAST_MCTP') {
+			instructions.push(
+				sandwichInstructionInCpiProxy(
+					createFastMctpBridgeLedgerInstruction({
+						ledger,
+						randomKey: fastMctpRandomKey,
+						swapperAddress: trader.toString(),
+						mintAddress: inputMint.toString(),
+						feeSolana: BigInt(0),
+						amountInMin64: BigInt(quote.hyperCoreParams.bridgeAmountUSDC64),
+						customPayload: payloadAccount,
+						destinationAddress: addresses.HC_ARBITRUM_DEPOSIT_PROCESSOR,
+						referrerAddress,
+						feeRedeem: BigInt(0),
+						gasDrop: quote.hyperCoreParams.failureGasDrop,
+						toChain: 'arbitrum',
+						relayerAddress,
+						feeRateRef: quote.referrerBps || 0,
+						maxCircleFee: BigInt(quote.circleMaxFee64),
+						minFinalityThreshold: quote.fastMctpMinFinality,
+					}),
+					options.skipProxyMayanInstructions,
+				)
+			);
+			const { instruction: _instruction, signers: _signers } =
+				createFastMctpBridgeInstruction(
+					ledger,
+					trader,
+					'arbitrum',
+					quote.hyperCoreParams.initiateTokenContract,
+					relayerAddress,
+					BigInt(0),
+				);
+			instructions.push(
+				sandwichInstructionInCpiProxy(
+					_instruction,
+					options.skipProxyMayanInstructions
+				)
+			);
+			signers.push(..._signers);
+		} else {
+			throw new Error('Unsupported quote type for USDC deposit: ' + quote.type);
+		}
 		instructions.push(sandwichInstructionInCpiProxy(createPayloadWriterCloseInstruction(
 			trader,
 			payloadAccount,
@@ -193,6 +270,8 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			tpmTokenAccount: tmpSwapTokenAccount.publicKey.toString(),
 			referrerAddress: referrerAddress || undefined,
 			chainName: quote.fromChain,
+			userLedger: ledger.toString(),
+			quoteType: quote.type,
 		});
 		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection);
 
@@ -243,7 +322,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 		}
 
 		instructions.push(sandwichInstructionInCpiProxy(createAssociatedTokenAccountInstruction(
-			trader, ledgerAccount, ledger, new PublicKey(quote.mctpInputContract)
+			trader, ledgerAccount, ledger, inputMint
 		)));
 
 		instructions.push(
@@ -284,41 +363,98 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			))
 		);
 
-		instructions.push(sandwichInstructionInCpiProxy(createMctpBridgeLedgerInstruction({
-			ledger,
-			swapperAddress: trader.toString(),
-			mintAddress: inputMint.toString(),
-			randomKey: mctpRandomKey.publicKey,
-			mode: 'WITH_FEE',
-			feeSolana,
-			amountInMin64: initiateAmountUSDC64,
-			customPayload: payloadAccount,
-			destinationAddress: addresses.HC_ARBITRUM_DEPOSIT_PROCESSOR,
-			referrerAddress,
-			feeRedeem: 0,
-			gasDrop: quote.hyperCoreParams.failureGasDrop,
-			toChain: 'arbitrum',
-			relayerAddress,
-		}), options.skipProxyMayanInstructions));
+		if (quote.type === 'MCTP') {
+			instructions.push(
+				sandwichInstructionInCpiProxy(
+					createMctpBridgeLedgerInstruction({
+						ledger,
+						swapperAddress: trader.toString(),
+						mintAddress: inputMint.toString(),
+						randomKey: mctpRandomKey.publicKey,
+						mode: 'WITH_FEE',
+						feeSolana,
+						amountInMin64: initiateAmountUSDC64,
+						customPayload: payloadAccount,
+						destinationAddress: addresses.HC_ARBITRUM_DEPOSIT_PROCESSOR,
+						referrerAddress,
+						feeRedeem: 0,
+						gasDrop: quote.hyperCoreParams.failureGasDrop,
+						toChain: 'arbitrum',
+						relayerAddress,
+					}),
+					options.skipProxyMayanInstructions
+				)
+			);
+		} else if (quote.type === 'FAST_MCTP') {
+			instructions.push(
+				sandwichInstructionInCpiProxy(
+					createFastMctpBridgeLedgerInstruction({
+						ledger,
+						randomKey: fastMctpRandomKey,
+						swapperAddress: trader.toString(),
+						mintAddress: inputMint.toString(),
+						feeSolana,
+						amountInMin64: initiateAmountUSDC64,
+						customPayload: payloadAccount,
+						destinationAddress: addresses.HC_ARBITRUM_DEPOSIT_PROCESSOR,
+						referrerAddress,
+						feeRedeem: BigInt(0),
+						gasDrop: quote.hyperCoreParams.failureGasDrop,
+						toChain: 'arbitrum',
+						relayerAddress,
+						feeRateRef: quote.referrerBps || 0,
+						maxCircleFee: BigInt(quote.circleMaxFee64),
+						minFinalityThreshold: quote.fastMctpMinFinality,
+					}),
+					options.skipProxyMayanInstructions
+				)
+			);
+		} else {
+			throw new Error('Unsupported quote type');
+		}
 		instructions.push(sandwichInstructionInCpiProxy(createPayloadWriterCloseInstruction(
 			trader,
 			payloadAccount,
 			payloadNonce,
 		)));
 		if (swapInstructions.length > 0) {
-			const {
-				instruction: _instruction,
-				signers: _signers
-			} = createMctpBridgeWithFeeInstruction(
-				ledger,
-				'arbitrum',
-				quote.hyperCoreParams.initiateTokenContract,
-				relayerAddress,
-				BigInt(0),
-				quote.fromChain,
-			);
-			instructions.push(sandwichInstructionInCpiProxy(_instruction, options.skipProxyMayanInstructions));
-			signers.push(..._signers);
+			if (quote.type === 'MCTP') {
+				const { instruction: _instruction, signers: _signers } =
+					createMctpBridgeWithFeeInstruction(
+						ledger,
+						'arbitrum',
+						quote.hyperCoreParams.initiateTokenContract,
+						relayerAddress,
+						BigInt(0),
+						quote.fromChain
+					);
+				instructions.push(
+					sandwichInstructionInCpiProxy(
+						_instruction,
+						options.skipProxyMayanInstructions
+					)
+				);
+				signers.push(..._signers);
+			} else if (quote.type === 'FAST_MCTP') {
+				const { instruction: _instruction, signers: _signers } =
+					createFastMctpBridgeInstruction(
+						ledger,
+						trader,
+						'arbitrum',
+						quote.hyperCoreParams.initiateTokenContract,
+						relayerAddress,
+						BigInt(0)
+					);
+				instructions.push(
+					sandwichInstructionInCpiProxy(
+						_instruction,
+						options.skipProxyMayanInstructions
+					)
+				);
+				signers.push(..._signers);
+			} else {
+				throw new Error('Unsupported quote type');
+			}
 		}
 	}
 
