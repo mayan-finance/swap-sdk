@@ -419,11 +419,14 @@ export async function swapFromSolana(
 		const signedTrxs = await jitoOptions.signAllTransactions(allTransactions);
 		signedTrx = signedTrxs[signedTrxs.length - 2];
 		let mayanTxHash = null;
-		if (signedTrx instanceof Transaction && signedTrx?.signatures[0]?.publicKey) {
-			// @ts-ignore
-			mayanTxHash = bs58.encode(Uint8Array.from(signedTrx.signatures[0].signature));
-		} else if (signedTrx instanceof VersionedTransaction && signedTrx?.signatures[0]) {
-			mayanTxHash = bs58.encode(Uint8Array.from(signedTrx.signatures[0]));
+		// Use duck-typing instead of instanceof to handle cross-bundle class identity issues
+		// (e.g., wallet returns VersionedTransaction from their bundled @solana/web3.js)
+		const isVersionedTx = 'version' in signedTrx;
+		if (isVersionedTx && signedTrx.signatures[0]) {
+			mayanTxHash = bs58.encode(Uint8Array.from(signedTrx.signatures[0] as Uint8Array));
+		} else if (!isVersionedTx && (signedTrx.signatures[0] as any)?.publicKey) {
+			// Legacy Transaction has signatures as {signature, publicKey} objects
+			mayanTxHash = bs58.encode(Uint8Array.from((signedTrx.signatures[0] as any).signature));
 		}
 
 		if (mayanTxHash === null) {
