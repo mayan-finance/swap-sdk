@@ -80,7 +80,11 @@ export function getEvmSwiftParams(
 
 	const deadline = BigInt(quote.deadline64);
 
-	const tokenIn = quote.swiftInputContract;
+	if (quote.swiftWrapAndLock && quote.fromToken.contract !== ZeroAddress && quote.swiftVersion !== 'V2') {
+		throw new Error('Invalid wrap & lock');
+	}
+
+	const tokenIn = quote.swiftWrapAndLock ? ZeroAddress : quote.swiftInputContract;
 	const amountIn = BigInt(quote.effectiveAmountIn64);
 	let referrerHex: string;
 	const referrerChainId = quote.swiftVersion === 'V2' ? sourceChainId : destChainId;
@@ -191,9 +195,12 @@ export async function getSwiftFromEvmTxPayload(
 	);
 
 	if (quote.swiftInputContract === ZeroAddress) {
+		if (quote.swiftVersion === 'V2') {
+			throw new Error(`Swift V2 doesn't support createOrderWithEth`);
+		}
 		swiftCallData = swiftContract.interface.encodeFunctionData(
 			'createOrderWithEth',
-			quote.swiftVersion === 'V2' ? [order, swiftCustomPayload] : [order]
+			[order]
 		);
 	} else {
 		swiftCallData = swiftContract.interface.encodeFunctionData(
@@ -208,6 +215,9 @@ export async function getSwiftFromEvmTxPayload(
 
 	if (quote.fromToken.contract === quote.swiftInputContract) {
 		if (quote.fromToken.contract === ZeroAddress) {
+			if (quote.swiftVersion === 'V2') {
+				throw new Error(`Swift V2 doesn't support createOrderWithEth`);
+			}
 			forwarderMethod = 'forwardEth';
 			forwarderParams = [swiftContractAddress, swiftCallData];
 			value = toBeHex(amountIn);

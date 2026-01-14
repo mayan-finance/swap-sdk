@@ -142,6 +142,7 @@ export type Quote = {
 	swiftAuctionMode?: number;
 	swiftInputContract: string;
 	swiftInputDecimals: number;
+	swiftWrapAndLock: boolean;
 	gasless: boolean;
 	relayer: string;
 	sendTransactionCost: number;
