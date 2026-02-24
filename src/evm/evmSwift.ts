@@ -80,7 +80,7 @@ export function getEvmSwiftParams(
 
 	const deadline = BigInt(quote.deadline64);
 
-	if (quote.swiftWrapAndLock && quote.fromToken.contract !== ZeroAddress && quote.swiftVersion !== 'V2') {
+	if (quote.swiftWrapAndLock && quote.swiftVersion !== 'V2') {
 		throw new Error('Invalid wrap & lock');
 	}
 
