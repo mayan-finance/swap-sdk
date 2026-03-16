@@ -190,6 +190,7 @@ export type QuoteOptions = {
 	fullList?: boolean;
 	payload?: string;
 	monoChain?: boolean;
+	apiKey?: string;
 };
 
 export type SolanaTransactionSigner = {

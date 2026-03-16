@@ -42,7 +42,7 @@ import {
 	getJitoTipTransfer,
 	sendJitoBundle,
 	confirmJitoBundleId,
-	broadcastJitoBundleId
+	broadcastJitoBundleId, getTransactionFirstSignature
 } from './utils';
 import { createMctpFromSolanaInstructions } from "./solanaMctp";
 import { createSwiftFromSolanaInstructions } from './solanaSwift';
@@ -326,6 +326,9 @@ export async function swapFromSolana(
 		usdcPermitSignature?: string | null,
 		skipProxyMayanInstructions?: boolean,
 		customPayload?: Buffer | Uint8Array | null,
+	},
+	extraParams?: {
+		onTransactionSigned: (signature: string) => void;
 	}
 ): Promise<{
 	signature: string,
@@ -418,23 +421,13 @@ export async function swapFromSolana(
 		allTransactions.push(jitoTipTransfer);
 		const signedTrxs = await jitoOptions.signAllTransactions(allTransactions);
 		signedTrx = signedTrxs[signedTrxs.length - 2];
-		let mayanTxHash = null;
-		// Use duck-typing instead of instanceof to handle cross-bundle class identity issues
-		// (e.g., wallet returns VersionedTransaction from their bundled @solana/web3.js)
-		const isVersionedTx = 'version' in signedTrx;
-		if (isVersionedTx && signedTrx.signatures[0]) {
-			mayanTxHash = bs58.encode(Uint8Array.from(signedTrx.signatures[0] as Uint8Array));
-		} else if (!isVersionedTx && (signedTrx.signatures[0] as any)?.publicKey) {
-			// Legacy Transaction has signatures as {signature, publicKey} objects
-			mayanTxHash = bs58.encode(Uint8Array.from((signedTrx.signatures[0] as any).signature));
-		}
-
-		if (mayanTxHash === null) {
-			throw new Error('Failed to get mayan tx hash');
-		}
+		const mayanTxHash = getTransactionFirstSignature(signedTrx);
 
 		if (swapMessageV0Params) {
 			const jitoBundleId = await sendJitoBundle(signedTrxs, jitoOptions, true);
+			if (extraParams && typeof extraParams.onTransactionSigned === 'function') {
+				extraParams.onTransactionSigned(mayanTxHash);
+			}
 			await confirmJitoBundleId(jitoBundleId, jitoOptions, lastValidBlockHeight, mayanTxHash, connection);
 			broadcastJitoBundleId(jitoBundleId);
 			return {
@@ -453,6 +446,9 @@ export async function swapFromSolana(
 		const serializedTrx = Buffer.from(signedTrx.serialize()).toString('base64');
 		const { orderHash } = await submitSwiftSolanaSwap(serializedTrx, quote.fromChain);
 		return { signature: orderHash, serializedTrx: null };
+	}
+	if (extraParams && typeof extraParams.onTransactionSigned === 'function') {
+		extraParams.onTransactionSigned(getTransactionFirstSignature(signedTrx));
 	}
 
 	return await submitTransactionWithRetry({

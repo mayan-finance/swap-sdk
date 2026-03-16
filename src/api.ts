@@ -103,6 +103,7 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		fullList: quoteOptions.fullList === true, // default to false
 		payload: typeof quoteOptions.payload === 'string' ? quoteOptions.payload : undefined,
 		monoChain: quoteOptions.monoChain !== false, // default to true
+		apiKey: typeof quoteOptions.apiKey === 'string' ? quoteOptions.apiKey : undefined,
 	}
 	const queryParams: Record<string, any> = {
 		..._quoteOptions,
