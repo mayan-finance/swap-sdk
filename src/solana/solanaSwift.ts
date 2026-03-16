@@ -241,9 +241,6 @@ function createSwiftInitInstruction(
 		{pubkey: SystemProgram.programId, isWritable: false, isSigner: false},
 	];
 
-	accounts.forEach((account, index) => {
-		console.log(index, account.pubkey);
-	});
 	const data = Buffer.alloc(InitSwiftLayout.span);
 
 	const referrerChainId = quote.swiftVersion === 'V2' ? getWormholeChainIdByName('solana') : destinationChainId;
@@ -392,7 +389,6 @@ export async function createSwiftFromSolanaInstructions(
 	} else {
 		tokenProgramId = new PublicKey(addresses.TOKEN_PROGRAM_ID);
 	}
-	console.log({tokenProgramId})
 
 	const swiftInputMint = quote.swiftInputContract === ZeroAddress ? solMint : new PublicKey(quote.swiftInputContract);
 

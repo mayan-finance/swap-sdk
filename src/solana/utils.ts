@@ -923,3 +923,22 @@ export function getLookupTableAddress(chainName: ChainName): string {
 	}
 	throw new Error(`Unsupported chain name for lookup table: ${chainName}`);
 }
+
+export function getTransactionFirstSignature(signedTrx: Transaction | VersionedTransaction): string {
+	let txHash = null;
+	// Use duck-typing instead of instanceof to handle cross-bundle class identity issues
+	// (e.g., wallet returns VersionedTransaction from their bundled @solana/web3.js)
+	const isVersionedTx = 'version' in signedTrx;
+	if (isVersionedTx && signedTrx.signatures[0]) {
+		txHash = bs58.encode(Uint8Array.from(signedTrx.signatures[0] as Uint8Array));
+	} else if (!isVersionedTx && (signedTrx.signatures[0] as any)?.publicKey) {
+		// Legacy Transaction has signatures as {signature, publicKey} objects
+		txHash = bs58.encode(Uint8Array.from((signedTrx.signatures[0] as any).signature));
+	}
+
+	if (txHash === null) {
+		throw new Error('Failed to get mayan tx hash');
+	}
+
+	return txHash;
+}
