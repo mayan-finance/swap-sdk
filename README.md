@@ -30,6 +30,7 @@ const quotes = await fetchQuote({
 	gasDrop: 0.04, // optional
 	referrer: "YOUR SOLANA WALLET ADDRESS", // optional
 	referrerBps: 5, // optional
+	apiKey: "YOUR API KEY", // optional
 });
 ```
 > `slippageBps` can either be a specific basis point number or the string **"auto"**. When set to "auto", the system determines the safest slippage based on the input and output tokens.
@@ -56,6 +57,9 @@ optimism: 0.01 ETH
 unichain: 0.01 ETH
 base: 0.01 ETH
 ```
+
+#### API Key:
+> The optional `apiKey` parameter prevents the rate-limit-exceeded error on a per-IP basis. To obtain an API key, send a request to **support@mayan.finance**. For more details, see the [Quote API docs](https://docs.mayan.finance/integration/quote-api#api-key).
 
 #### Referrer fee:
 > If you want to receive [referrer fee](https://docs.mayan.finance/integration/referral), set the `referrer` param to your wallet address.
