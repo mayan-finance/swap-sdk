@@ -169,7 +169,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [13, 1, 0];
+const sdkVersion = [13, 2, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -478,6 +478,7 @@ export async function getHyperCoreUSDCDepositPermitParams(
 	quote: Quote,
 	userArbitrumAddress: string,
 	arbProvider: JsonRpcProvider,
+	apiKey?: string,
 ): Promise<{
 	domain: PermitDomain;
 	types: typeof PermitTypes;
@@ -519,7 +520,7 @@ export async function getHyperCoreUSDCDepositPermitParams(
 			arbProvider,
 			BigInt(quote.deadline64)
 		),
-		checkHyperCoreDeposit(userArbitrumAddress, quote.toToken.contract)
+		checkHyperCoreDeposit(userArbitrumAddress, quote.toToken.contract, apiKey)
 	]);
 	if (!isAllowed) {
 		throw new Error('Because of concurrency, deposit is not possible at the moment, please try again later');

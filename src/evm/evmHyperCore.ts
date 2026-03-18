@@ -180,6 +180,7 @@ export async function getHyperCoreDepositFromEvmTxPayload(
 	signerChainId: number | string, permit: Erc20Permit | null | undefined, payload: Uint8Array | Buffer | null | undefined,
 	options: {
 		usdcPermitSignature?: string;
+		apiKey?: string;
 	} = {}
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 
@@ -257,6 +258,7 @@ export async function getHyperCoreDepositFromEvmTxPayload(
 			referrerAddress: referrerAddress,
 			slippageBps: quote.slippageBps,
 			forwarderAddress: addresses.MAYAN_FORWARDER_CONTRACT,
+			apiKey: options?.apiKey,
 		});
 		if (!quote.minMiddleAmount) {
 			throw new Error('Fast Mctp swap requires middle amount, router address and calldata');

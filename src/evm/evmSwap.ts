@@ -194,6 +194,7 @@ export async function getSwapFromEvmTxPayload(
 	permit: Erc20Permit | null | undefined,
 	options?: {
 		usdcPermitSignature?: string;
+		apiKey?: string;
 	}
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 	const signerWormholeChainId = getWormholeChainIdById(Number(signerChainId));
@@ -231,7 +232,8 @@ export async function getSwapFromEvmTxPayload(
 			referrerAddress,
 			signerChainId,
 			permit,
-			payload
+			payload,
+			options?.apiKey,
 		);
 	}
 	if (quote.type === 'SWIFT') {
@@ -243,6 +245,7 @@ export async function getSwapFromEvmTxPayload(
 			signerChainId,
 			permit,
 			payload,
+			options?.apiKey,
 		);
 	}
 	if (quote.type === 'SHUTTLE') {
@@ -256,7 +259,8 @@ export async function getSwapFromEvmTxPayload(
 			referrerAddress,
 			signerChainId,
 			permit,
-			payload
+			payload,
+			options?.apiKey
 		);
 	}
 
@@ -365,6 +369,7 @@ export async function swapFromEvm(
 	payload: Uint8Array | Buffer | null | undefined,
 	options?: {
 		usdcPermitSignature?: string;
+		apiKey?: string;
 	}
 ): Promise<TransactionResponse | string> {
 	if (!signer.provider) {
@@ -399,7 +404,7 @@ export async function swapFromEvm(
 			gasLessParams.orderTypedData.types,
 			gasLessParams.orderTypedData.value
 		);
-		await submitSwiftEvmSwap(gasLessParams, signedOrderHash);
+		await submitSwiftEvmSwap(gasLessParams, signedOrderHash, options?.apiKey);
 		return gasLessParams.orderHash;
 	}
 	const transactionRequest = await getSwapFromEvmTxPayload(
@@ -444,7 +449,11 @@ export async function estimateQuoteRequiredGas(
 	swapperAddress: string,
 	signer: Signer,
 	permit: Erc20Permit | null | undefined,
-	payload: Uint8Array | Buffer | null | undefined
+	payload: Uint8Array | Buffer | null | undefined,
+	options?: {
+		usdcPermitSignature?: string;
+		apiKey?: string;
+	}
 ): Promise<bigint> {
 	const signerAddress = await signer.getAddress();
 	const sampleDestinationAddress: string =
@@ -463,7 +472,8 @@ export async function estimateQuoteRequiredGas(
 		signerAddress,
 		signerChainId,
 		payload,
-		permit
+		permit,
+		options,
 	);
 	// @ts-ignore
 	delete transactionRequest._forwarder;
@@ -481,7 +491,11 @@ export async function estimateQuoteRequiredGasAprox(
 	quote: Quote,
 	provider: ethers.JsonRpcProvider,
 	permit: Erc20Permit | null | undefined,
-	payload: Uint8Array | Buffer | null | undefined
+	payload: Uint8Array | Buffer | null | undefined,
+	options?: {
+		usdcPermitSignature?: string;
+		apiKey?: string;
+	},
 ): Promise<bigint> {
 	const signerAddress = '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
 	const sampleDestinationAddress: string =
@@ -500,7 +514,8 @@ export async function estimateQuoteRequiredGasAprox(
 		signerAddress,
 		signerChainId,
 		payload,
-		permit
+		permit,
+		options,
 	);
 	// @ts-ignore
 	delete transactionRequest._forwarder;
@@ -510,7 +525,8 @@ export async function estimateQuoteRequiredGasAprox(
 
 export async function estimateQuoteRequiredGasAprox2(
 	quote: Quote,
-	payload: Uint8Array | Buffer | null | undefined
+	payload: Uint8Array | Buffer | null | undefined,
+	apiKey?: string,
 ): Promise<{
 	estimateGas: bigint;
 	gasPrice: bigint;
@@ -539,7 +555,10 @@ export async function estimateQuoteRequiredGasAprox2(
 		signerAddress,
 		signerChainId,
 		payload,
-		undefined
+		undefined,
+		{
+			apiKey,
+		}
 	);
 
 	const { gasPrice, estimatedGas } =  await getEstimateGasEvm({
