@@ -513,6 +513,7 @@ export async function createMctpFromSolanaInstructions(
 		separateSwapTx?: boolean,
 		skipProxyMayanInstructions?: boolean,
 		customPayload?: Buffer | Uint8Array | null,
+		apiKey?: string,
 	} = {}
 ): Promise<{
 	instructions: TransactionInstruction[],
@@ -715,6 +716,7 @@ export async function createMctpFromSolanaInstructions(
 			tpmTokenAccount: options?.separateSwapTx ? tmpSwapTokenAccount.publicKey.toString() : null,
 			referrerAddress: referrerAddress || null,
 			chainName: quote.fromChain,
+			apiKey: options?.apiKey
 		});
 
 		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection, relayer);

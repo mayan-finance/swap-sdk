@@ -84,6 +84,7 @@ export async function createHyperCoreDepositFromSuiMoveCalls(
 			transaction: options?.builtTransaction ? (await options.builtTransaction.toJSON()) : undefined,
 			chainName: 'sui',
 			slippageBps: quote.slippageBps,
+			apiKey: options?.apiKey,
 		});
 		tx = Transaction.from(serializedTx);
 		const [initiateCoin] = tx.splitCoins(

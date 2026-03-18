@@ -154,7 +154,8 @@ export function getEvmSwiftParams(
 
 export async function getSwiftFromEvmTxPayload(
 	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
-	signerChainId: number | string, permit: Erc20Permit | null | undefined, customPayload: Buffer | Uint8Array | null | undefined
+	signerChainId: number | string, permit: Erc20Permit | null | undefined,
+	customPayload: Buffer | Uint8Array | null | undefined, apiKey?: string,
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 	if (quote.type !== 'SWIFT') {
 		throw new Error('Quote type is not SWIFT');
@@ -235,6 +236,7 @@ export async function getSwiftFromEvmTxPayload(
 			middleToken: quote.swiftInputContract,
 			chainName: quote.fromChain,
 			amountIn64: quote.effectiveAmountIn64,
+			apiKey: apiKey,
 		});
 		if (!quote.minMiddleAmount) {
 			throw new Error('Swift swap requires middle amount, router address and calldata');

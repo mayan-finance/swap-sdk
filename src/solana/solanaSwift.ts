@@ -29,6 +29,8 @@ import { getSwapSolana } from '../api';
 import {
 	createAssociatedTokenAccountInstruction,
 	createInitializeRandomTokenAccountInstructions,
+	createPayloadWriterCloseInstruction,
+	createPayloadWriterCreateInstruction,
 	createSplTransferInstruction,
 	createSyncNativeInstruction,
 	createTransferAllAndCloseInstruction,
@@ -38,7 +40,7 @@ import {
 	getLookupTableAddress,
 	sandwichInstructionInCpiProxy,
 	solMint,
-	validateJupSwap
+	validateJupSwap,
 } from './utils';
 
 export function createSwiftOrderHash(
@@ -310,9 +312,9 @@ export async function createSwiftFromSolanaInstructions(
 		allowSwapperOffCurve?: boolean,
 		separateSwapTx?: boolean,
     skipProxyMayanInstructions?: boolean,
+		customPayload?: Buffer | Uint8Array | null,
+		apiKey?: string,
 	} = {},
-	customPayload?: Buffer | Uint8Array | null,
-	customPayloadAccount?: string | null,
 ): Promise<{
 	instructions: TransactionInstruction[],
 	signers: Keypair[],
@@ -360,14 +362,14 @@ export async function createSwiftFromSolanaInstructions(
 	}
 	const deadline = BigInt(quote.deadline64);
 
-	if (customPayload && !customPayloadAccount) {
-		throw new Error('Custom payload account is required when custom payload is provided');
+	if (options?.customPayload && quote.swiftVersion !== 'V2') {
+		throw new Error('Custom payload is only supported for Swift V2');
 	}
 
 	const hash = createSwiftOrderHash(
 		quote, swapperAddress, destinationAddress,
 		referrerAddress, randomKey.toBuffer().toString('hex'),
-		customPayload
+		options?.customPayload
 	);
 
 	const chainDestBuffer = Buffer.alloc(2);
@@ -398,6 +400,33 @@ export async function createSwiftFromSolanaInstructions(
 
 	const relayer = quote.gasless ? new PublicKey(quote.relayer) : trader;
 	const relayerAccount = getAssociatedTokenAddress(swiftInputMint, relayer, false, tokenProgramId);
+
+	let customPayloadAccount: PublicKey | null = null;
+	const customPayloadNonce = Math.floor(Math.random() * 65000);
+
+	if (options?.customPayload) {
+		customPayloadAccount = PublicKey.findProgramAddressSync(
+			[
+				Buffer.from('PAYLOAD'),
+				relayer.toBuffer(),
+				(() => {
+					const buf = Buffer.alloc(2);
+					buf.writeUInt16LE(customPayloadNonce, 0);
+					return buf;
+				})(),
+			],
+			new PublicKey(addresses.PAYLOAD_WRITER_PROGRAM_ID)
+		)[0];
+		instructions.push(
+			sandwichInstructionInCpiProxy(createPayloadWriterCreateInstruction(
+				relayer,
+				customPayloadAccount,
+				Buffer.from(options?.customPayload),
+				customPayloadNonce
+			))
+		);
+	}
+
 	if (quote.fromToken.contract === quote.swiftInputContract) {
 		if (quote.suggestedPriorityFee > 0) {
 			instructions.push(ComputeBudgetProgram.setComputeUnitPrice({
@@ -446,6 +475,7 @@ export async function createSwiftFromSolanaInstructions(
 			referrerAddress: referrerAddress || undefined,
 			chainName: quote.fromChain,
 			userLedger: state.toString(),
+			apiKey: options?.apiKey,
 		});
 		if (quote.swiftVersion !== quoteSwiftVersion) {
 			throw new Error('Quote mutation is not allowed');
@@ -510,9 +540,17 @@ export async function createSwiftFromSolanaInstructions(
 		deadline,
 		referrerAddress,
     tokenProgramId,
-    customPayload,
+		customPayload: options?.customPayload,
     customPayloadAccount: customPayloadAccount ? new PublicKey(customPayloadAccount) : undefined,
 	}), options.skipProxyMayanInstructions));
+
+	if (options?.customPayload && customPayloadAccount) {
+		instructions.push(sandwichInstructionInCpiProxy(createPayloadWriterCloseInstruction(
+			relayer,
+			customPayloadAccount,
+			customPayloadNonce,
+		)));
+	}
 
 	const totalLookupTables = await getAddressLookupTableAccounts(_lookupTablesAddress.concat(_swapAddressLookupTables), connection);
 	lookupTables = totalLookupTables.slice(0, _lookupTablesAddress.length);
@@ -529,11 +567,6 @@ export async function createSwiftFromSolanaInstructions(
 			tmpTokenAccount: tmpSwapTokenAccount,
 		};
 	}
-
-  console.log({
-    randomKey: randomKey.toBuffer().toString('hex'),
-    hash: hash.toString('hex'),
-  })
 
   if (quote.swiftVersion !== quoteSwiftVersion) {
     throw new Error('Quote mutation is not allowed');

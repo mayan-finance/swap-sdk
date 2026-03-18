@@ -217,6 +217,7 @@ type BaseGetSolanaSwapParams = {
 	fillMaxAccounts?: boolean,
 	tpmTokenAccount?: string | null,
 	chainName: ChainName,
+	apiKey?: string,
 }
 
 type MctpGetSolanaSwapParams = BaseGetSolanaSwapParams & {
@@ -268,6 +269,7 @@ type BaseGetSuiSwapParams = {
 	transaction?: string | null,
 	chainName: ChainName,
 	slippageBps: number,
+	apiKey?: string,
 }
 
 type BaseGetEvmSwapParams = {
@@ -278,6 +280,7 @@ type BaseGetEvmSwapParams = {
 	middleToken: string,
 	referrerAddress?: string | null,
 	slippageBps: number,
+	apiKey?: string,
 }
 
 export type GetEvmSwapParams = BaseGetEvmSwapParams;
@@ -376,6 +379,7 @@ export type ComposableSuiMoveCallsOptions = {
 	inputCoin?: SuiFunctionParameter | null;
 	whFeeCoin?: SuiFunctionParameter | null;
 	usdcPermitSignature?: string | null;
+	apiKey?: string;
 };
 
 export type SwapMessageV0Params = {
@@ -407,6 +411,7 @@ export type SolanaBridgeOptions = {
 	usdcPermitSignature?: string | null;
 	skipProxyMayanInstructions?: boolean;
 	customPayload?: Buffer | Uint8Array | null;
+	apiKey?: string;
 }
 
 export type EstimateGasEvmParams = {

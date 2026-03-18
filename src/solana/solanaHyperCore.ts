@@ -272,6 +272,7 @@ export async function createHyperCoreDepositFromSolanaInstructions(
 			chainName: quote.fromChain,
 			userLedger: ledger.toString(),
 			quoteType: quote.type,
+			apiKey: options?.apiKey,
 		});
 		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection);
 

@@ -248,7 +248,8 @@ function getEvmFastMctpCreateOrderTxPayload(
 
 export async function getFastMctpFromEvmTxPayload(
 	quote: Quote, destinationAddress: string, referrerAddress: string | null | undefined,
-	signerChainId: number | string, permit: Erc20Permit | null | undefined, payload: Uint8Array | Buffer | null | undefined,
+	signerChainId: number | string, permit: Erc20Permit | null | undefined,
+	payload: Uint8Array | Buffer | null | undefined, apiKey?: string,
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 
 	if (quote.type !== 'FAST_MCTP') {
@@ -329,6 +330,7 @@ export async function getFastMctpFromEvmTxPayload(
 			referrerAddress: referrerAddress || undefined,
 			amountIn64: quote.effectiveAmountIn64,
 			chainName: quote.fromChain,
+			apiKey: apiKey,
 		})
 		if (quote.hasAuction) {
 			if (!Number(quote.deadline64)) {

@@ -502,10 +502,10 @@ export function getAnchorInstructionData(name: string): Buffer {
 	return Buffer.from(sha256(preimage)).subarray(0, 8);
 }
 
-export async function decideRelayer(): Promise<PublicKey> {
+export async function decideRelayer(apiKey?: string): Promise<PublicKey> {
 	let relayer: PublicKey;
 	try {
-		const suggestedRelayer = await getSuggestedRelayer();
+		const suggestedRelayer = await getSuggestedRelayer(apiKey);
 		relayer = new PublicKey(suggestedRelayer);
 	} catch (err) {
 		console.log('Relayer not found, using system program');
@@ -656,9 +656,9 @@ export async function confirmJitoBundleId(
 }
 
 
-export async function broadcastJitoBundleId(bundleId: string): Promise<void> {
+export async function broadcastJitoBundleId(bundleId: string, apiKey?: string): Promise<void> {
 	try {
-		await fetch("https://explorer-api.mayan.finance/v3/submit/jito-bundle", {
+		await fetch(`https://explorer-api.mayan.finance/v3/submit/jito-bundle${apiKey ? `?apiKey=${apiKey}` : ''}`, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",

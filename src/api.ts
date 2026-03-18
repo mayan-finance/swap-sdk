@@ -43,9 +43,14 @@ async function check5xxError(res: Response): Promise<void> {
 	}
 }
 
-export async function fetchAllTokenList(tokenStandards?: TokenStandard[]): Promise<{[index: string]: Token[]}> {
-	const query = tokenStandards ? `?standard=${tokenStandards.join(',')}` : '';
-	const res = await fetch(`${addresses.PRICE_URL}/tokens${query}`, {
+export async function fetchAllTokenList(
+	tokenStandards?: TokenStandard[], apiKey?: string
+): Promise<{[index: string]: Token[]}> {
+	const query = toQueryString({
+		standard: tokenStandards ? tokenStandards.join(',') : undefined,
+		apiKey,
+	});
+	const res = await fetch(`${addresses.PRICE_URL}/tokens?${query}`, {
 		method: 'GET',
 		redirect: 'follow',
 	});
@@ -57,11 +62,17 @@ export async function fetchAllTokenList(tokenStandards?: TokenStandard[]): Promi
 	throw new Error('Cannot fetch Mayan tokens!');
 }
 
-export async function fetchTokenList(chain: ChainName, nonPortal: boolean = false, tokenStandards?: TokenStandard[]): Promise<Token[]> {
+export async function fetchTokenList(
+	chain: ChainName,
+	nonPortal: boolean = false,
+	tokenStandards?: TokenStandard[],
+	apiKey?: string
+): Promise<Token[]> {
 	const queryParams = {
 		chain,
 		nonPortal,
 		standard: tokenStandards ? tokenStandards?.join(',') : undefined,
+		apiKey,
 	};
 	const res = await fetch(`${addresses.PRICE_URL}/tokens?${toQueryString(queryParams)}`);
 	await check5xxError(res);
@@ -155,8 +166,8 @@ export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions
 	return result.quotes as Quote[];
 }
 
-export async function getCurrentChainTime(chain: ChainName): Promise<number> {
-	const res = await fetch(`${addresses.PRICE_URL}/clock/${chain}`, {
+export async function getCurrentChainTime(chain: ChainName, apiKey?: string): Promise<number> {
+	const res = await fetch(`${addresses.PRICE_URL}/clock/${chain}${apiKey ? '?apiKey=' + apiKey : ''}`, {
 		method: 'GET',
 		redirect: 'follow',
 	});
@@ -168,8 +179,8 @@ export async function getCurrentChainTime(chain: ChainName): Promise<number> {
 	return result.clock;
 }
 
-export async function getSuggestedRelayer(): Promise<string> {
-	const res = await fetch(`${addresses.RELAYER_URL}/active-relayers?solanaProgram=${addresses.MAYAN_PROGRAM_ID}`, {
+export async function getSuggestedRelayer(apiKey?: string): Promise<string> {
+	const res = await fetch(`${addresses.RELAYER_URL}/active-relayers?solanaProgram=${addresses.MAYAN_PROGRAM_ID}${apiKey ? '&apiKey=' + apiKey : ''}`, {
 		method: 'GET',
 		redirect: 'follow',
 	});
@@ -202,9 +213,10 @@ export async function getSwapSolana(params : GetSolanaSwapParams): Promise<Solan
 export async function getSwapSui(params : GetSuiSwapParams): Promise<SuiClientSwap> {
 	const requestBody = JSON.stringify({
 		...params,
+		apiKey: undefined,
 		sdkVersion: getSdkVersion(),
 	});
-	const requestUrl = `${addresses.PRICE_URL}/get-swap/sui`;
+	const requestUrl = `${addresses.PRICE_URL}/get-swap/sui${params.apiKey ? '?apiKey=' + params.apiKey : ''}`;
 
 	const res = await fetch(requestUrl, {
 		method: 'POST',
@@ -244,8 +256,8 @@ export async function getSwapEvm(
 	return result;
 }
 
-export async function submitSwiftEvmSwap(params: SwiftEvmGasLessParams, signature: string): Promise<void> {
-	const res = await fetch(`${addresses.EXPLORER_URL}/submit/evm`, {
+export async function submitSwiftEvmSwap(params: SwiftEvmGasLessParams, signature: string, apiKey?: string): Promise<void> {
+	const res = await fetch(`${addresses.EXPLORER_URL}/submit/evm${apiKey ? '?apiKey=' + apiKey : ''}`, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
@@ -263,8 +275,8 @@ export async function submitSwiftEvmSwap(params: SwiftEvmGasLessParams, signatur
 	await check5xxError(res);
 }
 
-export async function submitSwiftSolanaSwap(signedTx: string, chainName: ChainName): Promise<{ orderHash: string }> {
-	const res = await fetch(`${addresses.EXPLORER_URL}/submit/v2/svm`, {
+export async function submitSwiftSolanaSwap(signedTx: string, chainName: ChainName, apiKey?: string): Promise<{ orderHash: string }> {
+	const res = await fetch(`${addresses.EXPLORER_URL}/submit/v2/svm${apiKey ? '?apiKey=' + apiKey : ''}`, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
@@ -283,11 +295,12 @@ export async function submitSwiftSolanaSwap(signedTx: string, chainName: ChainNa
 }
 
 
-export async function checkHyperCoreDeposit(destinationAddress: string, tokenAddress: string): Promise<boolean> {
+export async function checkHyperCoreDeposit(destinationAddress: string, tokenAddress: string, apiKey?: string): Promise<boolean> {
 	const query = toQueryString({
 		destWallet: destinationAddress,
 		destToken: tokenAddress,
 		sdkVersion: getSdkVersion(),
+		apiKey,
 	});
 	const res = await fetch(`${addresses.EXPLORER_URL}/hypercore/is-allowed?${query}`, {
 		method: 'GET',
@@ -332,11 +345,12 @@ export async function getEstimateGasEvm(
 export async function getSvmDurableNonce(
 	chainName: ChainName,
 	swapperAddress: string,
+	apiKey?: string,
 ): Promise<{
 	nonce: string;
 	publicKey: string;
 }> {
-	const res = await fetch(`${addresses.SWIFT_RELAYER_URL}/nonces/assign`, {
+	const res = await fetch(`${addresses.SWIFT_RELAYER_URL}/nonces/assign${apiKey ? '?apiKey=' + apiKey : ''}`, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',

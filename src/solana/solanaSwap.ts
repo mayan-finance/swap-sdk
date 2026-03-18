@@ -172,7 +172,7 @@ export async function createSwapFromSolanaInstructions(
 	] = await Promise.all([
 		solanaConnection.getMultipleAccountsInfo([fromAccount, toAccount], 'finalized'),
 		solanaConnection.getMinimumBalanceForRentExemption(STATE_SIZE),
-		decideRelayer(),
+		decideRelayer(options?.apiKey),
 	])
 
 	if (!fromAccountData || fromAccountData.data.length === 0) {
@@ -329,6 +329,7 @@ export async function swapFromSolana(
 	},
 	extraParams?: {
 		onTransactionSigned: (signature: string) => void;
+		apiKey?: string;
 	}
 ): Promise<{
 	signature: string,
@@ -360,6 +361,7 @@ export async function swapFromSolana(
 			usdcPermitSignature: instructionOptions?.usdcPermitSignature,
 			skipProxyMayanInstructions: instructionOptions?.skipProxyMayanInstructions === true, // default is false
 			customPayload: instructionOptions?.customPayload,
+			apiKey: extraParams?.apiKey,
 		}
 	);
 
@@ -369,7 +371,7 @@ export async function swapFromSolana(
 		const {
 			publicKey: noncePubkey,
 			nonce,
-		} = await getSvmDurableNonce(quote.fromChain, swapperWalletAddress);
+		} = await getSvmDurableNonce(quote.fromChain, swapperWalletAddress, extraParams?.apiKey);
 		instructions = [SystemProgram.nonceAdvance({
 			noncePubkey: new PublicKey(noncePubkey),
 			authorizedPubkey: feePayer,
@@ -429,7 +431,7 @@ export async function swapFromSolana(
 				extraParams.onTransactionSigned(mayanTxHash);
 			}
 			await confirmJitoBundleId(jitoBundleId, jitoOptions, lastValidBlockHeight, mayanTxHash, connection);
-			broadcastJitoBundleId(jitoBundleId);
+			broadcastJitoBundleId(jitoBundleId, extraParams?.apiKey);
 			return {
 				signature: mayanTxHash,
 				serializedTrx: null,
@@ -444,7 +446,7 @@ export async function swapFromSolana(
 	}
 	if (quote.gasless) {
 		const serializedTrx = Buffer.from(signedTrx.serialize()).toString('base64');
-		const { orderHash } = await submitSwiftSolanaSwap(serializedTrx, quote.fromChain);
+		const { orderHash } = await submitSwiftSolanaSwap(serializedTrx, quote.fromChain, extraParams?.apiKey);
 		return { signature: orderHash, serializedTrx: null };
 	}
 	if (extraParams && typeof extraParams.onTransactionSigned === 'function') {

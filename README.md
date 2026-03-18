@@ -59,7 +59,7 @@ base: 0.01 ETH
 ```
 
 #### API Key:
-> The optional `apiKey` parameter prevents the rate-limit-exceeded error on a per-IP basis. To obtain an API key, send a request to **support@mayan.finance**. For more details, see the [Quote API docs](https://docs.mayan.finance/integration/quote-api#api-key).
+> The optional `apiKey` parameter in `fetchQuote` prevents the rate-limit-exceeded error on a per-IP basis. If you are running the SDK in your backend, you can also pass `apiKey` to other SDK functions (e.g. `swapFromEvm`, `swapFromSolana`, token list fetchers, etc.) to benefit from higher rate limits across all API calls. To obtain an API key, see the [API Key docs](https://docs.mayan.finance/integration/quote-api#api-key).
 
 #### Referrer fee:
 > If you want to receive [referrer fee](https://docs.mayan.finance/integration/referral), set the `referrer` param to your wallet address.
