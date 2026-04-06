@@ -595,12 +595,25 @@ export function getNormalizeFactor(toChain: ChainName, quoteType: QuoteType): nu
 
 export function createSwiftRandomKey(quote: Quote) {
 	try {
-		const idBuf = Buffer.from(quote.quoteId.startsWith('0x') ? quote.quoteId.substring(2) : quote.quoteId, 'hex');
-		if (idBuf.length < 32) {
+		const idBuf = Buffer.from(
+			ethers.zeroPadValue(
+				Buffer.from(quote.quoteId.startsWith('0x') ? quote.quoteId.substring(2) : quote.quoteId, 'hex'),
+				16,
+			).substring('0x'.length), 'hex'
+		);
+		const memoBuf = quote.memoHex ?
+			Buffer.from(
+				ethers.zeroPadValue(
+					Buffer.from(quote.memoHex.startsWith('0x') ? quote.memoHex.substring(2) : quote.memoHex, 'hex'),
+					16
+				).substring(2), 'hex'
+			) : null;
+		if (memoBuf) {
+			return Buffer.concat([idBuf, memoBuf]);
+		} else {
 			const randomBuf = Keypair.generate().publicKey.toBytes();
-			return Buffer.concat([idBuf, randomBuf.slice(0, 32 - idBuf.length)]);
+			return Buffer.concat([idBuf, randomBuf.slice(0, 16)]);
 		}
-		return idBuf.subarray(0, 32);
 	} catch (err: any) {}
 	return Keypair.generate().publicKey.toBuffer();
 }
