@@ -177,6 +177,7 @@ export type Quote = {
 	quoteId: string;
 	expectedAmountOutBaseUnits: string;
 	minReceivedBaseUnits: string;
+	memoHex?: string;
 };
 
 export type QuoteOptions = {
@@ -191,6 +192,7 @@ export type QuoteOptions = {
 	payload?: string;
 	monoChain?: boolean;
 	apiKey?: string;
+	memoHex?: string,
 };
 
 export type SolanaTransactionSigner = {
