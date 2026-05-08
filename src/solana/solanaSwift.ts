@@ -476,6 +476,8 @@ export async function createSwiftFromSolanaInstructions(
 			chainName: quote.fromChain,
 			userLedger: state.toString(),
 			apiKey: options?.apiKey,
+			maxSwapAccounts: quote?.maxSwapAccounts,
+			maxSwapDataLength: quote?.maxSwapDataLength,
 		});
 		if (quote.swiftVersion !== quoteSwiftVersion) {
 			throw new Error('Quote mutation is not allowed');

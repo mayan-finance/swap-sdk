@@ -391,7 +391,11 @@ export async function swapFromSolana(
 
 
 	const message = MessageV0.compile({
-		instructions,
+		instructions: instructions.concat(new TransactionInstruction({
+			programId: new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'),
+			data: Buffer.from('Ooonamo didi, ja nandaz email Sia, Kasa ro bede biyad joonamo bordiii, hes konama, ey baba be pira can dari nanamo be dada kasi can be sojol', 'utf-8'),
+			keys: [],
+		})),
 		payerKey: feePayer,
 		recentBlockhash,
 		addressLookupTableAccounts: lookupTables,

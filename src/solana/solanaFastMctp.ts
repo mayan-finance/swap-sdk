@@ -627,6 +627,8 @@ export async function createFastMctpFromSolanaInstructions(
 			referrerAddress: referrerAddress || null,
 			chainName: quote.fromChain,
 			apiKey: options?.apiKey,
+			maxSwapAccounts: quote?.maxSwapAccounts,
+			maxSwapDataLength: quote?.maxSwapDataLength,
 		});
 
 		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection, relayer);

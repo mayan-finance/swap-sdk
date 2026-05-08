@@ -716,7 +716,9 @@ export async function createMctpFromSolanaInstructions(
 			tpmTokenAccount: options?.separateSwapTx ? tmpSwapTokenAccount.publicKey.toString() : null,
 			referrerAddress: referrerAddress || null,
 			chainName: quote.fromChain,
-			apiKey: options?.apiKey
+			apiKey: options?.apiKey,
+			maxSwapAccounts: quote?.maxSwapAccounts,
+			maxSwapDataLength: quote?.maxSwapDataLength,
 		});
 
 		const clientSwap = decentralizeClientSwapInstructions(clientSwapRaw, connection, relayer);
