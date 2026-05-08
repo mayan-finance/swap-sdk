@@ -18,7 +18,7 @@ import {
 	SolanaTransactionSigner,
 	JitoBundleOptions,
 	SwapMessageV0Params,
-	SolanaBridgeOptions
+	SolanaBridgeOptions,
 } from '../types';
 import {
 	getAmountOfFractionalAmount,
@@ -323,7 +323,6 @@ export async function swapFromSolana(
 	instructionOptions?: {
 		allowSwapperOffCurve?: boolean,
 		forceSkipCctpInstructions?: boolean,
-		usdcPermitSignature?: string | null,
 		skipProxyMayanInstructions?: boolean,
 		customPayload?: Buffer | Uint8Array | null,
 	},
@@ -358,7 +357,6 @@ export async function swapFromSolana(
 			allowSwapperOffCurve: instructionOptions?.allowSwapperOffCurve,
 			forceSkipCctpInstructions: instructionOptions?.forceSkipCctpInstructions,
 			separateSwapTx: jitoEnabled && jitoOptions?.separateSwapTx,
-			usdcPermitSignature: instructionOptions?.usdcPermitSignature,
 			skipProxyMayanInstructions: instructionOptions?.skipProxyMayanInstructions === true, // default is false
 			customPayload: instructionOptions?.customPayload,
 			apiKey: extraParams?.apiKey,
@@ -391,11 +389,7 @@ export async function swapFromSolana(
 
 
 	const message = MessageV0.compile({
-		instructions: instructions.concat(new TransactionInstruction({
-			programId: new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'),
-			data: Buffer.from('Ooonamo didi, ja nandaz email Sia, Kasa ro bede biyad joonamo bordiii, hes konama, ey baba be pira can dari nanamo be dada kasi can be sojol', 'utf-8'),
-			keys: [],
-		})),
+		instructions,
 		payerKey: feePayer,
 		recentBlockhash,
 		addressLookupTableAccounts: lookupTables,

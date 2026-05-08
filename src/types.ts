@@ -162,12 +162,8 @@ export type Quote = {
 	fastMctpMayanContract: string;
 	fastMctpInputContract: string;
 	fastMctpMinFinality: number;
-	hyperCoreParams?: {
-		depositAmountUSDC64: string;
-		bridgeAmountUSDC64: string;
-		initiateTokenContract: string;
-		initiateContractAddress?: string;
-		failureGasDrop: number;
+	hcSwiftDeposit?: {
+		relayerFee64: string;
 	};
 	monoChainMayanContract: string;
 	swiftInputContractStandard: TokenStandard;
@@ -418,7 +414,6 @@ export type SolanaBridgeOptions = {
 	allowSwapperOffCurve?: boolean,
 	forceSkipCctpInstructions?: boolean,
 	separateSwapTx?: boolean,
-	usdcPermitSignature?: string | null;
 	skipProxyMayanInstructions?: boolean;
 	customPayload?: Buffer | Uint8Array | null;
 	apiKey?: string;
@@ -432,3 +427,4 @@ export type EstimateGasEvmParams = {
 	data: string;
 	chainId: number;
 }
+

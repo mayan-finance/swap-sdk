@@ -2,11 +2,18 @@ import { ethers, zeroPadValue, parseUnits, formatUnits, TypedDataEncoder, JsonRp
 import { Keypair, PublicKey, SystemProgram } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import addresses  from './addresses';
-import { ChainName, Erc20Permit, Quote, ReferrerAddresses, Token, PermitDomain, PermitValue, QuoteType } from './types';
+import {
+	ChainName,
+	Erc20Permit,
+	Quote,
+	ReferrerAddresses,
+	Token,
+	PermitDomain,
+	PermitValue,
+	QuoteType,
+} from './types';
 import ERC20Artifact from './evm/ERC20Artifact';
 import * as sha3 from 'js-sha3';
-import { CCTP_TOKEN_DECIMALS } from './cctp';
-import { checkHyperCoreDeposit } from './api';
 const sha3_256 = sha3.sha3_256;
 
 export const isValidAptosType = (str: string): boolean =>
@@ -169,7 +176,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [13, 4, 0];
+const sdkVersion = [14, 0, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -474,84 +481,34 @@ export async function getPermitParams(
 	}
 }
 
-export async function getHyperCoreUSDCDepositPermitParams(
-	quote: Quote,
-	userArbitrumAddress: string,
-	arbProvider: JsonRpcProvider,
-	apiKey?: string,
-): Promise<{
-	domain: PermitDomain;
-	types: typeof PermitTypes;
-	value: PermitValue;
-}> {
-	if (!quote.hyperCoreParams) {
-		throw new Error('Quote does not have hyperCoreParams');
-	}
-	if (quote.toChain !== 'hypercore') {
-		throw new Error('Quote toChain is not hypercore');
-	}
-	if (quote.toToken.contract.toLowerCase() !== addresses.ARBITRUM_USDC_CONTRACT.toLowerCase()) {
-		throw new Error('Quote toToken is not USDC on Arbitrum');
-	}
 
-	const USDC_ARB_TOKEN: Token = {
-		name: "USDC",
-		standard: "erc20",
-		symbol: "USDC",
-		mint: "CR4xnGrhsu1fWNPoX4KbTUUtqGMF3mzRLfj4S6YEs1Yo",
-		verified: true,
-		contract: "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
-		chainId: 42161,
-		wChainId: 23,
+export function createHyperCoreClonedQuote(quote: Quote): Quote {
+	const clonedQuote = JSON.parse(JSON.stringify(quote)) as Quote;
+	clonedQuote.toToken = {
+		...clonedQuote.toToken,
+		contract: addresses.HYPEREVM_USDC_CONTRACT,
 		decimals: 6,
-		logoURI: "http://assets.coingecko.com/coins/images/6319/small/usdc.png?1696506694",
-		coingeckoId: "usd-coin",
-		realOriginContractAddress: "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
-		realOriginChainId: 23,
-		supportsPermit: true,
-		verifiedAddress: '0xaf88d065e77c8cc2239327c5edb3a432268e5831',
-	}
-	const [permitParams, isAllowed] = await Promise.all([
-		getPermitParams(
-			USDC_ARB_TOKEN,
-			userArbitrumAddress,
-			addresses.HC_ARBITRUM_BRIDGE,
-			BigInt(quote.hyperCoreParams.depositAmountUSDC64),
-			arbProvider,
-			BigInt(quote.deadline64)
-		),
-		checkHyperCoreDeposit(userArbitrumAddress, quote.toToken.contract, apiKey)
-	]);
-	if (!isAllowed) {
-		throw new Error('Because of concurrency, deposit is not possible at the moment, please try again later');
-	}
-	return permitParams;
+		wChainId: getWormholeChainIdByName('hyperevm'),
+		chainId: getEvmChainIdByName('hyperevm'),
+	};
+	clonedQuote.gasDrop = 0; // Gas drop is not supported for HyperCore deposit
+	clonedQuote.toChain = 'hyperevm';
+	return clonedQuote;
 }
 
 export function getHyperCoreUSDCDepositCustomPayload(
 	quote: Quote,
 	destinationAddress: string,
-	usdcPermitSignature: string,
+	hcDepositDexType: number,
 ): Buffer {
-	const payload = Buffer.alloc(109);
-	const destAddressBuf = Buffer.from(hexToUint8Array(destinationAddress));
-	if (destAddressBuf.length !== 20) {
-		throw new Error('Invalid destination address length, expected 20 bytes');
+	const payload = Buffer.alloc(32);
+	const destinationAddressBuf = Buffer.from(destinationAddress.startsWith('0x') ? destinationAddress.slice(2) : destinationAddress, 'hex');
+	if (destinationAddressBuf.length !== 20) {
+		throw new Error('Invalid destination address length for EVM: ' + destinationAddress);
 	}
-	const permitSignatureBuf = Buffer.from(
-		hexToUint8Array(usdcPermitSignature)
-	);
-	if (permitSignatureBuf.length !== 65) {
-		throw new Error('Invalid USDC permit signature length, expected 65 bytes');
-	}
-	if (!quote.redeemRelayerFee64 || !quote.hyperCoreParams) {
-		throw new Error('Invalid quote for HyperCore USDC deposit custom payload');
-	}
-	payload.writeBigUInt64BE(BigInt(quote.redeemRelayerFee64), 0)
-	payload.set(destAddressBuf, 8);
-	payload.writeBigUInt64BE(BigInt(quote.hyperCoreParams.depositAmountUSDC64), 28);
-	payload.writeBigUInt64BE(BigInt(quote.deadline64), 36);
-	payload.set(permitSignatureBuf, 44);
+	payload.set(destinationAddressBuf);
+	payload.writeUint32BE(hcDepositDexType, 20);
+	payload.writeBigUInt64BE(BigInt(quote?.hcSwiftDeposit?.relayerFee64 || 0), 24);
 
 	return payload
 }

@@ -49,6 +49,7 @@ export async function fetchAllTokenList(
 	const query = toQueryString({
 		standard: tokenStandards ? tokenStandards.join(',') : undefined,
 		apiKey,
+		sdkVersion: getSdkVersion(),
 	});
 	const res = await fetch(`${addresses.PRICE_URL}/tokens?${query}`, {
 		method: 'GET',
@@ -73,6 +74,7 @@ export async function fetchTokenList(
 		nonPortal,
 		standard: tokenStandards ? tokenStandards?.join(',') : undefined,
 		apiKey,
+		sdkVersion: getSdkVersion(),
 	};
 	const res = await fetch(`${addresses.PRICE_URL}/tokens?${toQueryString(queryParams)}`);
 	await check5xxError(res);
@@ -172,6 +174,12 @@ export function generateFetchQuoteUrlAndBody(
 		}
 		slippageBps = params.slippage * 100;
 	}
+	const wireSolanaBridgeOptions = quoteOptions.solanaBridgeOptions ? {
+		...quoteOptions.solanaBridgeOptions,
+		customPayload: quoteOptions.solanaBridgeOptions.customPayload
+			? Buffer.from(quoteOptions.solanaBridgeOptions.customPayload).toString('hex')
+			: undefined,
+	} : undefined;
 	const _quoteOptions: QuoteOptions = {
 		wormhole: quoteOptions.wormhole !== false, // default to true
 		swift: quoteOptions.swift !== false, // default to true
@@ -191,10 +199,10 @@ export function generateFetchQuoteUrlAndBody(
 				? quoteOptions.memoHex
 				: undefined,
 		extraInstructions: quoteOptions.extraInstructions,
-		solanaBridgeOptions: quoteOptions.solanaBridgeOptions,
 	};
 	const queryBody: Record<string, any> = {
 		..._quoteOptions,
+		solanaBridgeOptions: wireSolanaBridgeOptions,
 		solanaProgram: addresses.MAYAN_PROGRAM_ID,
 		forwarderAddress: addresses.MAYAN_FORWARDER_CONTRACT,
 		amountIn:
@@ -388,26 +396,6 @@ export async function submitSwiftSolanaSwap(signedTx: string, chainName: ChainNa
 		throw result;
 	}
 	return result;
-}
-
-
-export async function checkHyperCoreDeposit(destinationAddress: string, tokenAddress: string, apiKey?: string): Promise<boolean> {
-	const query = toQueryString({
-		destWallet: destinationAddress,
-		destToken: tokenAddress,
-		sdkVersion: getSdkVersion(),
-		apiKey,
-	});
-	const res = await fetch(`${addresses.EXPLORER_URL}/hypercore/is-allowed?${query}`, {
-		method: 'GET',
-		redirect: 'follow',
-	});
-	await check5xxError(res);
-	const result = await res.json();
-	if (res.status !== 200 && res.status !== 201) {
-		throw result;
-	}
-	return result.allowed === true;
 }
 
 export async function getEstimateGasEvm(
