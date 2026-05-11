@@ -6,7 +6,6 @@ export function decodeJupiterV6InsArgs(args: Uint8Array): {
 	slippage_bps: number;
 	platform_fee_bps: number;
 } {
-	console.log('new decodeJupiterV6InsArgs called');
 	const routeV2DiscHex = 'bb64facc31c4af14';
 	const sharedAccountsRouteV2DiscHex = 'd19853937cfed8e9';
 	const discHex = Buffer.from(args.subarray(0, 8)).toString('hex').toLowerCase();
@@ -37,5 +36,3 @@ export function decodeJupiterV6InsArgs(args: Uint8Array): {
 		throw new Error(`Unsupported Jupiter V6 instruction discriminator: ${discHex}`);
 	}
 }
-
-

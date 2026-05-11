@@ -8,7 +8,6 @@ import { Transaction } from '@mysten/sui/transactions';
 import { getQuoteSuitableReferrerAddress } from '../utils';
 import { createMctpFromSuiMoveCalls } from './suiMctp';
 import { Buffer } from 'buffer';
-import { createHyperCoreDepositFromSuiMoveCalls } from './suiHyperCore';
 import {createSwiftFromSuiMoveCalls} from "./suiSwift";
 
 export async function createSwapFromSuiMoveCalls(
@@ -26,26 +25,7 @@ export async function createSwapFromSuiMoveCalls(
 	);
 
 	if (quote.toChain === 'hypercore') {
-		if (!quote.hyperCoreParams) {
-			throw new Error('HyperCore parameters are required for this quote');
-		}
-		if (!options?.usdcPermitSignature) {
-			throw new Error('USDC permit signature is required for this quote');
-		}
-		if (quote.type !== 'MCTP') {
-			throw new Error('Unsupported quote type for HyperCore deposit: ' + quote.type);
-		}
-		if (payload) {
-			throw new Error('Payload is not supported for HyperCore deposit quotes');
-		}
-		return createHyperCoreDepositFromSuiMoveCalls(
-			quote,
-			swapperWalletAddress,
-			destinationAddress,
-			referrerAddress,
-			suiClient,
-			options,
-		);
+		throw new Error('HyperCore deposit temporarily not supported from Sui chain');
 	}
 
 	if (quote.type === 'MCTP') {

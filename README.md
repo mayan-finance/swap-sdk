@@ -2,6 +2,20 @@
 # Mayan Cross-Chain Swap SDK
 A minimal package for sending cross-chain swap transactions
 
+## ⚠️ Breaking changes in v14.0.0
+
+- **HyperCore USDC deposits no longer require an extra user signature.** The previous flow that required the user to sign a USDC permit on Arbitrum has been removed. Just fetch a quote with `toChain: 'hypercore'` and call the regular `swapFromEvm` / `swapFromSolana` / `getSwapFromEvmTxPayload` — no extra signing step.
+- **Removed APIs** (callers must migrate):
+    - `getHyperCoreUSDCDepositPermitParams` — no replacement needed; signing is gone.
+    - `usdcPermitSignature` option on `swapFromEvm`, `swapFromSolana`, `getSwapFromEvmTxPayload`, `createSwapFromSuiMoveCalls`, etc. — drop the field from your call sites.
+    - `checkHyperCoreDeposit` API helper.
+    - `Quote.hyperCoreParams` field (replaced internally by `Quote.hcSwiftDeposit`, which the SDK consumes for you).
+- **Sui → HyperCore is temporarily disabled.** Calling `createSwapFromSuiMoveCalls` with a HyperCore destination now throws. A new dedicated method to deposit into HyperCore from Sui will ship in the next release.
+
+### Not breaking, but recommended
+
+- **`fetchQuote` now uses HTTP `POST` by default.** The `GET` endpoint is still supported, and `generateFetchQuoteUrl` continues to work for callers who already integrate against it. Switching to the new `generateFetchQuoteUrlAndBody` helper (which returns both the URL and a JSON body) unlocks features that don't fit in a query string — most notably the new Solana `extraInstructions` option described below.
+
 ## Installation:
 
 ```bash
@@ -92,6 +106,65 @@ example:
 
 If you need more control over the transaction and manually send the trx you can use `createSwapFromSolanaInstructions` function to build the solana instruction.
 
+#### Bundling extra instructions in a single Solana transaction
+
+When you need to pack your own Solana instructions (e.g. a pre-swap token transfer, a wrap step, or any custom on-chain action) into the **same** transaction as the Mayan swap, you can describe them to the quoter ahead of time via the `extraInstructions` option on `fetchQuote`. The backend then sizes the swap route so that the final Mayan instructions plus your extra instructions fit inside a single Solana v0 transaction (under the UDP/MTU packet limit).
+
+This feature is only available through the POST flow (`fetchQuote` / `generateFetchQuoteUrlAndBody`); it cannot be expressed as a `GET` query string.
+
+```typescript
+import { fetchQuote, InstructionInfo } from '@mayanfinance/swap-sdk';
+
+const extraInstructions: InstructionInfo[] = [
+    {
+        programId: 'YourProgram1111111111111111111111111111111',
+        accounts: [
+            { pubkey: '...', isSigner: false, isWritable: true },
+            // ...
+        ],
+        data: 'BASE64_ENCODED_INSTRUCTION_DATA', // instruction data as base64
+    },
+];
+
+const quotes = await fetchQuote(
+    {
+        amountIn64: '250000000',
+        fromToken: fromToken.contract,
+        toToken: toToken.contract,
+        fromChain: 'solana',
+        toChain: 'arbitrum',
+        slippageBps: 'auto',
+    },
+    {
+        extraInstructions: {
+            instructions: extraInstructions,
+            lookupTables: [
+                // optional: base58 addresses of address lookup tables
+                // your extra instructions rely on, so the quoter can size
+                // the transaction correctly
+            ],
+        },
+    },
+);
+```
+
+Type reference (defined in `src/types.ts`):
+
+```typescript
+type SolanaKeyInfo = {
+    pubkey: string;       // base58
+    isSigner: boolean;
+    isWritable: boolean;
+};
+
+type InstructionInfo = {
+    programId: string;    // base58
+    accounts: SolanaKeyInfo[];
+    data: string;         // base64-encoded instruction data
+};
+```
+
+The quoter will pick a swap route whose instructions, combined with the ones you provide, leave enough room in the resulting transaction. You are still responsible for appending your `extraInstructions` to the instruction list you submit on chain — `extraInstructions` is purely a *sizing hint* for the quote.
 
 ### Bridge from EVM:
 
@@ -155,27 +228,12 @@ type ComposableSuiMoveCallsOptions = {
 
 ### Depositing on HyperCore (Hyperliquid Core) as a Destination
 
+To deposit into HyperCore, fetch a quote as described earlier with `toChain` set to `hypercore`, then call the regular transaction-building method for the source chain (`swapFromEvm`, `swapFromSolana`, `getSwapFromEvmTxPayload`, …). No extra user signature is required — the SDK handles everything from a single signed swap transaction.
 
-To deposit into HyperCore, start by fetching a quote as described earlier, just set the `toChain` parameter to `hypercore`. Then, depending on the source chain, use the appropriate transaction-building method, also covered above.
+Pass the user's HyperCore destination address (an EVM-style `0x…` address) as the `destinationAddress` argument, the same way you would for any other destination chain. The user's selection between **USDC (spot)** and **USDC (perps)** is encoded automatically based on the `toToken` returned in the quote.
 
-The key difference when depositing **USDC on HyperCore** is that you must pass a `usdcPermitSignature` in the options object when building the transaction.
+> **Sui → HyperCore is temporarily disabled** in this release. Calling `createSwapFromSuiMoveCalls` with `toChain: 'hypercore'` will throw. A new dedicated entry point will be added in the next release.
 
-You can generate this signature using the `getHyperCoreUSDCDepositPermitParams` helper function as shown below:
-
-```javascript
-import { getHyperCoreUSDCDepositPermitParams } from '@mayanfinance/swap-sdk';
-
-const arbitrumProvider = new ethers.providers.JsonRpcProvider('ARBITRUM_RPC_URL');
-const arbDestUserWallet = new ethers.Wallet('USER_ARBITRUM_WALLET_PRIVATE_KEY', arbitrumProvider);
-
-const { value, domain, types } = await getHyperCoreUSDCDepositPermitParams(
-	quote,
-	userDestAddress,
-	arbitrumProvider
-);
-
-const permitSignature = await arbDestUserWallet.signTypedData(domain, types, value);
-```
 <br />
 
 #### Gasless Transaction:

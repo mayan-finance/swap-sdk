@@ -37,7 +37,10 @@ import {
 } from './evmSwift';
 import { getEstimateGasEvm, submitSwiftEvmSwap } from '../api';
 import { getFastMctpFromEvmTxPayload } from './evmFastMctp';
-import { getHyperCoreDepositFromEvmTxPayload } from './evmHyperCore';
+import {
+	getHyperCoreDepositFromEvmTxPayload,
+	getHyperCoreSwiftFromEvmGasLessParams,
+} from './evmHyperCore';
 import { getMonoChainFromEvmTxPayload } from './evmMonoChain';
 
 export type ContractRelayerFees = {
@@ -368,7 +371,6 @@ export async function swapFromEvm(
 	overrides: Overrides | null | undefined,
 	payload: Uint8Array | Buffer | null | undefined,
 	options?: {
-		usdcPermitSignature?: string;
 		apiKey?: string;
 	}
 ): Promise<TransactionResponse | string> {
@@ -383,14 +385,21 @@ export async function swapFromEvm(
 
 	if (
 		quote.type === 'SWIFT' &&
-		quote.gasless &&
-		quote.toChain !== 'hypercore'
+		quote.gasless
 	) {
 		const referrerAddress = getQuoteSuitableReferrerAddress(
 			quote,
 			referrerAddresses
 		);
-		const gasLessParams = getSwiftFromEvmGasLessParams(
+		const gasLessParams = quote.toChain === 'hypercore' ? getHyperCoreSwiftFromEvmGasLessParams(
+			quote,
+			swapperAddress,
+			destinationAddress,
+			referrerAddress,
+			signerChainId,
+			permit,
+			payload,
+		) : getSwiftFromEvmGasLessParams(
 			quote,
 			swapperAddress,
 			destinationAddress,

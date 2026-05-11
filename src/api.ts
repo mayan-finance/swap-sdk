@@ -49,6 +49,7 @@ export async function fetchAllTokenList(
 	const query = toQueryString({
 		standard: tokenStandards ? tokenStandards.join(',') : undefined,
 		apiKey,
+		sdkVersion: getSdkVersion(),
 	});
 	const res = await fetch(`${addresses.PRICE_URL}/tokens?${query}`, {
 		method: 'GET',
@@ -73,6 +74,7 @@ export async function fetchTokenList(
 		nonPortal,
 		standard: tokenStandards ? tokenStandards?.join(',') : undefined,
 		apiKey,
+		sdkVersion: getSdkVersion(),
 	};
 	const res = await fetch(`${addresses.PRICE_URL}/tokens?${toQueryString(queryParams)}`);
 	await check5xxError(res);
@@ -102,6 +104,9 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 			throw new Error('Either slippageBps or slippage must be provided');
 		}
 		slippageBps = params.slippage * 100;
+	}
+	if (quoteOptions.extraInstructions || quoteOptions.solanaBridgeOptions) {
+		throw new Error('Should use generateFetchQuoteUrlAndBody when extraInstructions or solanaBridgeOptions is provided');
 	}
 	const _quoteOptions: QuoteOptions = {
 		wormhole: quoteOptions.wormhole !== false, // default to true
@@ -138,15 +143,113 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 	const queryString = toQueryString(queryParams);
 	return (baseUrl + queryString);
 }
+
+export function generateFetchQuoteUrlAndBody(
+	params: QuoteParams,
+	quoteOptions: QuoteOptions = {
+		wormhole: true,
+		swift: true,
+		mctp: true,
+		shuttle: true,
+		gasless: false,
+		onlyDirect: false,
+		fastMctp: true,
+		fullList: false,
+		payload: undefined,
+		monoChain: true,
+	}
+): {
+	url: string;
+	body: string;
+} {
+	const { gasDrop, referrerBps } = params;
+	let slippageBps = params.slippageBps;
+	if (slippageBps !== 'auto' && !Number.isFinite(slippageBps)) {
+		if (
+			params.slippage === undefined ||
+			params.slippage === null ||
+			!Number.isFinite(params.slippage)
+		) {
+			throw new Error('Either slippageBps or slippage must be provided');
+		}
+		slippageBps = params.slippage * 100;
+	}
+	const wireSolanaBridgeOptions = quoteOptions.solanaBridgeOptions ? {
+		...quoteOptions.solanaBridgeOptions,
+		customPayload: quoteOptions.solanaBridgeOptions.customPayload
+			? Buffer.from(quoteOptions.solanaBridgeOptions.customPayload).toString('hex')
+			: undefined,
+	} : undefined;
+	const _quoteOptions: QuoteOptions = {
+		wormhole: quoteOptions.wormhole !== false, // default to true
+		swift: quoteOptions.swift !== false, // default to true
+		mctp: quoteOptions.mctp !== false, // default to true
+		shuttle: quoteOptions.shuttle === true, // default to false
+		fastMctp: quoteOptions.fastMctp !== false, // default to true
+		gasless: quoteOptions.gasless === true, // default to false
+		onlyDirect: quoteOptions.onlyDirect === true, // default to false
+		fullList: quoteOptions.fullList === true, // default to false
+		payload:
+			typeof quoteOptions.payload === 'string'
+				? quoteOptions.payload
+				: undefined,
+		monoChain: quoteOptions.monoChain !== false, // default to true
+		memoHex:
+			typeof quoteOptions.memoHex === 'string'
+				? quoteOptions.memoHex
+				: undefined,
+		extraInstructions: quoteOptions.extraInstructions,
+	};
+	const queryBody: Record<string, any> = {
+		..._quoteOptions,
+		solanaBridgeOptions: wireSolanaBridgeOptions,
+		solanaProgram: addresses.MAYAN_PROGRAM_ID,
+		forwarderAddress: addresses.MAYAN_FORWARDER_CONTRACT,
+		amountIn:
+			!params.amountIn64 && Number.isFinite(params.amount)
+				? params.amount
+				: undefined,
+		amountIn64: params.amountIn64,
+		fromToken: params.fromToken,
+		fromChain: params.fromChain,
+		toToken: params.toToken,
+		toChain: params.toChain,
+		slippageBps,
+		referrer: params.referrer,
+		referrerBps: Number.isFinite(referrerBps) ? referrerBps : undefined,
+		gasDrop: Number.isFinite(gasDrop) ? gasDrop : undefined,
+		destinationAddress: params.destinationAddress ?? undefined,
+		sdkVersion: getSdkVersion(),
+	};
+	const url = `${addresses.PRICE_URL}/quote${
+		typeof quoteOptions.apiKey === 'string'
+			? '?apiKey=' + quoteOptions.apiKey
+			: ''
+	}`;
+	return {
+		url,
+		body: JSON.stringify(queryBody, (_key, value) => {
+			if (typeof value === 'bigint') {
+				return value.toString();
+			}
+			return value;
+		}),
+	};
+}
+
 export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions = {
 	swift: true,
 	mctp: true,
 	gasless: false,
 	onlyDirect: false,
 }): Promise<Quote[]> {
-	const url = generateFetchQuoteUrl(params, quoteOptions);
+	const { url, body } = generateFetchQuoteUrlAndBody(params, quoteOptions);
 	const res = await fetch(url, {
-		method: 'GET',
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+		},
+		body: body,
 		redirect: 'follow',
 	});
 	await check5xxError(res);
@@ -293,26 +396,6 @@ export async function submitSwiftSolanaSwap(signedTx: string, chainName: ChainNa
 		throw result;
 	}
 	return result;
-}
-
-
-export async function checkHyperCoreDeposit(destinationAddress: string, tokenAddress: string, apiKey?: string): Promise<boolean> {
-	const query = toQueryString({
-		destWallet: destinationAddress,
-		destToken: tokenAddress,
-		sdkVersion: getSdkVersion(),
-		apiKey,
-	});
-	const res = await fetch(`${addresses.EXPLORER_URL}/hypercore/is-allowed?${query}`, {
-		method: 'GET',
-		redirect: 'follow',
-	});
-	await check5xxError(res);
-	const result = await res.json();
-	if (res.status !== 200 && res.status !== 201) {
-		throw result;
-	}
-	return result.allowed === true;
 }
 
 export async function getEstimateGasEvm(

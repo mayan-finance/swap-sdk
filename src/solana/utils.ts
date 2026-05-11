@@ -9,7 +9,8 @@ import {
 	Transaction,
 	TransactionInstruction,
 	AddressLookupTableAccount,
-	VersionedTransaction, ComputeBudgetProgram
+	VersionedTransaction,
+	ComputeBudgetProgram,
 } from '@solana/web3.js';
 import {getAmountOfFractionalAmount, getAssociatedTokenAddress, getSafeU64Blob, wait} from '../utils';
 import {
@@ -27,6 +28,10 @@ import { sha256 } from '@noble/hashes/sha2';
 import bs58 from 'bs58';
 import { getSuggestedRelayer } from '../api';
 import { decodeJupiterV6InsArgs } from './jupiter';
+
+const JUP_PROGRAM_ID = new PublicKey('JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4');
+const TITAN_PROGRAM_ID = new PublicKey('T1TANpTeScyeqVzzgNViGDNrkQ6qHz9KrSBS4aNXvGT');
+const DFLOW_PROGRAM_ID = new PublicKey('DF1ow4tspfHX9JwWJsAb9epbkA8hmpSEAtxXy1V27QBH');
 
 const cachedConnections: Record<string, Connection> = {};
 
@@ -420,7 +425,8 @@ type SolanaClientSwapInstructions = {
 	cleanupInstruction?: TransactionInstruction | null,
 	computeBudgetInstructions: TransactionInstruction[],
 	setupInstructions: TransactionInstruction[],
-	addressLookupTableAddresses: string[]
+	addressLookupTableAddresses: string[],
+	aggregator: 'JUPITER' | 'TITAN' | 'DFLOW',
 };
 
 export function decentralizeClientSwapInstructions(
@@ -436,12 +442,24 @@ export function decentralizeClientSwapInstructions(
 	const setupInstructions = params.setupInstructions ?
 		overrideInstructionsPayer(params.setupInstructions, relayer).map(deserializeInstructionInfo) : [];
 
+	let aggregator: 'JUPITER' | 'TITAN' | 'DFLOW';
+	if (swapInstruction.programId.equals(JUP_PROGRAM_ID)) {
+		aggregator = 'JUPITER';
+	} else if (swapInstruction.programId.equals(TITAN_PROGRAM_ID)) {
+		aggregator = 'TITAN';
+	} else if (swapInstruction.programId.equals(DFLOW_PROGRAM_ID)) {
+		aggregator = 'DFLOW';
+	} else {
+		throw new Error('Unknown aggregator program id: ' + swapInstruction.programId.toString());
+	}
+
 	return {
 		swapInstruction,
 		cleanupInstruction,
 		computeBudgetInstructions,
 		setupInstructions,
 		addressLookupTableAddresses: params.addressLookupTableAddresses,
+		aggregator,
 	};
 }
 
@@ -737,7 +755,6 @@ function validateJupSetupInstructions(instructions: TransactionInstruction[], ow
 }
 
 function validateJupSwapInstruction(instruction: TransactionInstruction, validDestAccount: PublicKey, sameSourceAndDestWallet = false) {
-	const JUP_PROGRAM_ID = new PublicKey('JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4');
 	if (!instruction.programId.equals(JUP_PROGRAM_ID)) {
 		throw new Error('Invalid swap instruction:: programId');
 	}
@@ -774,13 +791,52 @@ function validateJupSwapInstruction(instruction: TransactionInstruction, validDe
 	}
 }
 
+function validateDflowSwapInstruction(instruction: TransactionInstruction, validDestAccount: PublicKey) {
+	if (!instruction.programId.equals(DFLOW_PROGRAM_ID)) {
+		throw new Error('Invalid swap instruction:: programId');
+	}
+	if (Buffer.from(instruction.data.subarray(0, 8)).toString('hex').toLowerCase() !== getAnchorInstructionData('swap_with_destination').toString('hex') ) {
+		throw new Error(`Unsupported Dflow instruction discriminator: ${instruction.data[0]}`);
+	}
+	if (!instruction.keys[4].pubkey.equals(validDestAccount)) {
+		throw new Error(`Invalid swap instruction Dflow swap v3:: dest account`);
+	}
+}
+
+function validateTitanSwapInstruction(instruction: TransactionInstruction, validDestAccount: PublicKey) {
+	if (!instruction.programId.equals(TITAN_PROGRAM_ID)) {
+		throw new Error('Invalid swap instruction:: programId');
+	}
+	const isSwapRouteV2 =
+		instruction.data.length > 0 &&
+		Buffer.from(instruction.data.subarray(0, 8)).toString('hex').toLowerCase() === getAnchorInstructionData('swap_route_v2').toString('hex');
+	const isSwapRouteV3 = instruction.data[0] === 42;
+	if (!isSwapRouteV2 && !isSwapRouteV3 ) {
+		throw new Error(`Unsupported Titan instruction discriminator: ${instruction.data[0]}`);
+	}
+	if (isSwapRouteV3) {
+		if (!instruction.keys[4].pubkey.equals(validDestAccount)) {
+			throw new Error(`Invalid swap instruction titan swap v3:: dest account`);
+		}
+	} else if (isSwapRouteV2) {
+		if (!instruction.keys[5].pubkey.equals(validDestAccount)) {
+			throw new Error(`Invalid swap instruction titan swap v3:: dest account`);
+		}
+	}
+}
+
 export function validateJupSwapInstructionData(instruction: TransactionInstruction, quote: Quote) {
-	const args = decodeJupiterV6InsArgs(Uint8Array.from(instruction.data)) as {
+	let args : {
 		in_amount: bigint;
 		quoted_out_amount: bigint;
 		slippage_bps: number;
 		platform_fee_bps: number;
 	};
+	if (instruction.programId.equals(JUP_PROGRAM_ID)) {
+		args = decodeJupiterV6InsArgs(Uint8Array.from(instruction.data))
+	} else {
+		throw new Error('Invalid swap instruction:: programId for decoding args' + instruction.programId.toString());
+	}
 	if (args.in_amount > BigInt(quote.effectiveAmountIn64)) {
 		throw new Error('Invalid swap instruction:: amount in');
 	}
@@ -790,7 +846,7 @@ export function validateJupSwapInstructionData(instruction: TransactionInstructi
 		throw new Error('Invalid swap instruction:: quote expired');
 	}
 	if (args.platform_fee_bps !== quote.referrerBps) {
-		throw new Error('Invalid swap instruction:: platform fee');
+		throw new Error(`Invalid swap instruction:: platform fee = ${args.platform_fee_bps} does not match quote referrerBps = ${quote.referrerBps}`);
 	}
 }
 
@@ -817,7 +873,15 @@ export function validateJupSwap(
 ) {
 	validateJupComputeBudgetInstructions(swap.computeBudgetInstructions);
 	validateJupSetupInstructions(swap.setupInstructions, validWrapOwner);
-	validateJupSwapInstruction(swap.swapInstruction, validDestAccount, sameSourceAndDestWallet);
+	if (swap.aggregator === 'JUPITER') {
+		validateJupSwapInstruction(swap.swapInstruction, validDestAccount, sameSourceAndDestWallet);
+	} else if (swap.aggregator === 'TITAN') {
+		validateTitanSwapInstruction(swap.swapInstruction, validDestAccount);
+	} else if (swap.aggregator === 'DFLOW') {
+		validateDflowSwapInstruction(swap.swapInstruction, validDestAccount);
+	} else {
+		throw new Error('Unknown aggregator: ' + swap.aggregator);
+	}
 	validateJupCleanupInstruction(swap.cleanupInstruction, validCleanReceiverAddress);
 }
 
@@ -942,3 +1006,5 @@ export function getTransactionFirstSignature(signedTrx: Transaction | VersionedT
 
 	return txHash;
 }
+
+
