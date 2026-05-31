@@ -28,6 +28,7 @@ import {
 } from '../utils';
 import MayanSwapArtifact from './MayanSwapArtifact';
 import MayanForwarderArtifact from './MayanForwarderArtifact';
+import ERC20Artifact from './ERC20Artifact';
 import addresses from '../addresses';
 import { Buffer } from 'buffer';
 import { getMctpFromEvmTxPayload } from './evmMctp';
@@ -372,6 +373,7 @@ export async function swapFromEvm(
 	payload: Uint8Array | Buffer | null | undefined,
 	options?: {
 		apiKey?: string;
+		includeAllowanceTx?: boolean;
 	}
 ): Promise<TransactionResponse | string> {
 	if (!signer.provider) {
@@ -429,6 +431,20 @@ export async function swapFromEvm(
 	);
 	// @ts-ignore
 	delete transactionRequest._forwarder;
+
+	if (
+		options?.includeAllowanceTx &&
+		!quote.gasless &&
+		quote.fromToken.contract !== ZeroAddress
+	) {
+		return handleAtomicBatch(
+			quote,
+			transactionRequest,
+			signer,
+			signerAddress,
+			signerChainId,
+		);
+	}
 
 	if (overrides?.gasPrice) {
 		transactionRequest.gasPrice = overrides.gasPrice;
@@ -583,4 +599,133 @@ export async function estimateQuoteRequiredGasAprox2(
 		gasPrice: gasPrice,
 		requiredNative: gasPrice * estimatedGas,
 	};
+}
+
+function findCapsForChain(caps: any, chainId: number | string): any | undefined {
+	if (!caps || typeof caps !== 'object') return undefined;
+	const numericId = Number(chainId);
+	if (!Number.isFinite(numericId)) return undefined;
+	for (const key of Object.keys(caps)) {
+		const parsed = key.startsWith('0x') ? parseInt(key, 16) : parseInt(key, 10);
+		if (parsed === numericId) return caps[key];
+	}
+	return undefined;
+}
+
+// wallet_sendCalls returns a bundle id, not a tx hash. Poll wallet_getCallsStatus
+// until the on-chain transaction hash is available so callers get a usable hash
+// (matching the eth_sendTransaction path which returns a hash after broadcast).
+async function waitForAtomicBatchTxHash(
+	provider: { send: (method: string, params: unknown) => Promise<any> },
+	id: string
+): Promise<string> {
+	const POLL_INTERVAL_MS = 1_000;
+	const TIMEOUT_MS = 90_000;
+	const start = Date.now();
+	while (Date.now() - start < TIMEOUT_MS) {
+		let res: any;
+		try {
+			res = await provider.send('wallet_getCallsStatus', [id]);
+		} catch {
+			// Wallet may not be ready to report status yet — retry until timeout.
+		}
+		const receipts = res?.receipts;
+		const txHash =
+			Array.isArray(receipts) && receipts.length > 0
+				? receipts[receipts.length - 1]?.transactionHash
+				: undefined;
+		if (txHash) {
+			return txHash;
+		}
+		// EIP-5792 v2.0.0 numeric status: 100 pending, 200 confirmed, 400 offchain
+		// failure, 500 reverted. Anything >= 400 means the batch will not land.
+		const status = res?.status;
+		if (typeof status === 'number' && status >= 400) {
+			throw new Error(`Atomic batch failed (status ${status})`);
+		}
+		await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+	}
+	throw new Error('Timed out waiting for atomic batch transaction hash');
+}
+
+async function handleAtomicBatch(
+	quote: Quote,
+	transactionRequest: TransactionRequest,
+	signer: Signer,
+	signerAddress: string,
+	signerChainId: number | string,
+): Promise<string> {
+	const chainHex = '0x' + Number(signerChainId).toString(16);
+	let caps: any;
+	try {
+		caps = await (signer.provider as any).send('wallet_getCapabilities', [
+			signerAddress,
+			[chainHex],
+		]);
+	} catch (e) {
+		caps = undefined;
+	}
+	const chainCaps = findCapsForChain(caps, signerChainId);
+	if (chainCaps?.atomic?.status !== 'supported') {
+		throw new Error(
+			'Wallet does not support atomic batching; cannot include allowance tx'
+		);
+	}
+	const erc20Contract = new Contract(quote.fromToken.contract, ERC20Artifact.abi, signer);
+	const approveCalls: Array<object> = [];
+	const USDT_ETHEREUM_ADDRESS = '0xdac17f958d2ee523a2206206994597c13d831ec7';
+	if (quote.fromChain === 'ethereum' && quote.fromToken.contract.toLowerCase() === USDT_ETHEREUM_ADDRESS) {
+		// USDT on Ethereum has a non-standard approve that requires resetting to zero first if the current allowance is non-zero.
+		const currentAllowance: bigint = await erc20Contract.allowance(signerAddress, addresses.MAYAN_FORWARDER_CONTRACT);
+		if (currentAllowance > BigInt(0)) {
+			const resetData = erc20Contract.interface.encodeFunctionData('approve', [
+				addresses.MAYAN_FORWARDER_CONTRACT,
+				BigInt(0),
+			]);
+			approveCalls.push({
+				to: quote.fromToken.contract,
+				data: resetData,
+				value: '0x0',
+			});
+		}
+	}
+	const approveData = erc20Contract.interface.encodeFunctionData('approve', [
+		addresses.MAYAN_FORWARDER_CONTRACT,
+		BigInt(quote.effectiveAmountIn64),
+	]);
+	approveCalls.push({
+		to: quote.fromToken.contract,
+		data: approveData,
+		value: '0x0',
+	});
+	const callsParams = {
+		version: '2.0.0',
+		chainId: chainHex,
+		from: signerAddress,
+		atomicRequired: true,
+		calls: [
+			...approveCalls,
+			{
+				to: transactionRequest.to,
+				data: transactionRequest.data as string,
+				value: transactionRequest.value
+					? toBeHex(BigInt(transactionRequest.value.toString()))
+					: '0x0',
+			},
+		],
+	};
+	const sendResult: unknown = await (signer.provider as any).send(
+		'wallet_sendCalls',
+		[callsParams]
+	);
+	// EIP-5792 v2.0.0 returns { id }, earlier drafts returned a bare string.
+	const batchId =
+		typeof sendResult === 'string'
+			? sendResult
+			: (sendResult as { id?: string })?.id;
+	if (!batchId) {
+		throw new Error('wallet_sendCalls did not return a batch id');
+	}
+	// Resolve the bundle id to the real on-chain tx hash before returning.
+	return waitForAtomicBatchTxHash(signer.provider as any, batchId);
 }
