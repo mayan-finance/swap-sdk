@@ -27,7 +27,8 @@ export function nativeAddressToHexString(
 		wChainId === chains.ethereum || wChainId === chains.bsc || wChainId === chains.polygon ||
 		wChainId === chains.avalanche  || wChainId === chains.arbitrum || wChainId === chains.optimism ||
 		wChainId === chains.base || wChainId === chains.unichain || wChainId === chains.linea ||
-		wChainId === chains.sonic || wChainId === chains.hyperevm || wChainId === chains.monad
+		wChainId === chains.sonic || wChainId === chains.hyperevm || wChainId === chains.monad ||
+		wChainId === chains.hypercore
 	) {
 		return zeroPadValue(address, 32);
 	} else if (wChainId === chains.aptos && isValidAptosType(address)) {
@@ -157,6 +158,7 @@ const evmChainIdMap: { [index: string]: number }  = {
 	[146]: 52,
 	[999]: 47,
 	[143]: 48,
+	[65000]: 65000, // HyperCore
 };
 
 export function getEvmChainIdByName(chain: ChainName) {
@@ -176,7 +178,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [14, 2, 0];
+const sdkVersion = [14, 3, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');

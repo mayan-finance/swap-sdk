@@ -13,6 +13,7 @@ import {
 	SuiClientSwap,
 	EstimateGasEvmParams,
 	GetEvmSwapParams,
+	HyperCoreWithdrawCircleTypedData,
 } from './types';
 import addresses from './addresses';
 import { checkSdkVersionSupport, getSdkVersion } from './utils';
@@ -451,4 +452,28 @@ export async function getSvmDurableNonce(
 		throw result;
 	}
 	return result;
+}
+
+export async function submitHyperCoreWithdraw(value: HyperCoreWithdrawCircleTypedData['value'], signature: string, apiKey?: string): Promise<string> {
+	const res = await fetch(`${addresses.EXPLORER_URL}/submit/hc-withdraw${apiKey ? '?apiKey=' + apiKey : ''}`, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({
+			action: value,
+			signature,
+		}, (_key, value) => {
+			if (typeof value === 'bigint') {
+				return value.toString();
+			}
+			return value;
+		}),
+	});
+	await check5xxError(res);
+	const result = await res.json();
+	if (res.status !== 200 && res.status !== 201) {
+		throw result;
+	}
+	return result.orderId;
 }

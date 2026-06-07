@@ -1,9 +1,18 @@
-import { Contract, toBeHex, TransactionRequest, ZeroAddress } from 'ethers';
-import  { EvmForwarderParams, Quote } from '../types';
+import {
+	Contract,
+	formatUnits,
+	toBeHex,
+	TransactionRequest,
+	ZeroAddress,
+} from 'ethers';
+import {
+	EvmForwarderParams,
+	HyperCoreWithdrawCircleTypedData,
+	Quote,
+} from '../types';
 import {
 	getWormholeChainIdByName,
 	getWormholeChainIdById,
-	getEvmChainIdByName,
 	getHyperCoreUSDCDepositCustomPayload,
 	createHyperCoreClonedQuote, ZeroPermit, getAmountOfFractionalAmount,
 } from '../utils';
@@ -12,13 +21,14 @@ import addresses from '../addresses';
 import { Buffer } from 'buffer';
 import { Erc20Permit } from '../types';
 import {
+	getEvmSwiftParams,
 	getSwiftFromEvmGasLessParams,
 	getSwiftFromEvmTxPayload,
 	SwiftEvmGasLessParams,
 } from './evmSwift';
 import MayanForwarderArtifact from './MayanForwarderArtifact';
 import MayanHCDepositHyperEVMArtifact from './MayanHCDepositHyperEVMArtifact';
-import { CCTP_TOKEN_DECIMALS } from '../cctp';
+import { CCTP_TOKEN_DECIMALS, getCCTPDomain } from '../cctp';
 
 export async function getHyperCoreDepositFromEvmTxPayload(
 	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
@@ -283,4 +293,121 @@ function getHyperCoreDepositFromHyperEVMTxPayload(
 			};
 		}
 	}
+}
+
+export function getHyperCoreWithdrawParams(
+	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
+	payload: Buffer | Uint8Array | null | undefined,
+): HyperCoreWithdrawCircleTypedData {
+	if (quote.type !== 'SWIFT') {
+		throw new Error('Unsupported quote type for HyperCore withdraw: ' + quote.type);
+	}
+
+	let sourceDex: 'spot' | '';
+	if (quote.fromToken.name === 'USDC (perps)') {
+		sourceDex = '';
+	} else if (quote.fromToken.name === 'USDC (spot)') {
+		sourceDex = 'spot';
+	} else {
+		throw new Error('Unsupported to token for HyperCore withdraw: ' + quote.fromToken.name);
+	}
+
+	if (!quote.hcSwiftWithdraw) {
+		throw new Error('HyperCore parameters are required for this quote');
+	}
+
+	if (Number.isNaN(Number(quote.fromToken.contract))) {
+		throw new Error('Invalid from token contract for HyperCore withdraw USDC: ' + quote.fromToken.contract);
+	}
+
+	const customPayload = payload ? Buffer.from(payload) : null;
+	const hookDataLength = 255 + (customPayload ? customPayload.length : 0);
+	const hookData= Buffer.alloc(hookDataLength);
+
+	const swiftParams = getEvmSwiftParams(quote, swapperAddress, destinationAddress, referrerAddress, 65000, payload);
+	let offset = 0;
+	hookData.writeUInt8(swiftParams.order.payloadType);
+	offset += 1;
+	Buffer.from(swiftParams.order.trader.slice(2), 'hex').copy(hookData, offset);
+	offset += 32;
+	Buffer.from(swiftParams.order.destAddr.slice(2), 'hex').copy(hookData, offset);
+	offset += 32;
+	hookData.writeUInt16BE(swiftParams.order.destChainId, offset);
+	offset += 2;
+	Buffer.from(swiftParams.order.tokenOut.slice(2), 'hex').copy(hookData, offset);
+	offset += 32;
+	hookData.writeBigUInt64BE(swiftParams.order.minAmountOut, offset);
+	offset += 8;
+	hookData.writeBigUInt64BE(swiftParams.order.gasDrop, offset);
+	offset += 8;
+	hookData.writeBigUInt64BE(swiftParams.order.cancelFee, offset);
+	offset += 8;
+	hookData.writeBigUInt64BE(swiftParams.order.refundFee, offset);
+	offset += 8;
+	hookData.writeBigUInt64BE(BigInt(swiftParams.order.deadline), offset);
+	offset += 8;
+	Buffer.from(swiftParams.order.referrerAddr.slice(2), 'hex').copy(hookData, offset);
+	offset += 32;
+	hookData.writeUInt8(swiftParams.order.referrerBps, offset);
+	offset += 1;
+	hookData.writeUInt8(swiftParams.order.auctionMode, offset);
+	offset += 1;
+	Buffer.from(swiftParams.order.random.slice(2), 'hex').copy(hookData, offset);
+	offset += 32;
+	if (customPayload) {
+		hookData.writeUInt16BE(customPayload.length, offset);
+		offset += 2;
+		customPayload.copy(hookData, offset);
+		offset += customPayload.length;
+	} else {
+		hookData.writeUInt16BE(0, offset);
+		offset += 2;
+	}
+	hookData.writeUInt32BE(Number(quote.fromToken.contract), offset);
+	offset += 4;
+	Buffer.from(new Array(24).fill(0)).copy(hookData, offset);
+	offset += 24;
+	hookData.writeBigUInt64BE(BigInt(quote.hcSwiftWithdraw.maxFee64), offset);
+	offset += 8;
+	hookData.writeUInt32BE(quote.hcSwiftWithdraw.minFinalityThreshold, offset);
+	offset += 4;
+	hookData.writeBigUInt64BE(BigInt(quote.hcSwiftWithdraw.relayerFee64), offset);
+	offset += 8;
+	if (offset !== hookDataLength) {
+		throw new Error(`Invalid hook data length: expected ${hookDataLength}, got ${offset}`);
+	}
+	return {
+		domain: {
+			name: 'HyperliquidSignTransaction',
+			version: '1',
+			chainId: 42161,
+			verifyingContract: '0x0000000000000000000000000000000000000000',
+		},
+		types: {
+			'HyperliquidTransaction:SendToEvmWithData': [
+				{ name: 'hyperliquidChain', type: 'string' },
+				{ name: 'token', type: 'string' },
+				{ name: 'amount', type: 'string' },
+				{ name: 'sourceDex', type: 'string' },
+				{ name: 'destinationRecipient', type: 'string' },
+				{ name: 'addressEncoding', type: 'string' },
+				{ name: 'destinationChainId', type: 'uint32' },
+				{ name: 'gasLimit', type: 'uint64' },
+				{ name: 'data', type: 'bytes' },
+				{ name: 'nonce', type: 'uint64' },
+			],
+		},
+		value: {
+			hyperliquidChain: 'Mainnet',
+			token: 'USDC',
+			amount: formatUnits(BigInt(quote.effectiveAmountIn64), CCTP_TOKEN_DECIMALS),
+			sourceDex: sourceDex,
+			destinationRecipient: addresses.HC_ARBITRUM_WITHDRAW_PROCESSOR,
+			addressEncoding: 'hex',
+			destinationChainId: getCCTPDomain('arbitrum'),
+			gasLimit: quote.hcSwiftWithdraw.gasLimit,
+			data: '0x' + hookData.toString('hex'),
+			nonce: new Date().getTime(),
+		}
+	};
 }
