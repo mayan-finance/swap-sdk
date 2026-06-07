@@ -6,15 +6,10 @@ import {
 	toBeHex,
 	TransactionRequest,
 	TransactionResponse,
-	ZeroAddress,
+	ZeroAddress
 } from 'ethers';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
-import type {
-	Erc20Permit,
-	EvmForwarderParams,
-	Quote,
-	ReferrerAddresses,
-} from '../types';
+import type { Erc20Permit, EvmForwarderParams, Quote, ReferrerAddresses } from '../types';
 import {
 	getAmountOfFractionalAmount,
 	getAssociatedTokenAddress,
@@ -24,7 +19,7 @@ import {
 	getWormholeChainIdById,
 	getWormholeChainIdByName,
 	nativeAddressToHexString,
-	ZeroPermit,
+	ZeroPermit
 } from '../utils';
 import MayanSwapArtifact from './MayanSwapArtifact';
 import MayanForwarderArtifact from './MayanForwarderArtifact';
@@ -32,15 +27,13 @@ import ERC20Artifact from './ERC20Artifact';
 import addresses from '../addresses';
 import { Buffer } from 'buffer';
 import { getMctpFromEvmTxPayload } from './evmMctp';
-import {
-	getSwiftFromEvmGasLessParams,
-	getSwiftFromEvmTxPayload,
-} from './evmSwift';
-import { getEstimateGasEvm, submitSwiftEvmSwap } from '../api';
+import { getSwiftFromEvmGasLessParams, getSwiftFromEvmTxPayload } from './evmSwift';
+import { getEstimateGasEvm, submitHyperCoreWithdraw, submitSwiftEvmSwap } from '../api';
 import { getFastMctpFromEvmTxPayload } from './evmFastMctp';
 import {
 	getHyperCoreDepositFromEvmTxPayload,
 	getHyperCoreSwiftFromEvmGasLessParams,
+	getHyperCoreWithdrawParams
 } from './evmHyperCore';
 import { getMonoChainFromEvmTxPayload } from './evmMonoChain';
 
@@ -385,6 +378,10 @@ export async function swapFromEvm(
 	}
 	const signerChainId = Number((await signer.provider.getNetwork()).chainId);
 
+	if (quote.fromChain === 'hypercore' && (!quote.gasless || quote.type !== 'SWIFT')) {
+		throw new Error('Only SWIFT gasless quotes are supported from hypercore withdraw');
+	}
+
 	if (
 		quote.type === 'SWIFT' &&
 		quote.gasless
@@ -393,6 +390,20 @@ export async function swapFromEvm(
 			quote,
 			referrerAddresses
 		);
+		if (quote.fromChain === 'hypercore') {
+			const hcParams = getHyperCoreWithdrawParams(quote, swapperAddress, destinationAddress, referrerAddress, payload);
+			const signedHcParams = await signer.signTypedData(
+				hcParams.domain,
+				hcParams.types,
+				hcParams.value,
+			);
+			// return order id, could be used to fetch from explorer
+			return await submitHyperCoreWithdraw(
+				hcParams.value,
+				signedHcParams,
+				options?.apiKey
+			);
+		}
 		const gasLessParams = quote.toChain === 'hypercore' ? getHyperCoreSwiftFromEvmGasLessParams(
 			quote,
 			swapperAddress,

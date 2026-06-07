@@ -165,6 +165,12 @@ export type Quote = {
 	hcSwiftDeposit?: {
 		relayerFee64: string;
 	};
+	hcSwiftWithdraw?: {
+		gasLimit: number;
+		relayerFee64: string;
+		maxFee64: string;
+		minFinalityThreshold: number;
+	};
 	monoChainMayanContract: string;
 	swiftInputContractStandard: TokenStandard;
 	swiftVerifiedInputAddress: string;
@@ -428,3 +434,37 @@ export type EstimateGasEvmParams = {
 	chainId: number;
 }
 
+export type HyperCoreWithdrawCircleTypedData = {
+	domain: {
+		name: 'HyperliquidSignTransaction',
+		version: '1',
+		chainId: 42161,
+		verifyingContract: '0x0000000000000000000000000000000000000000',
+	},
+	types: {
+		'HyperliquidTransaction:SendToEvmWithData': [
+			{ name: 'hyperliquidChain', type: 'string' },
+			{ name: 'token', type: 'string' },
+			{ name: 'amount', type: 'string' },
+			{ name: 'sourceDex', type: 'string' },
+			{ name: 'destinationRecipient', type: 'string' },
+			{ name: 'addressEncoding', type: 'string' },
+			{ name: 'destinationChainId', type: 'uint32' },
+			{ name: 'gasLimit', type: 'uint64' },
+			{ name: 'data', type: 'bytes' },
+			{ name: 'nonce', type: 'uint64' },
+		],
+	},
+	value: {
+		hyperliquidChain: 'Mainnet',
+		token: 'USDC',
+		amount: string,
+		sourceDex: string,
+		destinationRecipient: string,
+		addressEncoding: 'hex',
+		destinationChainId: number,
+		gasLimit: number,
+		data: string,
+		nonce: number,
+	}
+}
