@@ -1,12 +1,10 @@
-import {
-	SuiClient,
-	SuiMoveFunctionArgType,
-	CoinStruct,
-	PaginatedCoins,
-	SuiObjectResponse,
-} from '@mysten/sui/client';
+import type { SuiGrpcClient } from '@mysten/sui/grpc';
 import { SuiFunctionNestedResult, SuiFunctionParameter } from '../types';
 import { Transaction, TransactionResult } from '@mysten/sui/transactions';
+
+// Minimal coin shape used by fetchAllCoins/resolveInputCoin (subset of the v1
+// CoinStruct). v2 `listCoins` returns `objectId` and `balance` (as a string).
+type SuiCoin = { coinObjectId: string; balance: string; coinType: string };
 
 /**
  * assertArgumentIsImmutable
@@ -19,7 +17,7 @@ import { Transaction, TransactionResult } from '@mysten/sui/transactions';
  *    - module: The name of the Move module.
  *    - function: The name of the Move function to validate.
  *    - argumentIndex: The index of the argument to check for immutability.
- * @param suiClient - An instance of `SuiClient` used to interact with the Sui blockchain.
+ * @param suiClient - An instance of `SuiGrpcClient` used to interact with the Sui blockchain.
  *
  * @throws Will throw an error if:
  *    - The argument types cannot be retrieved from the Sui client.
@@ -34,33 +32,34 @@ export async function assertArgumentIsImmutable(
 		function: string;
 		argumentIndex: number;
 	},
-	suiClient: SuiClient
+	suiClient: SuiGrpcClient
 ): Promise<void> {
-	let argTypes: SuiMoveFunctionArgType[];
+	let parameters: Awaited<
+		ReturnType<SuiGrpcClient['getMoveFunction']>
+	>['function']['parameters'];
 	try {
-		argTypes = await suiClient.getMoveFunctionArgTypes({
-			package: params.package,
-			module: params.module,
-			function: params.function,
+		const { function: fn } = await suiClient.getMoveFunction({
+			packageId: params.package,
+			moduleName: params.module,
+			name: params.function,
 		});
+		parameters = fn.parameters;
 	} catch (error) {
 		throw new Error(
 			`Failed to fetch ${params.package}::${params.module}::${params.function} ArgTypes`
 		);
 	}
-	if (argTypes) {
-		if (
-			argTypes[params.argumentIndex] !== 'Pure' &&
-			//@ts-ignore
-			argTypes[params.argumentIndex]?.Object !== 'ByImmutableReference'
-		) {
-			throw new Error(
-				`Argument ${params.argumentIndex} of ${params.module}::${params.function} is not immutable`
-			);
-		}
-	} else {
+	// v1 `getMoveFunctionArgTypes` accepted only `Pure` (a by-value primitive) or
+	// `Object: ByImmutableReference`. v2 `getMoveFunction` returns each parameter as
+	// `{ reference: 'immutable' | 'mutable' | null, body }`, so map equivalently:
+	//   immutable ref  -> reference === 'immutable'                  (was ByImmutableReference)
+	//   pure by-value  -> reference == null && body is not a datatype (was 'Pure')
+	const param = parameters?.[params.argumentIndex];
+	const isImmutableRef = param?.reference === 'immutable';
+	const isPure = param?.reference == null && param?.body?.$kind !== 'datatype';
+	if (!param || (!isImmutableRef && !isPure)) {
 		throw new Error(
-			`Failed to fetch package::${params.module}::${params.function} ArgTypes`
+			`Argument ${params.argumentIndex} of ${params.module}::${params.function} is not immutable`
 		);
 	}
 }
@@ -80,7 +79,7 @@ export async function assertArgumentIsImmutable(
  *    - coinType: The type of coin to filter for during retrieval.
  *    - coinAmount: The target coin amount to reach.
  *
- * @param suiClient - An instance of `SuiClient` used to interact with the Sui blockchain.
+ * @param suiClient - An instance of `SuiGrpcClient` used to interact with the Sui blockchain.
  *
  * @returns A Promise that resolves to an object containing:
  *    - coins: An array of CoinStruct objects representing the retrieved coins.
@@ -92,24 +91,28 @@ export async function fetchAllCoins(
 		coinType: string;
 		coinAmount: bigint;
 	},
-	suiClient: SuiClient
+	suiClient: SuiGrpcClient
 ): Promise<{
-	coins: CoinStruct[];
+	coins: SuiCoin[];
 	sum: bigint;
 }> {
-	let allCoinData: CoinStruct[] = [];
+	let allCoinData: SuiCoin[] = [];
 	let currentSum = BigInt(0);
-	let cursor: string | undefined = undefined;
+	let cursor: string | null = null;
 	do {
-		const paginatedCoins: PaginatedCoins = await suiClient.getCoins({
-			...inputs,
+		const paginatedCoins = await suiClient.listCoins({
 			owner: inputs.walletAddress,
+			coinType: inputs.coinType,
 			cursor,
 		});
 
-		const coinData = paginatedCoins.data.filter(
-			(data) => BigInt(data.balance) > BigInt(0)
-		);
+		const coinData: SuiCoin[] = paginatedCoins.objects
+			.map((c) => ({
+				coinObjectId: c.objectId,
+				balance: c.balance ?? '0',
+				coinType: inputs.coinType,
+			}))
+			.filter((coin) => BigInt(coin.balance) > BigInt(0));
 		allCoinData = [...allCoinData, ...coinData];
 
 		coinData.forEach((coin) => {
@@ -117,9 +120,9 @@ export async function fetchAllCoins(
 		});
 
 		if (
-			paginatedCoins.data.length === 0 ||
+			paginatedCoins.objects.length === 0 ||
 			!paginatedCoins.hasNextPage ||
-			!paginatedCoins.nextCursor ||
+			!paginatedCoins.cursor ||
 			currentSum >= inputs.coinAmount
 		)
 			return {
@@ -129,7 +132,7 @@ export async function fetchAllCoins(
 				sum: currentSum,
 			};
 
-		cursor = paginatedCoins.nextCursor;
+		cursor = paginatedCoins.cursor;
 	} while (true);
 }
 
@@ -143,29 +146,28 @@ export async function fetchAllCoins(
  * - Upgrades to Mayan packages require multiple signatures to perform, enhancing governance and security.
  *
  * @param {string} stateObjectId - The ID of the shared state object containing the latest package ID.
- * @param {SuiClient} suiClient - An instance of the SuiClient used to interact with the Sui blockchain.
+ * @param {SuiGrpcClient} suiClient - An instance of the SuiGrpcClient used to interact with the Sui blockchain.
  * @returns {Promise<string>} - A promise that resolves to the latest Mayan Sui package ID.
  * @throws {Error} - Throws an error if the state object cannot be fetched or if the `latest_package_id` field is not found.
  */
 export async function fetchMayanSuiPackageId(
 	stateObjectId: string,
-	suiClient: SuiClient
+	suiClient: SuiGrpcClient
 ): Promise<string> {
-	let object: SuiObjectResponse;
+	let json: Record<string, any> | null;
 	try {
-		object = await suiClient.getObject({
-			id: stateObjectId,
-			options: {
-				showContent: true,
-			},
+		// v2 gRPC `getObject({ include: { json: true } })` returns a flat Move-struct
+		// map on `object.json` (no v1 `data.content.fields` wrapper).
+		const { object } = await suiClient.getObject({
+			objectId: stateObjectId,
+			include: { json: true },
 		});
+		json = (object?.json ?? null) as Record<string, any> | null;
 	} catch (err) {
 		throw new Error(`Failed to fetch Mayan Sui package ID: \n\n ${err}`);
 	}
-	// @ts-ignore
-	if (object.data?.content?.fields?.latest_package_id) {
-		// @ts-ignore
-		return object.data.content.fields.latest_package_id;
+	if (json?.latest_package_id) {
+		return json.latest_package_id as string;
 	}
 	throw new Error('latest_package_id not found in Mayan Sui state object');
 }
@@ -174,7 +176,7 @@ export async function resolveInputCoin(
 	amount: bigint,
 	owner: string,
 	coinType: string,
-	suiClient: SuiClient,
+	suiClient: SuiGrpcClient,
 	tx: Transaction,
 	preparedCoin?: SuiFunctionParameter | null
 ) {

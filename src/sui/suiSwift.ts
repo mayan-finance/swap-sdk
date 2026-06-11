@@ -1,6 +1,6 @@
 import {Transaction, TransactionResult, TransactionObjectArgument} from '@mysten/sui/transactions';
 import {SUI_TYPE_ARG, SUI_CLOCK_OBJECT_ID} from '@mysten/sui/utils';
-import {SuiClient} from '@mysten/sui/client';
+import type {SuiGrpcClient} from '@mysten/sui/grpc';
 import {
 	Quote,
 	SuiFunctionParameter,
@@ -30,7 +30,7 @@ export async function createSwiftFromSuiMoveCalls(
 	destinationAddress: string,
 	referrerAddress: string | null | undefined,
 	payload: Uint8Array | Buffer | null | undefined,
-	suiClient: SuiClient,
+	suiClient: SuiGrpcClient,
 	options?: ComposableSuiMoveCallsOptions & { randomKey?: Uint8Array }
 ): Promise<Transaction> {
 	if (!quote.fromToken.verifiedAddress || !quote.swiftVerifiedInputAddress) {
@@ -122,7 +122,7 @@ export async function addInitSwiftOrderMoveCalls(
 	swiftPackageId: string,
 	feeManagerPackageId: string,
 	payload: Uint8Array | Buffer | null | undefined,
-	suiClient: SuiClient,
+	suiClient: SuiGrpcClient,
 	options?: ComposableSuiMoveCallsOptions & { randomKey?: Uint8Array }
 ): Promise<Transaction> {
 	const destChainId = getWormholeChainIdByName(quote.toChain);

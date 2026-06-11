@@ -3,7 +3,7 @@ import {
 	ReferrerAddresses,
 	ComposableSuiMoveCallsOptions,
 } from '../types';
-import { SuiClient } from '@mysten/sui/client';
+import type { SuiGrpcClient } from '@mysten/sui/grpc';
 import { Transaction } from '@mysten/sui/transactions';
 import { getQuoteSuitableReferrerAddress } from '../utils';
 import { createMctpFromSuiMoveCalls } from './suiMctp';
@@ -16,7 +16,7 @@ export async function createSwapFromSuiMoveCalls(
 	destinationAddress: string,
 	referrerAddresses: ReferrerAddresses | null | undefined,
 	payload: Uint8Array | Buffer | null | undefined,
-	suiClient: SuiClient,
+	suiClient: SuiGrpcClient,
 	options?: ComposableSuiMoveCallsOptions
 ): Promise<Transaction> {
 	const referrerAddress = getQuoteSuitableReferrerAddress(
