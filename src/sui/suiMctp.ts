@@ -1,6 +1,6 @@
 import { Transaction, TransactionResult, TransactionObjectArgument } from '@mysten/sui/transactions';
 import { SUI_TYPE_ARG, SUI_CLOCK_OBJECT_ID } from '@mysten/sui/utils';
-import { SuiClient } from '@mysten/sui/client';
+import type { SuiGrpcClient } from '@mysten/sui/grpc';
 import {
 	Quote,
 	SuiFunctionParameter,
@@ -35,7 +35,7 @@ export async function createMctpFromSuiMoveCalls(
 	destinationAddress: string,
 	referrerAddress: string | null | undefined,
 	payload: Uint8Array | Buffer | null | undefined,
-	suiClient: SuiClient,
+	suiClient: SuiGrpcClient,
 	options?: ComposableSuiMoveCallsOptions
 ): Promise<Transaction> {
 	if (!quote.fromToken.verifiedAddress) {
@@ -185,7 +185,7 @@ export async function addBridgeWithFeeMoveCalls(
 	destinationAddress: string,
 	mctpPackageId: string,
 	payload: Uint8Array | Buffer | null | undefined,
-	suiClient: SuiClient,
+	suiClient: SuiGrpcClient,
 	options?: ComposableSuiMoveCallsOptions
 ): Promise<Transaction> {
 	return addBridgeWithFeeMoveCalls2({
@@ -213,7 +213,7 @@ export async function addBridgeLockedFeeMoveCalls(
 	swapperAddress: string,
 	destinationAddress: string,
 	mctpPackageId: string,
-	suiClient: SuiClient,
+	suiClient: SuiGrpcClient,
 	options?: ComposableSuiMoveCallsOptions
 ): Promise<Transaction> {
 	const destChainId = getWormholeChainIdByName(quote.toChain);
@@ -320,7 +320,7 @@ export async function addInitOrderMoveCalls(
 	referrerAddress: string | null | undefined,
 	mctpPackageId: string,
 	feeManagerPackageId: string,
-	suiClient: SuiClient,
+	suiClient: SuiGrpcClient,
 	options?: ComposableSuiMoveCallsOptions
 ): Promise<Transaction> {
 	const destChainId = getWormholeChainIdByName(quote.toChain);
@@ -488,7 +488,7 @@ export async function addInitOrderMoveCalls(
 async function addPublishWormholeMessage(
 	tx: Transaction,
 	messageTicket: SuiFunctionNestedResult,
-	suiClient: SuiClient,
+	suiClient: SuiGrpcClient,
 	bridgeFee: bigint,
 	feePayer: string,
 	suiCoin?: SuiFunctionParameter | null
@@ -558,7 +558,7 @@ export async function addBridgeWithFeeMoveCalls2(params:{
 	mctpInputTreasury: string,
 	bridgeFee: number,
 	payload: Uint8Array | Buffer | null | undefined,
-	suiClient: SuiClient,
+	suiClient: SuiGrpcClient,
 	options?: ComposableSuiMoveCallsOptions
 }): Promise<Transaction> {
 	const {
