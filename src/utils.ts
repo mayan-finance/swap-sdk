@@ -83,6 +83,24 @@ function isValidNumericInput(value: any): boolean {
 	);
 }
 
+
+function normalizeDecimalAmount(amount: string | number, decimals: number): string {
+	const value = String(amount).trim();
+	if (value.length === 0) {
+		throw new Error('getAmountOfFractionalAmount: Amount is empty');
+	}
+
+	const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value);
+	if (!match) {
+		throw new Error('getAmountOfFractionalAmount: Amount is not a number');
+	}
+
+	const fractionLimit = Math.min(8, decimals);
+	const [, sign, whole, fraction = ''] = match;
+	const trimmedFraction = fraction.slice(0, fractionLimit);
+	return `${sign}${whole}${trimmedFraction.length > 0 ? `.${trimmedFraction}` : ''}`;
+}
+
 export function getAmountOfFractionalAmount(
 	amount: string | number, decimals: string | number) : bigint {
 	if (amount === null || amount === undefined) {
@@ -91,24 +109,12 @@ export function getAmountOfFractionalAmount(
 	if (typeof amount !== 'string' && typeof amount !== 'number') {
 		throw new Error('getAmountOfFractionalAmount: Amount is not a string or number');
 	}
-	if (typeof amount === 'string' && amount.length === 0) {
-		throw new Error('getAmountOfFractionalAmount: Amount is empty');
-	}
-	if (!Number.isFinite(Number(amount))) {
-		throw new Error('getAmountOfFractionalAmount: Amount is not a number');
-	}
 	if (!isValidNumericInput(decimals)) {
 		throw new Error('getAmountOfFractionalAmount: decimals is not a number');
 	}
-	const cutFactor = Math.min(8, Number(decimals));
-	const numStr = Number(amount).toFixed(cutFactor + 1);
-	const reg = new RegExp(`^-?\\d+(?:\\.\\d{0,${cutFactor}})?`);
-	const matchResult = numStr.match(reg);
-	if (!matchResult) {
-		throw new Error('getAmountOfFractionalAmount: fixedAmount is null');
-	}
-	const fixedAmount = matchResult[0];
-	return parseUnits(fixedAmount, Number(decimals))
+	const parsedDecimals = Number(decimals);
+	const fixedAmount = normalizeDecimalAmount(amount, parsedDecimals);
+	return parseUnits(fixedAmount, parsedDecimals)
 }
 
 export function getDisplayAmount(
