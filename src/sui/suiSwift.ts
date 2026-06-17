@@ -1,6 +1,6 @@
 import {Transaction, TransactionResult, TransactionObjectArgument} from '@mysten/sui/transactions';
 import {SUI_TYPE_ARG, SUI_CLOCK_OBJECT_ID} from '@mysten/sui/utils';
-import {SuiClient} from '@mysten/sui/client';
+import {ClientWithCoreApi} from '@mysten/sui/client';
 import {
 	Quote,
 	SuiFunctionParameter,
@@ -30,7 +30,7 @@ export async function createSwiftFromSuiMoveCalls(
 	destinationAddress: string,
 	referrerAddress: string | null | undefined,
 	payload: Uint8Array | Buffer | null | undefined,
-	suiClient: SuiClient,
+	suiClient: ClientWithCoreApi,
 	options?: ComposableSuiMoveCallsOptions & { randomKey?: Uint8Array }
 ): Promise<Transaction> {
 	if (!quote.fromToken.verifiedAddress || !quote.swiftVerifiedInputAddress) {
@@ -122,7 +122,7 @@ export async function addInitSwiftOrderMoveCalls(
 	swiftPackageId: string,
 	feeManagerPackageId: string,
 	payload: Uint8Array | Buffer | null | undefined,
-	suiClient: SuiClient,
+	suiClient: ClientWithCoreApi,
 	options?: ComposableSuiMoveCallsOptions & { randomKey?: Uint8Array }
 ): Promise<Transaction> {
 	const destChainId = getWormholeChainIdByName(quote.toChain);
@@ -131,7 +131,7 @@ export async function addInitSwiftOrderMoveCalls(
 	const amountInMin = quote.fromToken.contract === quote.swiftInputContract ?
 		BigInt(quote.effectiveAmountIn64) :
 		getAmountOfFractionalAmount(
-			quote.minMiddleAmount,
+			quote.minMiddleAmount ?? 0,
 			quote.swiftInputDecimals,
 		);
 
@@ -170,8 +170,8 @@ export async function addInitSwiftOrderMoveCalls(
 		quote.gasDrop,
 		Math.min(getGasDecimal(quote.toChain), 8)
 	);
-	const cancelFee = BigInt(quote.cancelRelayerFee64);
-	const refundFee = BigInt(quote.refundRelayerFee64);
+	const cancelFee = BigInt(quote.cancelRelayerFee64 ?? 0);
+	const refundFee = BigInt(quote.refundRelayerFee64 ?? 0);
 	const deadline = BigInt(quote.deadline64);
 	let referrerHex: string;
 	if (referrerAddress) {
@@ -206,8 +206,8 @@ export async function addInitSwiftOrderMoveCalls(
 		tx.pure.u64(refundFee),
 		tx.pure.u64(deadline),
 		tx.pure.address(referrerHex),
-		tx.pure.u8(quote.referrerBps),
-		tx.pure.u8(quote.swiftAuctionMode),
+		tx.pure.u8(quote.referrerBps ?? 0),
+		tx.pure.u8(quote.swiftAuctionMode ?? 0),
 	];
 
 	const [feeManagerInitOrderParamsTicket] = tx.moveCall({

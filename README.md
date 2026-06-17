@@ -2,6 +2,49 @@
 # Mayan Cross-Chain Swap SDK
 A minimal package for sending cross-chain swap transactions
 
+## ⚠️ Breaking changes in v15.0.0
+
+**Sui now runs on `@mysten/sui` v2 and the gRPC / Core API.** This affects the **Sui** integration only — Solana and EVM flows are unchanged. If you don't bridge from Sui, you are not affected (aside from the Node note below).
+
+- **Upgrade `@mysten/sui` to `^2`.** It is now an **ESM-only** package and is required by the Sui swap functions (`createSwapFromSuiMoveCalls`, …).
+- **A v1 `SuiClient` no longer works — you must pass a v2 client.** The SDK now reads via the Sui **Core API** (`client.core.listCoins` / `getObject` / `getMoveFunction`). A v1 `SuiClient` does not implement these and throws `core.listCoins is not a function` on any Sui swap.
+- **Construct a v2 client and pass it exactly as before.** The `suiClient` parameter now accepts any client implementing the Core API (`ClientWithCoreApi`). **gRPC is recommended** (JSON-RPC is being deprecated by Mysten in favor of gRPC/GraphQL):
+
+```ts
+import { SuiGrpcClient } from '@mysten/sui/grpc';
+import { fetchQuote, createSwapFromSuiMoveCalls } from '@mayanfinance/swap-sdk';
+
+const suiClient = new SuiGrpcClient({
+  network: 'mainnet',
+  baseUrl: 'https://<your-sui-grpc-endpoint>:443',
+  // meta: { authorization: '<token>' }, // only if your provider requires auth
+});
+
+const tx = await createSwapFromSuiMoveCalls(
+  quote, swapperWalletAddress, destinationWalletAddress, referrerAddresses, customPayload, suiClient, options,
+);
+```
+
+> A v2 `SuiJsonRpcClient` (`new SuiJsonRpcClient({ url, network })`) and other Core-API clients (GraphQL, `@mysten/dapp-kit`) also work, since the param is typed against `ClientWithCoreApi`. Prefer `SuiGrpcClient` for new integrations.
+
+- **The Sui execution result shape changed (v2 clients).** `signAndExecuteTransaction(...)` now returns `{ $kind, Transaction | FailedTransaction }`. Read the digest from the nested object:
+
+```ts
+const res = await suiClient.signAndExecuteTransaction({ signer, transaction: tx });
+const digest = res.Transaction?.digest ?? res.FailedTransaction?.digest;
+```
+
+> If you sign via a wallet adapter / `@mysten/dapp-kit`, follow its v2 API instead.
+
+- **TypeScript module resolution.** v2 ships an `exports` map; if you hit `Cannot find module '@mysten/sui/...'`, set `"moduleResolution": "bundler"` (or `node16` / `nodenext`) and `"module": "esnext"` in your `tsconfig.json`.
+- **CommonJS on older Node is affected — even if you don't bridge from Sui.** The SDK eagerly loads its ESM-only dependencies (`@mysten/sui` v2, and already `@solana/web3.js`) at import time, so on **Node < 20.19 / < 22.12** a plain `require('@mayanfinance/swap-sdk')` throws `ERR_REQUIRE_ESM` and the package fails to load **at all** — regardless of which chains you use. To consume v15 from CommonJS you must either:
+    - run on **Node ≥ 20.19 / ≥ 22.12** (where `require()` of an ES module is supported), or
+    - import the SDK as **ESM** (`import` instead of `require`).
+
+  Bundlers/runtimes that can't `require()` an ES module (e.g. some **Metro / React Native** setups) are affected the same way. **ESM consumers (`import`) on any modern runtime are unaffected.** *(This constraint already existed in v14 via `@solana/web3.js`'s ESM-only dependencies; the v2 Sui upgrade makes it unavoidable.)*
+
+> **Bundling or install issues with v15?** If anything goes wrong packaging or installing the v15 package — ESM/CJS interop, bundler configuration, dependency resolution, etc. — please [open an issue](https://github.com/mayan-finance/swap-sdk/issues) or reach out to us. We're actively monitoring and will work with you to resolve it as soon as possible.
+
 ## ⚠️ Breaking changes in v14.0.0
 
 - **HyperCore USDC deposits no longer require an extra user signature.** The previous flow that required the user to sign a USDC permit on Arbitrum has been removed. Just fetch a quote with `toChain: 'hypercore'` and call the regular `swapFromEvm` / `swapFromSolana` / `getSwapFromEvmTxPayload` — no extra signing step.
