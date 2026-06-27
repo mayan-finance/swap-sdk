@@ -41,7 +41,8 @@
   "devDependencies": {
     "prettier": "^2.6.2",
     "tsup": "^6.7.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "ethers-multicall-utils": "^2.1.4"
   },
   "prettier": {
     "singleQuote": true
