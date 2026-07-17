@@ -11,6 +11,8 @@ import {
 	PermitDomain,
 	PermitValue,
 	QuoteType,
+	ChainReferrers,
+	Referrer,
 } from './types';
 import ERC20Artifact from './evm/ERC20Artifact';
 import * as sha3 from 'js-sha3';
@@ -246,59 +248,175 @@ export function wait(time: number): Promise<void> {
 	});
 }
 
+function validateReferrerBps(referrers: Referrer[]): void {
+	for (const referrer of referrers) {
+		if (!Number.isInteger(referrer.bps) || referrer.bps < 0 || referrer.bps > 255) {
+			throw new Error(`Invalid referrer bps: ${referrer.bps} for ${referrer.address}`);
+		}
+	}
+}
+
+function calculateMixedReferrerAddressEvm(referrers: Referrer[]): string {
+	validateReferrerBps(referrers);
+	const sorted = referrers
+		.map((referrer) => {
+			const addressBuf = Buffer.from(ethers.getBytes(referrer.address));
+			if (addressBuf.length !== 20) {
+				throw new Error(`Invalid EVM referrer address: ${referrer.address}`);
+			}
+			return { addressBuf, bps: referrer.bps };
+		})
+		.sort((a, b) => a.addressBuf.compare(b.addressBuf));
+	const encoded = Buffer.alloc(21 * sorted.length);
+	sorted.forEach((referrer, i) => {
+		encoded.set(referrer.addressBuf, i * 21);
+		encoded.writeUInt8(referrer.bps, i * 21 + 20);
+	});
+	const hash = ethers.keccak256(encoded);
+	// drop the first 12 bytes of the 32-byte hash, keep the last 20 as the address
+	return ethers.dataSlice(hash, 12);
+}
+
+function calculateMixedReferrerAddressSolana(referrers: Referrer[]): string {
+	validateReferrerBps(referrers);
+	const sorted = referrers
+		.map((referrer) => ({
+			addressBuf: new PublicKey(referrer.address).toBuffer(),
+			bps: referrer.bps,
+		}))
+		.sort((a, b) => a.addressBuf.compare(b.addressBuf));
+	const encoded = Buffer.alloc(33 * sorted.length);
+	sorted.forEach((referrer, i) => {
+		encoded.set(referrer.addressBuf, i * 33);
+		encoded.writeUInt8(referrer.bps, i * 33 + 32);
+	});
+	const hash = Buffer.from(hexToUint8Array(ethers.keccak256(encoded)));
+	const [mixedReferrer] = PublicKey.findProgramAddressSync(
+		[Buffer.from('MIXED'), hash],
+		new PublicKey(addresses.FEE_MANAGER_PROGRAM_ID),
+	);
+	return mixedReferrer.toBase58();
+}
+
+function getVerifiedMixedReferrerAddressSolana(quote: Quote, referrers: Referrer[]): string {
+	const calculated = calculateMixedReferrerAddressSolana(referrers);
+	if (quote.mixedRefAddress !== calculated) {
+		throw new Error(
+			`Mixed referrer address mismatch: quote has ${quote.mixedRefAddress || 'none'} but calculated ${calculated}. ` +
+			'Make sure the same referrers were passed when fetching the quote.'
+		);
+	}
+	return calculated;
+}
+
+function getVerifiedMixedReferrerAddressEvm(quote: Quote, referrers: Referrer[]): string {
+	const calculated = calculateMixedReferrerAddressEvm(referrers);
+	if (!quote.mixedRefAddress || quote.mixedRefAddress.toLowerCase() !== calculated.toLowerCase()) {
+		throw new Error(
+			`Mixed referrer address mismatch: quote has ${quote.mixedRefAddress || 'none'} but calculated ${calculated}. ` +
+			'Make sure the same referrers were passed when fetching the quote.'
+		);
+	}
+	return calculated;
+}
+
+function isChainReferrers(
+	referrers: ReferrerAddresses | ChainReferrers,
+): referrers is ChainReferrers {
+	return Array.isArray(referrers.solana || referrers.evm || referrers.sui);
+}
 export function getQuoteSuitableReferrerAddress(
 	quote: Quote,
-	referrerAddresses?: ReferrerAddresses | null,
+	referrerAddresses?: ReferrerAddresses | ChainReferrers | null,
 ): string | null {
 	if (!quote || !referrerAddresses) {
 		return null;
 	}
+	if (isChainReferrers(referrerAddresses)) {
+		if (quote.type === 'WH') {
+			return null;
+		}
+		if (quote.type === 'MCTP') {
+			if (quote.toChain === 'solana' && referrerAddresses.solana?.length) {
+				return getVerifiedMixedReferrerAddressSolana(quote, referrerAddresses.solana);
+			}
+			return null;
+		}
+		if (quote.type === 'SWIFT') {
+			if (quote.swiftVersion === 'V2') {
+				if (quote.fromChain === 'solana' || quote.fromChain === 'fogo') {
+					return referrerAddresses.solana?.length ? getVerifiedMixedReferrerAddressSolana(quote, referrerAddresses.solana) : null;
+				}
+				if (quote.fromChain === 'sui') {
+					return null;
+				}
+				return referrerAddresses.evm?.length ? getVerifiedMixedReferrerAddressEvm(quote, referrerAddresses.evm) : null;
+			} else {
+				return null;
+			}
+		}
+		if (quote.type === 'FAST_MCTP') {
+			if (quote.toChain === 'solana' && referrerAddresses.solana?.length) {
+				return getVerifiedMixedReferrerAddressSolana(quote, referrerAddresses.solana);
+			}
+			return null;
+		}
+		if (quote.type === 'MONO_CHAIN') {
+			if (quote.fromChain === 'solana' && referrerAddresses.solana?.length) {
+				return getVerifiedMixedReferrerAddressSolana(quote, referrerAddresses.solana);
+			} else if (quote.fromChain !== 'sui' && quote.fromChain !== 'solana' && referrerAddresses.evm?.length) {
+				return getVerifiedMixedReferrerAddressEvm(quote, referrerAddresses.evm);
+			}
+			return null;
+		}
+		return null;
+	}
 	if (quote.type === 'WH') {
-		return referrerAddresses?.solana || null;
+		return referrerAddresses.solana || null;
 	}
 	if (quote.type === 'MCTP') {
 		if (quote.toChain === 'solana') {
-			return referrerAddresses?.solana || null;
+			return referrerAddresses.solana || null;
 		}
 		if (quote.toChain === 'sui') {
-			return referrerAddresses?.sui || null;
+			return referrerAddresses.sui || null;
 		}
-		return referrerAddresses?.evm || null;
+		return referrerAddresses.evm || null;
 	}
 	if (quote.type === 'SWIFT') {
 		if (quote.swiftVersion === 'V2') {
 			if (quote.fromChain === 'solana' || quote.fromChain === 'fogo') {
-				return referrerAddresses?.solana || null;
+				return referrerAddresses.solana || null;
 			}
 			if (quote.fromChain === 'sui') {
-				return referrerAddresses?.sui || null;
+				return referrerAddresses.sui || null;
 			}
-			return referrerAddresses?.evm || null;
+			return referrerAddresses.evm || null;
 		} else {
 			if (quote.toChain === 'solana') {
-				return referrerAddresses?.solana || null;
+				return referrerAddresses.solana || null;
 			}
 			if (quote.toChain === 'sui') {
 				throw new Error('Swift V1 does not support SUI');
 			}
-			return referrerAddresses?.evm || null;
+			return referrerAddresses.evm || null;
 		}
 	}
 	if (quote.type === 'FAST_MCTP') {
 		if (quote.toChain === 'solana') {
-			return referrerAddresses?.solana || null;
+			return referrerAddresses.solana || null;
 		}
 		if (quote.toChain !== 'sui') {
-			return referrerAddresses?.evm || null;
+			return referrerAddresses.evm || null;
 		}
 	}
 	if (quote.type === 'MONO_CHAIN') {
 		if (quote.fromChain === 'solana') {
-			return referrerAddresses?.solana || null;
+			return referrerAddresses.solana || null;
 		} else if (quote.fromChain === 'sui') {
-			return referrerAddresses?.sui || null;
+			return referrerAddresses.sui || null;
 		}
-		return referrerAddresses?.evm || null;
+		return referrerAddresses.evm || null;
 	}
 	return null;
 }

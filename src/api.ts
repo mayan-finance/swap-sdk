@@ -106,8 +106,8 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		}
 		slippageBps = params.slippage * 100;
 	}
-	if (quoteOptions.extraInstructions || quoteOptions.solanaBridgeOptions) {
-		throw new Error('Should use generateFetchQuoteUrlAndBody when extraInstructions or solanaBridgeOptions is provided');
+	if (quoteOptions.extraInstructions || quoteOptions.solanaBridgeOptions || quoteOptions.mpsDeposit || quoteOptions.referrers) {
+		throw new Error('Should use generateFetchQuoteUrlAndBody when referrers, mpsDeposit, extraInstructions or solanaBridgeOptions is provided');
 	}
 	const _quoteOptions: QuoteOptions = {
 		wormhole: quoteOptions.wormhole !== false, // default to true
@@ -200,6 +200,8 @@ export function generateFetchQuoteUrlAndBody(
 				? quoteOptions.memoHex
 				: undefined,
 		extraInstructions: quoteOptions.extraInstructions,
+		mpsDeposit: quoteOptions.mpsDeposit === true, // default to false
+		referrers: quoteOptions.referrers ?? undefined,
 	};
 	const queryBody: Record<string, any> = {
 		..._quoteOptions,
@@ -221,6 +223,7 @@ export function generateFetchQuoteUrlAndBody(
 		gasDrop: Number.isFinite(gasDrop) ? gasDrop : undefined,
 		destinationAddress: params.destinationAddress ?? undefined,
 		sdkVersion: getSdkVersion(),
+		mpsUserId: quoteOptions.mpsUserId ?? undefined,
 	};
 	const url = `${addresses.PRICE_URL}/quote${
 		typeof quoteOptions.apiKey === 'string'

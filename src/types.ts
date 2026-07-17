@@ -181,6 +181,9 @@ export type Quote = {
 	memoHex?: string;
 	maxSwapAccounts?: number,
 	maxSwapDataLength?: number,
+	mpsDepositAddress?: string,
+	referrers?: ChainReferrers,
+	mixedRefAddress?: string,
 };
 
 export type QuoteOptions = {
@@ -201,6 +204,9 @@ export type QuoteOptions = {
 		lookupTables?: string[],
 	},
 	solanaBridgeOptions?: Omit<SolanaBridgeOptions, 'apiKey' | 'separateSwapTx' | 'usdcPermitSignature' | 'allowSwapperOffCurve'>,
+	mpsDeposit?: boolean,
+	mpsUserId?: string,
+	referrers?: ChainReferrers,
 };
 
 export type SolanaTransactionSigner = {
@@ -351,6 +357,17 @@ export type ReferrerAddresses = {
 	solana?: string | null,
 	evm?: string | null,
 	sui?: string | null,
+}
+
+export type Referrer = {
+	address: string,
+	bps: number,
+}
+
+export type ChainReferrers = {
+	solana?: Referrer[] | null,
+	evm?: Referrer[] | null,
+	sui?: Referrer[] | null,
 }
 
 export type SwiftEvmOrderTypedData = {
