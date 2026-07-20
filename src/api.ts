@@ -203,6 +203,11 @@ export function generateFetchQuoteUrlAndBody(
 		mpsDeposit: quoteOptions.mpsDeposit === true, // default to false
 		referrers: quoteOptions.referrers ?? undefined,
 	};
+	if (quoteOptions.referrers) {
+		if (Number.isFinite(referrerBps)) {
+			throw new Error('referrerBps should not be provided when referrers is provided');
+		}
+	}
 	const queryBody: Record<string, any> = {
 		..._quoteOptions,
 		solanaBridgeOptions: wireSolanaBridgeOptions,

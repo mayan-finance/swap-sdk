@@ -182,7 +182,6 @@ export type Quote = {
 	maxSwapAccounts?: number,
 	maxSwapDataLength?: number,
 	mpsDepositAddress?: string,
-	referrers?: ChainReferrers,
 	mixedRefAddress?: string,
 };
 

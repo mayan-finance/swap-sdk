@@ -19,6 +19,7 @@ import {
 	JitoBundleOptions,
 	SwapMessageV0Params,
 	SolanaBridgeOptions,
+	ChainReferrers,
 } from '../types';
 import {
 	getAmountOfFractionalAmount,
@@ -74,7 +75,7 @@ const SwapLayout = struct<any>([
 
 export async function createSwapFromSolanaInstructions(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
-	referrerAddresses: ReferrerAddresses | null | undefined,
+	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	connection: Connection, options: SolanaBridgeOptions = {}
 ): Promise<{
 	instructions: Array<TransactionInstruction>,
@@ -314,7 +315,7 @@ export async function createSwapFromSolanaInstructions(
 
 export async function swapFromSolana(
 	quote: Quote, swapperWalletAddress: string, destinationAddress: string,
-	referrerAddresses: ReferrerAddresses | null | undefined,
+	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	signTransaction: SolanaTransactionSigner,
 	connection: Connection,
 	extraRpcs?: string[],

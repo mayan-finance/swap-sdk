@@ -274,7 +274,7 @@ function calculateMixedReferrerAddressEvm(referrers: Referrer[]): string {
 	});
 	const hash = ethers.keccak256(encoded);
 	// drop the first 12 bytes of the 32-byte hash, keep the last 20 as the address
-	return ethers.dataSlice(hash, 12);
+	return '0x' + hash.substring(26);
 }
 
 function calculateMixedReferrerAddressSolana(referrers: Referrer[]): string {
@@ -300,7 +300,7 @@ function calculateMixedReferrerAddressSolana(referrers: Referrer[]): string {
 
 function getVerifiedMixedReferrerAddressSolana(quote: Quote, referrers: Referrer[]): string {
 	const calculated = calculateMixedReferrerAddressSolana(referrers);
-	if (quote.mixedRefAddress !== calculated) {
+	if (!quote.mixedRefAddress || quote.mixedRefAddress !== calculated) {
 		throw new Error(
 			`Mixed referrer address mismatch: quote has ${quote.mixedRefAddress || 'none'} but calculated ${calculated}. ` +
 			'Make sure the same referrers were passed when fetching the quote.'
@@ -370,6 +370,10 @@ export function getQuoteSuitableReferrerAddress(
 			return null;
 		}
 		return null;
+	} else {
+		if (quote.mixedRefAddress) {
+			throw new Error('Mixed referrer address mismatch in quote. inconsistent referrerAddresses type provided.');
+		}
 	}
 	if (quote.type === 'WH') {
 		return referrerAddresses.solana || null;
