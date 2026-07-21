@@ -180,7 +180,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [15, 0, 0];
+const sdkVersion = [15, 1, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -697,4 +697,58 @@ export function createSwiftRandomKey(quote: Quote) {
 		}
 	} catch (err: any) {}
 	return Keypair.generate().publicKey.toBuffer();
+}
+export function validateMpsDepositAddress(quote: Quote, destinationAddress: string) {
+	if (!quote.mpsDepositAddress) {
+		throw new Error('MPS deposit address is missing in quote');
+	}
+	if (!quote.mpsUserId || !quote.mpsIntegratorId) {
+		throw new Error('MPS user id or integrator id is missing in quote');
+	}
+	const userId = hexToUint8Array(quote.mpsUserId);
+	const integratorId = Number(quote.mpsIntegratorId ?? 0);
+	const chainDest = getWormholeChainIdByName(quote.toChain);
+	const destWallet = nativeAddressToHexString(destinationAddress, chainDest);
+	const destToken = getSwiftToTokenHexString(quote);
+	if (quote.fromChain === 'solana' || quote.fromChain === 'fogo') {
+		const integratorIdBuf = Buffer.alloc(2);
+		integratorIdBuf.writeUInt16LE(integratorId, 0);
+		const chainDestBuf = Buffer.alloc(2);
+		chainDestBuf.writeUInt16LE(chainDest, 0);
+		const [ledger] = PublicKey.findProgramAddressSync(
+			[
+				Buffer.from('LEDGER'),
+				integratorIdBuf,
+				Buffer.from(userId),
+				hexToUint8Array(destWallet),
+				chainDestBuf,
+				hexToUint8Array(destToken),
+			],
+			new PublicKey(addresses.MPS_PROGRAM_ID),
+		);
+		if (quote.mpsDepositAddress !== ledger.toString()) {
+			throw new Error('MPS deposit address mismatch');
+		}
+	} else if (quote.fromChain === 'sui') {
+		throw new Error('MPS deposit address is not supported for SUI');
+	} else {
+		const salt = ethers.keccak256(ethers.solidityPacked(
+			['bytes20', 'uint16', 'bytes32', 'bytes32'],
+			[ethers.hexlify(userId), chainDest, destWallet, destToken],
+		));
+		const creationCode = ethers.concat([
+			'0x3d602d80600a3d3981f3363d3d373d3d3d363d73',
+			addresses.MPS_EVM_WALLET_IMPLEMENTATION,
+			'0x5af43d82803e903d91602b57fd5bf3',
+		]);
+		const initCodeHash = ethers.keccak256(creationCode);
+		const encoded = ethers.solidityPacked(
+			['bytes1', 'address', 'bytes32', 'bytes32'],
+			['0xff', addresses.MPS_EVM_FACTORY, salt, initCodeHash],
+		);
+		const walletAddress = `0x${ethers.keccak256(encoded).slice(26)}`;
+		if (quote.mpsDepositAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+			throw new Error('MPS deposit address mismatch');
+		}
+	}
 }

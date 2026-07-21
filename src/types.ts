@@ -182,6 +182,8 @@ export type Quote = {
 	maxSwapAccounts?: number,
 	maxSwapDataLength?: number,
 	mpsDepositAddress?: string,
+	mpsUserId?: string,
+	mpsIntegratorId?: string,
 	mixedRefAddress?: string,
 };
 
@@ -194,6 +196,7 @@ export type QuoteOptions = {
 	gasless?: boolean;
 	onlyDirect?: boolean;
 	fullList?: boolean;
+	guaranteedOutput?: boolean;
 	payload?: string;
 	monoChain?: boolean;
 	apiKey?: string;

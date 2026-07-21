@@ -118,6 +118,7 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		gasless: quoteOptions.gasless === true, // default to false
 		onlyDirect: quoteOptions.onlyDirect === true, // default to false
 		fullList: quoteOptions.fullList === true, // default to false
+		guaranteedOutput: quoteOptions.guaranteedOutput !== false, // default to true
 		payload: typeof quoteOptions.payload === 'string' ? quoteOptions.payload : undefined,
 		monoChain: quoteOptions.monoChain !== false, // default to true
 		apiKey: typeof quoteOptions.apiKey === 'string' ? quoteOptions.apiKey : undefined,
@@ -190,6 +191,7 @@ export function generateFetchQuoteUrlAndBody(
 		gasless: quoteOptions.gasless === true, // default to false
 		onlyDirect: quoteOptions.onlyDirect === true, // default to false
 		fullList: quoteOptions.fullList === true, // default to false
+		guaranteedOutput: quoteOptions.guaranteedOutput !== false, // default to true
 		payload:
 			typeof quoteOptions.payload === 'string'
 				? quoteOptions.payload
