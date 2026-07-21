@@ -123,7 +123,7 @@ base: 0.01 ETH
 
 #### Multiple referrer fees:
 
-If the referrer fee should be split between more than one wallet, pass the `referrers` option to `fetchQuote` instead of the `referrer`/`referrerBps` params. Each entry sets its own wallet address and fee share in bps (an integer, up to 255 bps per referrer):
+If the referrer fee should be split between more than one wallet, pass the `referrers` option to `fetchQuote` instead of the `referrer`/`referrerBps` params. Each entry sets its own wallet address and fee share in bps:
 
 ```javascript
 const referrers = {
