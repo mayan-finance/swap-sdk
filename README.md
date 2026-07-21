@@ -121,8 +121,51 @@ base: 0.01 ETH
 #### Referrer fee:
 > If you want to receive [referrer fee](https://docs.mayan.finance/integration/referral), set the `referrer` param to your wallet address.
 
+#### Multiple referrer fees:
+
+If the referrer fee should be split between more than one wallet, pass the `referrers` option to `fetchQuote` instead of the `referrer`/`referrerBps` params. Each entry sets its own wallet address and fee share in bps (an integer, up to 255 bps per referrer):
+
+```javascript
+const referrers = {
+	evm: [
+		{ address: "FIRST EVM WALLET", bps: 10 },
+		{ address: "SECOND EVM WALLET", bps: 5 },
+	],
+	solana: [
+		{ address: "FIRST SOLANA WALLET", bps: 10 },
+		{ address: "SECOND SOLANA WALLET", bps: 5 },
+	],
+};
+
+const quotes = await fetchQuote(
+	{
+		amountIn64: "250000000",
+		fromToken: fromToken.contract,
+		toToken: toToken.contract,
+		fromChain: "avalanche",
+		toChain: "solana",
+		slippageBps: "auto",
+	},
+	{ referrers },
+);
+```
+
+Then pass the **same** `referrers` object as the `referrerAddresses` argument of the swap functions (`swapFromSolana`, `swapFromEvm`, `createSwapFromSuiMoveCalls`):
+
+```javascript
+swapTrx = await swapFromSolana(quotes[0], originWalletAddress, destinationWalletAddress, referrers, signSolanaTransaction, solanaConnection);
+```
+
+- Do not set `referrer` or `referrerBps` when `referrers` is provided; the SDK throws.
+- A quote is bound to the referrer list it was fetched with: at swap time the SDK verifies that the `referrers` you pass match the quote and throws a mismatch error otherwise.
+- This is fully backward compatible. If you have a single referrer wallet per network type, keep using the legacy `referrer` param and `ReferrerAddresses` object; use `referrers` only when the fee is split between multiple wallets.
+- Like `extraInstructions`, `referrers` is only available through the POST flow (`fetchQuote` / `generateFetchQuoteUrlAndBody`).
+
 #### Slippage:
 > Slippage is in bps (basis points), so 300 means "up to three percent slippage".
+
+#### Deposit address (Mayan Payment Service):
+> If you want to receive funds via a deposit address — users simply send tokens to a generated address instead of signing swap transactions — see the [Mayan Payment Service docs](https://docs.mayan.finance/payment-service).
 
 <br />
 After you get the quote, you can build and send the swap transaction:

@@ -106,8 +106,8 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		}
 		slippageBps = params.slippage * 100;
 	}
-	if (quoteOptions.extraInstructions || quoteOptions.solanaBridgeOptions) {
-		throw new Error('Should use generateFetchQuoteUrlAndBody when extraInstructions or solanaBridgeOptions is provided');
+	if (quoteOptions.extraInstructions || quoteOptions.solanaBridgeOptions || quoteOptions.mpsDeposit || quoteOptions.referrers) {
+		throw new Error('Should use generateFetchQuoteUrlAndBody when referrers, mpsDeposit, extraInstructions or solanaBridgeOptions is provided');
 	}
 	const _quoteOptions: QuoteOptions = {
 		wormhole: quoteOptions.wormhole !== false, // default to true
@@ -118,6 +118,7 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		gasless: quoteOptions.gasless === true, // default to false
 		onlyDirect: quoteOptions.onlyDirect === true, // default to false
 		fullList: quoteOptions.fullList === true, // default to false
+		guaranteedOutput: quoteOptions.guaranteedOutput !== false, // default to true
 		payload: typeof quoteOptions.payload === 'string' ? quoteOptions.payload : undefined,
 		monoChain: quoteOptions.monoChain !== false, // default to true
 		apiKey: typeof quoteOptions.apiKey === 'string' ? quoteOptions.apiKey : undefined,
@@ -190,6 +191,7 @@ export function generateFetchQuoteUrlAndBody(
 		gasless: quoteOptions.gasless === true, // default to false
 		onlyDirect: quoteOptions.onlyDirect === true, // default to false
 		fullList: quoteOptions.fullList === true, // default to false
+		guaranteedOutput: quoteOptions.guaranteedOutput !== false, // default to true
 		payload:
 			typeof quoteOptions.payload === 'string'
 				? quoteOptions.payload
@@ -200,7 +202,14 @@ export function generateFetchQuoteUrlAndBody(
 				? quoteOptions.memoHex
 				: undefined,
 		extraInstructions: quoteOptions.extraInstructions,
+		mpsDeposit: quoteOptions.mpsDeposit === true, // default to false
+		referrers: quoteOptions.referrers ?? undefined,
 	};
+	if (quoteOptions.referrers) {
+		if (Number.isFinite(referrerBps)) {
+			throw new Error('referrerBps should not be provided when referrers is provided');
+		}
+	}
 	const queryBody: Record<string, any> = {
 		..._quoteOptions,
 		solanaBridgeOptions: wireSolanaBridgeOptions,
@@ -221,6 +230,7 @@ export function generateFetchQuoteUrlAndBody(
 		gasDrop: Number.isFinite(gasDrop) ? gasDrop : undefined,
 		destinationAddress: params.destinationAddress ?? undefined,
 		sdkVersion: getSdkVersion(),
+		mpsUserId: quoteOptions.mpsUserId ?? undefined,
 	};
 	const url = `${addresses.PRICE_URL}/quote${
 		typeof quoteOptions.apiKey === 'string'

@@ -9,7 +9,7 @@ import {
 	ZeroAddress
 } from 'ethers';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
-import type { Erc20Permit, EvmForwarderParams, Quote, ReferrerAddresses } from '../types';
+import type { ChainReferrers, Erc20Permit, EvmForwarderParams, Quote, ReferrerAddresses } from '../types';
 import {
 	getAmountOfFractionalAmount,
 	getAssociatedTokenAddress,
@@ -184,7 +184,7 @@ export async function getSwapFromEvmTxPayload(
 	quote: Quote,
 	swapperAddress: string,
 	destinationAddress: string,
-	referrerAddresses: ReferrerAddresses | null | undefined,
+	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	signerAddress: string,
 	signerChainId: number | string,
 	payload: Uint8Array | Buffer | null | undefined,
@@ -359,7 +359,7 @@ export async function swapFromEvm(
 	quote: Quote,
 	swapperAddress: string,
 	destinationAddress: string,
-	referrerAddresses: ReferrerAddresses | null | undefined,
+	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	signer: Signer,
 	permit: Erc20Permit | null | undefined,
 	overrides: Overrides | null | undefined,

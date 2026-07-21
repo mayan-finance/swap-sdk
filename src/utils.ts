@@ -11,6 +11,8 @@ import {
 	PermitDomain,
 	PermitValue,
 	QuoteType,
+	ChainReferrers,
+	Referrer,
 } from './types';
 import ERC20Artifact from './evm/ERC20Artifact';
 import * as sha3 from 'js-sha3';
@@ -178,7 +180,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [15, 0, 0];
+const sdkVersion = [15, 1, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -246,59 +248,179 @@ export function wait(time: number): Promise<void> {
 	});
 }
 
+function validateReferrerBps(referrers: Referrer[]): void {
+	for (const referrer of referrers) {
+		if (!Number.isInteger(referrer.bps) || referrer.bps < 0 || referrer.bps > 255) {
+			throw new Error(`Invalid referrer bps: ${referrer.bps} for ${referrer.address}`);
+		}
+	}
+}
+
+function calculateMixedReferrerAddressEvm(referrers: Referrer[]): string {
+	validateReferrerBps(referrers);
+	const sorted = referrers
+		.map((referrer) => {
+			const addressBuf = Buffer.from(ethers.getBytes(referrer.address));
+			if (addressBuf.length !== 20) {
+				throw new Error(`Invalid EVM referrer address: ${referrer.address}`);
+			}
+			return { addressBuf, bps: referrer.bps };
+		})
+		.sort((a, b) => a.addressBuf.compare(b.addressBuf));
+	const encoded = Buffer.alloc(21 * sorted.length);
+	sorted.forEach((referrer, i) => {
+		encoded.set(referrer.addressBuf, i * 21);
+		encoded.writeUInt8(referrer.bps, i * 21 + 20);
+	});
+	const hash = ethers.keccak256(encoded);
+	// drop the first 12 bytes of the 32-byte hash, keep the last 20 as the address
+	return '0x' + hash.substring(26);
+}
+
+function calculateMixedReferrerAddressSolana(referrers: Referrer[]): string {
+	validateReferrerBps(referrers);
+	const sorted = referrers
+		.map((referrer) => ({
+			addressBuf: new PublicKey(referrer.address).toBuffer(),
+			bps: referrer.bps,
+		}))
+		.sort((a, b) => a.addressBuf.compare(b.addressBuf));
+	const encoded = Buffer.alloc(33 * sorted.length);
+	sorted.forEach((referrer, i) => {
+		encoded.set(referrer.addressBuf, i * 33);
+		encoded.writeUInt8(referrer.bps, i * 33 + 32);
+	});
+	const hash = Buffer.from(hexToUint8Array(ethers.keccak256(encoded)));
+	const [mixedReferrer] = PublicKey.findProgramAddressSync(
+		[Buffer.from('MIXED'), hash],
+		new PublicKey(addresses.FEE_MANAGER_PROGRAM_ID),
+	);
+	return mixedReferrer.toBase58();
+}
+
+function getVerifiedMixedReferrerAddressSolana(quote: Quote, referrers: Referrer[]): string {
+	const calculated = calculateMixedReferrerAddressSolana(referrers);
+	if (!quote.mixedRefAddress || quote.mixedRefAddress !== calculated) {
+		throw new Error(
+			`Mixed referrer address mismatch: quote has ${quote.mixedRefAddress || 'none'} but calculated ${calculated}. ` +
+			'Make sure the same referrers were passed when fetching the quote.'
+		);
+	}
+	return calculated;
+}
+
+function getVerifiedMixedReferrerAddressEvm(quote: Quote, referrers: Referrer[]): string {
+	const calculated = calculateMixedReferrerAddressEvm(referrers);
+	if (!quote.mixedRefAddress || quote.mixedRefAddress.toLowerCase() !== calculated.toLowerCase()) {
+		throw new Error(
+			`Mixed referrer address mismatch: quote has ${quote.mixedRefAddress || 'none'} but calculated ${calculated}. ` +
+			'Make sure the same referrers were passed when fetching the quote.'
+		);
+	}
+	return calculated;
+}
+
+function isChainReferrers(
+	referrers: ReferrerAddresses | ChainReferrers,
+): referrers is ChainReferrers {
+	return Array.isArray(referrers.solana || referrers.evm || referrers.sui);
+}
 export function getQuoteSuitableReferrerAddress(
 	quote: Quote,
-	referrerAddresses?: ReferrerAddresses | null,
+	referrerAddresses?: ReferrerAddresses | ChainReferrers | null,
 ): string | null {
 	if (!quote || !referrerAddresses) {
 		return null;
 	}
+	if (isChainReferrers(referrerAddresses)) {
+		if (quote.type === 'WH') {
+			return null;
+		}
+		if (quote.type === 'MCTP') {
+			if (quote.toChain === 'solana' && referrerAddresses.solana?.length) {
+				return getVerifiedMixedReferrerAddressSolana(quote, referrerAddresses.solana);
+			}
+			return null;
+		}
+		if (quote.type === 'SWIFT') {
+			if (quote.swiftVersion === 'V2') {
+				if (quote.fromChain === 'solana' || quote.fromChain === 'fogo') {
+					return referrerAddresses.solana?.length ? getVerifiedMixedReferrerAddressSolana(quote, referrerAddresses.solana) : null;
+				}
+				if (quote.fromChain === 'sui') {
+					return null;
+				}
+				return referrerAddresses.evm?.length ? getVerifiedMixedReferrerAddressEvm(quote, referrerAddresses.evm) : null;
+			} else {
+				return null;
+			}
+		}
+		if (quote.type === 'FAST_MCTP') {
+			if (quote.toChain === 'solana' && referrerAddresses.solana?.length) {
+				return getVerifiedMixedReferrerAddressSolana(quote, referrerAddresses.solana);
+			}
+			return null;
+		}
+		if (quote.type === 'MONO_CHAIN') {
+			if (quote.fromChain === 'solana' && referrerAddresses.solana?.length) {
+				return getVerifiedMixedReferrerAddressSolana(quote, referrerAddresses.solana);
+			} else if (quote.fromChain !== 'sui' && quote.fromChain !== 'solana' && referrerAddresses.evm?.length) {
+				return getVerifiedMixedReferrerAddressEvm(quote, referrerAddresses.evm);
+			}
+			return null;
+		}
+		return null;
+	} else {
+		if (quote.mixedRefAddress) {
+			throw new Error('Mixed referrer address mismatch in quote. inconsistent referrerAddresses type provided.');
+		}
+	}
 	if (quote.type === 'WH') {
-		return referrerAddresses?.solana || null;
+		return referrerAddresses.solana || null;
 	}
 	if (quote.type === 'MCTP') {
 		if (quote.toChain === 'solana') {
-			return referrerAddresses?.solana || null;
+			return referrerAddresses.solana || null;
 		}
 		if (quote.toChain === 'sui') {
-			return referrerAddresses?.sui || null;
+			return referrerAddresses.sui || null;
 		}
-		return referrerAddresses?.evm || null;
+		return referrerAddresses.evm || null;
 	}
 	if (quote.type === 'SWIFT') {
 		if (quote.swiftVersion === 'V2') {
 			if (quote.fromChain === 'solana' || quote.fromChain === 'fogo') {
-				return referrerAddresses?.solana || null;
+				return referrerAddresses.solana || null;
 			}
 			if (quote.fromChain === 'sui') {
-				return referrerAddresses?.sui || null;
+				return referrerAddresses.sui || null;
 			}
-			return referrerAddresses?.evm || null;
+			return referrerAddresses.evm || null;
 		} else {
 			if (quote.toChain === 'solana') {
-				return referrerAddresses?.solana || null;
+				return referrerAddresses.solana || null;
 			}
 			if (quote.toChain === 'sui') {
 				throw new Error('Swift V1 does not support SUI');
 			}
-			return referrerAddresses?.evm || null;
+			return referrerAddresses.evm || null;
 		}
 	}
 	if (quote.type === 'FAST_MCTP') {
 		if (quote.toChain === 'solana') {
-			return referrerAddresses?.solana || null;
+			return referrerAddresses.solana || null;
 		}
 		if (quote.toChain !== 'sui') {
-			return referrerAddresses?.evm || null;
+			return referrerAddresses.evm || null;
 		}
 	}
 	if (quote.type === 'MONO_CHAIN') {
 		if (quote.fromChain === 'solana') {
-			return referrerAddresses?.solana || null;
+			return referrerAddresses.solana || null;
 		} else if (quote.fromChain === 'sui') {
-			return referrerAddresses?.sui || null;
+			return referrerAddresses.sui || null;
 		}
-		return referrerAddresses?.evm || null;
+		return referrerAddresses.evm || null;
 	}
 	return null;
 }
@@ -575,4 +697,58 @@ export function createSwiftRandomKey(quote: Quote) {
 		}
 	} catch (err: any) {}
 	return Keypair.generate().publicKey.toBuffer();
+}
+export function validateMpsDepositAddress(quote: Quote, destinationAddress: string) {
+	if (!quote.mpsDepositAddress) {
+		throw new Error('MPS deposit address is missing in quote');
+	}
+	if (!quote.mpsUserId || !quote.mpsIntegratorId) {
+		throw new Error('MPS user id or integrator id is missing in quote');
+	}
+	const userId = hexToUint8Array(quote.mpsUserId);
+	const integratorId = Number(quote.mpsIntegratorId ?? 0);
+	const chainDest = getWormholeChainIdByName(quote.toChain);
+	const destWallet = nativeAddressToHexString(destinationAddress, chainDest);
+	const destToken = getSwiftToTokenHexString(quote);
+	if (quote.fromChain === 'solana' || quote.fromChain === 'fogo') {
+		const integratorIdBuf = Buffer.alloc(2);
+		integratorIdBuf.writeUInt16LE(integratorId, 0);
+		const chainDestBuf = Buffer.alloc(2);
+		chainDestBuf.writeUInt16LE(chainDest, 0);
+		const [ledger] = PublicKey.findProgramAddressSync(
+			[
+				Buffer.from('LEDGER'),
+				integratorIdBuf,
+				Buffer.from(userId),
+				hexToUint8Array(destWallet),
+				chainDestBuf,
+				hexToUint8Array(destToken),
+			],
+			new PublicKey(addresses.MPS_PROGRAM_ID),
+		);
+		if (quote.mpsDepositAddress !== ledger.toString()) {
+			throw new Error('MPS deposit address mismatch');
+		}
+	} else if (quote.fromChain === 'sui') {
+		throw new Error('MPS deposit address is not supported for SUI');
+	} else {
+		const salt = ethers.keccak256(ethers.solidityPacked(
+			['bytes20', 'uint16', 'bytes32', 'bytes32'],
+			[ethers.hexlify(userId), chainDest, destWallet, destToken],
+		));
+		const creationCode = ethers.concat([
+			'0x3d602d80600a3d3981f3363d3d373d3d3d363d73',
+			addresses.MPS_EVM_WALLET_IMPLEMENTATION,
+			'0x5af43d82803e903d91602b57fd5bf3',
+		]);
+		const initCodeHash = ethers.keccak256(creationCode);
+		const encoded = ethers.solidityPacked(
+			['bytes1', 'address', 'bytes32', 'bytes32'],
+			['0xff', addresses.MPS_EVM_FACTORY, salt, initCodeHash],
+		);
+		const walletAddress = `0x${ethers.keccak256(encoded).slice(26)}`;
+		if (quote.mpsDepositAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+			throw new Error('MPS deposit address mismatch');
+		}
+	}
 }

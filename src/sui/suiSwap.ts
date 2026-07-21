@@ -2,6 +2,7 @@ import {
 	Quote,
 	ReferrerAddresses,
 	ComposableSuiMoveCallsOptions,
+	ChainReferrers,
 } from '../types';
 import { ClientWithCoreApi } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
@@ -14,7 +15,7 @@ export async function createSwapFromSuiMoveCalls(
 	quote: Quote,
 	swapperWalletAddress: string,
 	destinationAddress: string,
-	referrerAddresses: ReferrerAddresses | null | undefined,
+	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	payload: Uint8Array | Buffer | null | undefined,
 	suiClient: ClientWithCoreApi,
 	options?: ComposableSuiMoveCallsOptions
