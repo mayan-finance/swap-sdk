@@ -89,6 +89,14 @@ export async function createSwapFromSolanaInstructions(
 	if (quote.fromChain === 'hypercore') {
 		throw new Error('HyperCore as source chain is not supported in Solana');
 	}
+
+	if (destinationAddress === ZeroAddress || destinationAddress === SystemProgram.programId.toString()) {
+		throw new Error(`Invalid destination address: ${destinationAddress}`);
+	}
+	if (options?.swiftRefundAddress && (options.swiftRefundAddress === ZeroAddress || options.swiftRefundAddress === SystemProgram.programId.toString())) {
+		throw new Error(`Invalid swift refund address: ${options.swiftRefundAddress}`);
+	}
+
 	if (quote.toChain === 'hypercore') {
 		if (options.customPayload) {
 			throw new Error('Custom payload is not supported for HyperCore');
@@ -326,6 +334,7 @@ export async function swapFromSolana(
 		forceSkipCctpInstructions?: boolean,
 		skipProxyMayanInstructions?: boolean,
 		customPayload?: Buffer | Uint8Array | null,
+		swiftRefundAddress?: string,
 	},
 	extraParams?: {
 		onTransactionSigned: (signature: string) => void;
@@ -361,6 +370,7 @@ export async function swapFromSolana(
 			skipProxyMayanInstructions: instructionOptions?.skipProxyMayanInstructions === true, // default is false
 			customPayload: instructionOptions?.customPayload,
 			apiKey: extraParams?.apiKey,
+			swiftRefundAddress: instructionOptions?.swiftRefundAddress,
 		}
 	);
 

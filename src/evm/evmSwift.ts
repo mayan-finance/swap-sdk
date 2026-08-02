@@ -54,7 +54,7 @@ export type EvmSwiftParams = {
 export function getEvmSwiftParams(
 	quote: Quote, swapperAddress: string, destinationAddress: string,
 	referrerAddress: string | null | undefined, signerChainId: string | number,
-	customPayload: Buffer | Uint8Array | null | undefined
+	customPayload: Buffer | Uint8Array | null | undefined, refundAddress?: string,
 ): EvmSwiftParams {
 	const signerWormholeChainId = getWormholeChainIdById(Number(signerChainId));
 	const sourceChainId = getWormholeChainIdByName(quote.fromChain);
@@ -126,9 +126,21 @@ export function getEvmSwiftParams(
 		throw new Error('Swift order requires auction mode');
 	}
 
+	let trader: string;
+	if (refundAddress) {
+		if (!refundAddress.startsWith('0x')) {
+			throw new Error(`Invalid refund address: ${refundAddress}`);
+		}
+		if (Buffer.from(refundAddress.slice(2), 'hex').length !== 20) {
+			throw new Error(`Invalid refund address length: ${refundAddress}`);
+		}
+		trader = refundAddress;
+	} else {
+		trader = swapperAddress;
+	}
 	const orderParams: SwiftOrderParams = {
 		payloadType: customPayload ? SWIFT_PAYLOAD_TYPE_CUSTOM_PAYLOAD : SWIFT_PAYLOAD_TYPE_DEFAULT,
-		trader: nativeAddressToHexString(swapperAddress, sourceChainId),
+		trader: nativeAddressToHexString(trader, sourceChainId),
 		tokenOut,
 		minAmountOut,
 		gasDrop,
@@ -155,7 +167,7 @@ export function getEvmSwiftParams(
 export async function getSwiftFromEvmTxPayload(
 	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
 	signerChainId: number | string, permit: Erc20Permit | null | undefined,
-	customPayload: Buffer | Uint8Array | null | undefined, apiKey?: string,
+	customPayload: Buffer | Uint8Array | null | undefined, apiKey?: string, refundAddress?: string,
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 	if (quote.type !== 'SWIFT') {
 		throw new Error('Quote type is not SWIFT');
@@ -187,6 +199,7 @@ export async function getSwiftFromEvmTxPayload(
 		referrerAddress,
 		signerChainId,
 		customPayload,
+		refundAddress,
 	);
 
 	let swiftCallData: string;
@@ -352,8 +365,10 @@ export type SwiftEvmGasLessParams = {
 }
 
 export function getSwiftFromEvmGasLessParams(
-	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
-	signerChainId: number | string, permit: Erc20Permit | null | undefined, customPayload: Buffer | Uint8Array | null | undefined
+	quote: Quote, swapperAddress: string, destinationAddress: string,
+	referrerAddress: string | null | undefined,
+	signerChainId: number | string, permit: Erc20Permit | null | undefined,
+	customPayload: Buffer | Uint8Array | null | undefined, refundAddress?: string,
 ): SwiftEvmGasLessParams {
 	if (quote.type !== 'SWIFT') {
 		throw new Error('Quote type is not SWIFT');
@@ -367,6 +382,9 @@ export function getSwiftFromEvmGasLessParams(
 		throw new Error('Invalid signer chain id');
 	}
 
+	if (refundAddress && refundAddress.toLowerCase() !== swapperAddress.toLowerCase()) {
+		throw new Error('Refund address must be the same as swapper address for gasless orders');
+	}
 	if (!Number(quote.deadline64)) {
 		throw new Error('Swift order requires timeout');
 	}
@@ -386,12 +404,12 @@ export function getSwiftFromEvmGasLessParams(
 		customPayload: swiftCustomPayload,
 	} = getEvmSwiftParams(
 		quote, swapperAddress, destinationAddress,
-		referrerAddress, Number(signerChainId), customPayload,
+		referrerAddress, Number(signerChainId), customPayload, refundAddress
 	);
 	const sourceChainId = getWormholeChainIdByName(quote.fromChain);
 
 	const orderHashBuf = createSwiftOrderHash(
-		quote, swapperAddress, destinationAddress, referrerAddress, order.random, customPayload
+		quote, swapperAddress, destinationAddress, referrerAddress, order.random, customPayload, refundAddress
 	);
 	const orderHash = `0x${orderHashBuf.toString('hex')}`
 	const orderTypedData = getSwiftOrderTypeData(quote, orderHash, signerChainId);

@@ -333,6 +333,36 @@ If you need to get the transaction payload and send it manually, you can use `ge
 #### Contract Level Integration:
 >If you aim to integrate the Mayan protocol at the contract level, you can use the `_forwarder` object returned from the `getSwapFromEvmTxPayload`. It contains the method name and parameters for a contract level method call.
 
+### Custom Refund Address (Swift):
+
+By default, if a Swift order cannot be completed and gets refunded on the source chain, the funds return to the swapper wallet that initiated the swap. On SWIFT quotes you can receive refunds at a different source-chain address by passing the optional `swiftRefundAddress` — useful when the initiating wallet cannot receive funds back.
+
+```javascript
+// EVM: pass it via the options argument
+swapTrx = await swapFromEvm(quote, swapperAddress, destinationWalletAddress, referrerAddresses, signer, permit, overrides, payload, {
+	swiftRefundAddress: "REFUND WALLET ON SOURCE CHAIN",
+});
+
+// Solana: pass it via the instructionOptions argument
+swapTrx = await swapFromSolana(quote, originWalletAddress, destinationWalletAddress, referrerAddresses, signSolanaTransaction, solanaConnection, extraRpcs, sendOptions, jitoOptions, {
+	swiftRefundAddress: "REFUND WALLET ON SOURCE CHAIN",
+});
+```
+
+The same option is available on `getSwapFromEvmTxPayload` and `createSwapFromSolanaInstructions` if you build the transaction manually.
+
+- **Request the quote with `gasless: false`.** Gasless Swift orders require the refund address to be the same as the order signer, so the SDK throws if a gasless quote is combined with a different `swiftRefundAddress`. Keep the `gasless` quote option unset or explicitly `false` (it defaults to `false`).
+- **`swiftRefundAddress` only applies to SWIFT quotes.** Other quote types ignore it and refund to the swapper wallet. If receiving refunds at the separate address is critical for your integration, filter the fetched quotes and only proceed when `quote.type === 'SWIFT'`:
+
+```javascript
+const quote = quotes.find((q) => q.type === "SWIFT");
+if (!quote) {
+	throw new Error("No SWIFT quote available");
+}
+```
+
+- The refund address must be a valid wallet address on the **source** chain; zero addresses are rejected.
+
 ### Tracking:
 To track the progress of swaps, you can use [Mayan Explorer API](https://explorer-api.mayan.finance/swagger/#/default/SwapDetailsController_getSwapByTrxHash) by passing the transaction hash of the swap transaction.
 
