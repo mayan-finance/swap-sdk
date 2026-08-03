@@ -192,6 +192,7 @@ export async function getSwapFromEvmTxPayload(
 	options?: {
 		usdcPermitSignature?: string;
 		apiKey?: string;
+		swiftRefundAddress?: string;
 	}
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 	const signerWormholeChainId = getWormholeChainIdById(Number(signerChainId));
@@ -202,6 +203,13 @@ export async function getSwapFromEvmTxPayload(
 				signerChainId
 			)}) and quote from chain are not same! ${fromChainId} !== ${signerWormholeChainId}`
 		);
+	}
+
+	if (destinationAddress === ZeroAddress || destinationAddress === SystemProgram.programId.toString()) {
+		throw new Error(`Invalid destination address: ${destinationAddress}`);
+	}
+	if (options?.swiftRefundAddress && (options.swiftRefundAddress === ZeroAddress || options.swiftRefundAddress === SystemProgram.programId.toString())) {
+		throw new Error(`Invalid swift refund address: ${options.swiftRefundAddress}`);
 	}
 
 	const referrerAddress = getQuoteSuitableReferrerAddress(
@@ -243,6 +251,7 @@ export async function getSwapFromEvmTxPayload(
 			permit,
 			payload,
 			options?.apiKey,
+			options?.swiftRefundAddress,
 		);
 	}
 	if (quote.type === 'SHUTTLE') {
@@ -367,10 +376,17 @@ export async function swapFromEvm(
 	options?: {
 		apiKey?: string;
 		includeAllowanceTx?: boolean;
+		swiftRefundAddress?: string;
 	}
 ): Promise<TransactionResponse | string> {
 	if (!signer.provider) {
 		throw new Error('No provider found for signer');
+	}
+	if (destinationAddress === ZeroAddress || destinationAddress === SystemProgram.programId.toString()) {
+		throw new Error(`Invalid destination address: ${destinationAddress}`);
+	}
+	if (options?.swiftRefundAddress && (options.swiftRefundAddress === ZeroAddress || options.swiftRefundAddress === SystemProgram.programId.toString())) {
+		throw new Error(`Invalid swift refund address: ${options.swiftRefundAddress}`);
 	}
 	const signerAddress = await signer.getAddress();
 	if (signerAddress.toLowerCase() !== swapperAddress.toLowerCase()) {
@@ -391,7 +407,9 @@ export async function swapFromEvm(
 			referrerAddresses
 		);
 		if (quote.fromChain === 'hypercore') {
-			const hcParams = getHyperCoreWithdrawParams(quote, swapperAddress, destinationAddress, referrerAddress, payload);
+			const hcParams = getHyperCoreWithdrawParams(
+				quote, swapperAddress, destinationAddress, referrerAddress, payload, options?.swiftRefundAddress
+			);
 			const signedHcParams = await signer.signTypedData(
 				hcParams.domain,
 				hcParams.types,
@@ -404,6 +422,9 @@ export async function swapFromEvm(
 				options?.apiKey
 			);
 		}
+		if (options?.swiftRefundAddress && options.swiftRefundAddress.toLowerCase() !== swapperAddress.toLowerCase()) {
+			throw new Error('Swift refund address must be the same as swapper address for gasless SWIFT');
+		}
 		const gasLessParams = quote.toChain === 'hypercore' ? getHyperCoreSwiftFromEvmGasLessParams(
 			quote,
 			swapperAddress,
@@ -412,6 +433,7 @@ export async function swapFromEvm(
 			signerChainId,
 			permit,
 			payload,
+			options?.swiftRefundAddress,
 		) : getSwiftFromEvmGasLessParams(
 			quote,
 			swapperAddress,
@@ -420,6 +442,7 @@ export async function swapFromEvm(
 			signerChainId,
 			permit,
 			payload,
+			options?.swiftRefundAddress,
 		);
 		const signedOrderHash = await signer.signTypedData(
 			gasLessParams.orderTypedData.domain,
@@ -489,6 +512,7 @@ export async function estimateQuoteRequiredGas(
 	options?: {
 		usdcPermitSignature?: string;
 		apiKey?: string;
+		swiftRefundAddress?: string;
 	}
 ): Promise<bigint> {
 	const signerAddress = await signer.getAddress();
@@ -531,6 +555,7 @@ export async function estimateQuoteRequiredGasAprox(
 	options?: {
 		usdcPermitSignature?: string;
 		apiKey?: string;
+		swiftRefundAddress?: string;
 	},
 ): Promise<bigint> {
 	const signerAddress = '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';

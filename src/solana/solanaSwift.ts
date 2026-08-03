@@ -46,7 +46,7 @@ import {
 export function createSwiftOrderHash(
 	quote: Quote, swapperAddress: string, destinationAddress: string,
 	referrerAddress: string | null | undefined, randomKeyHex: string,
-	customPayload: undefined | null | Uint8Array | Buffer
+	customPayload: undefined | null | Uint8Array | Buffer, refundAddress?: string | null,
 ): Buffer {
 	const orderDataSize = quote.swiftVersion === 'V2' ? 272 : 239;
 	const data = Buffer.alloc(orderDataSize);
@@ -59,7 +59,7 @@ export function createSwiftOrderHash(
 	}
 
 	const sourceChainId = getWormholeChainIdByName(quote.fromChain);
-	const trader = Buffer.from(hexToUint8Array(nativeAddressToHexString(swapperAddress, sourceChainId)));
+	const trader = Buffer.from(hexToUint8Array(nativeAddressToHexString(refundAddress ?? swapperAddress, sourceChainId)));
 	data.set(trader, offset);
 	offset += 32;
 
@@ -177,6 +177,7 @@ type CreateInitSwiftInstructionParams = {
 	customPayload?: Buffer | Uint8Array | null,
 	customPayloadAccount?: PublicKey | null,
 	tokenProgramId: PublicKey,
+	refundAddress?: PublicKey,
 }
 
 const InitSwiftLayout = struct<any>([
@@ -212,12 +213,16 @@ function createSwiftInitInstruction(
 		throw new Error(`Destination chain ID mismatch: ${destinationChainId} != ${quote.toToken.wChainId}`);
 	}
 
+	if (params.refundAddress && quote.swiftVersion === 'V1' && !params.refundAddress.equals(params.trader)) {
+		throw new Error('Refund address is only supported for Swift V2');
+	}
+
 	if (params.customPayload && !params.customPayloadAccount) {
 		throw new Error('Custom payload account is required when custom payload is provided');
 	}
 
 	const accounts: AccountMeta[] = quote.swiftVersion === 'V2' ? [
-		{pubkey: params.trader, isWritable: false, isSigner: false},
+		{pubkey: params.refundAddress ?? params.trader, isWritable: false, isSigner: false},
 		{pubkey: params.relayer, isWritable: true, isSigner: true},
 		{pubkey: params.state, isWritable: true, isSigner: false},
 		{pubkey: params.stateAccount, isWritable: true, isSigner: false},
@@ -314,6 +319,7 @@ export async function createSwiftFromSolanaInstructions(
     skipProxyMayanInstructions?: boolean,
 		customPayload?: Buffer | Uint8Array | null,
 		apiKey?: string,
+		swiftRefundAddress?: string | null,
 	} = {},
 ): Promise<{
 	instructions: TransactionInstruction[],
@@ -369,7 +375,7 @@ export async function createSwiftFromSolanaInstructions(
 	const hash = createSwiftOrderHash(
 		quote, swapperAddress, destinationAddress,
 		referrerAddress, randomKey.toBuffer().toString('hex'),
-		options?.customPayload
+		options?.customPayload, options?.swiftRefundAddress
 	);
 
 	const chainDestBuffer = Buffer.alloc(2);
@@ -544,6 +550,7 @@ export async function createSwiftFromSolanaInstructions(
     tokenProgramId,
 		customPayload: options?.customPayload,
     customPayloadAccount: customPayloadAccount ? new PublicKey(customPayloadAccount) : undefined,
+		refundAddress: options?.swiftRefundAddress ? new PublicKey(options.swiftRefundAddress) : undefined,
 	}), options.skipProxyMayanInstructions));
 
 	if (options?.customPayload && customPayloadAccount) {

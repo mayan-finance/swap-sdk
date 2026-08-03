@@ -35,6 +35,7 @@ export async function getHyperCoreDepositFromEvmTxPayload(
 	signerChainId: number | string, permit: Erc20Permit | null | undefined, payload: Uint8Array | Buffer | null | undefined,
 	options: {
 		apiKey?: string;
+		swiftRefundAddress?: string;
 	} = {}
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 
@@ -98,7 +99,8 @@ export async function getHyperCoreDepositFromEvmTxPayload(
 			signerChainId,
 			permit,
 			getHyperCoreUSDCDepositCustomPayload(clonedQuote, destinationAddress, hcDepositDex),
-			options?.apiKey
+			options?.apiKey,
+			options?.swiftRefundAddress
 		);
 	} else {
 		throw new Error('Unsupported quote type for HyperCore deposit: ' + quote.type);
@@ -107,7 +109,8 @@ export async function getHyperCoreDepositFromEvmTxPayload(
 
 export function getHyperCoreSwiftFromEvmGasLessParams(
 	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
-	signerChainId: number | string, permit: Erc20Permit | null | undefined, customPayload: Buffer | Uint8Array | null | undefined,
+	signerChainId: number | string, permit: Erc20Permit | null | undefined,
+	customPayload: Buffer | Uint8Array | null | undefined, refundAddress?: string,
 ): SwiftEvmGasLessParams {
 	if (quote.type !== 'SWIFT') {
 		throw new Error('Unsupported quote type for USDC deposit: ' + quote.type);
@@ -121,6 +124,9 @@ export function getHyperCoreSwiftFromEvmGasLessParams(
 		throw new Error('Invalid to token contract for HyperCore deposit USDC: ' + quote.toToken.contract);
 	}
 
+	if (refundAddress && refundAddress.toLowerCase() !== swapperAddress.toLowerCase()) {
+		throw new Error('Refund address must be the same as swapper address for HyperCore deposit GASLESS');
+	}
 	if (!quote.hcSwiftDeposit) {
 		throw new Error('HyperCore parameters are required for this quote');
 	}
@@ -137,6 +143,7 @@ export function getHyperCoreSwiftFromEvmGasLessParams(
 		signerChainId,
 		permit,
 		getHyperCoreUSDCDepositCustomPayload(clonedQuote, destinationAddress, hcDepositDex),
+		refundAddress,
 	);
 }
 
@@ -297,7 +304,7 @@ function getHyperCoreDepositFromHyperEVMTxPayload(
 
 export function getHyperCoreWithdrawParams(
 	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
-	payload: Buffer | Uint8Array | null | undefined,
+	payload: Buffer | Uint8Array | null | undefined, refundAddress?: string
 ): HyperCoreWithdrawCircleTypedData {
 	if (quote.type !== 'SWIFT') {
 		throw new Error('Unsupported quote type for HyperCore withdraw: ' + quote.type);
@@ -324,7 +331,9 @@ export function getHyperCoreWithdrawParams(
 	const hookDataLength = 255 + (customPayload ? customPayload.length : 0);
 	const hookData= Buffer.alloc(hookDataLength);
 
-	const swiftParams = getEvmSwiftParams(quote, swapperAddress, destinationAddress, referrerAddress, 65000, payload);
+	const swiftParams = getEvmSwiftParams(
+		quote, swapperAddress, destinationAddress, referrerAddress, 65000, payload, refundAddress
+	);
 	let offset = 0;
 	hookData.writeUInt8(swiftParams.order.payloadType);
 	offset += 1;

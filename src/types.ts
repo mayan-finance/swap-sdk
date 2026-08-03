@@ -442,6 +442,7 @@ export type SolanaBridgeOptions = {
 	skipProxyMayanInstructions?: boolean;
 	customPayload?: Buffer | Uint8Array | null;
 	apiKey?: string;
+	swiftRefundAddress?: string | null;
 }
 
 export type EstimateGasEvmParams = {
