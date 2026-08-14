@@ -130,7 +130,6 @@ export async function fetchAllCoins(
 	} while (true);
 }
 
-
 /**
  * Fetches the latest Mayan Sui package ID from a shared state object on the Sui blockchain.
  *
@@ -192,19 +191,42 @@ export async function resolveInputCoin(
 			},
 			suiClient
 		);
-		if (sum < amount) {
-			throw new Error(
-				`Insufficient funds to create Coin ${coinType} with amount ${amount}`
-			);
+		if (sum >= amount) {
+			if (coins.length > 1) {
+				tx.mergeCoins(
+					coins[0].objectId,
+					coins.slice(1).map((c) => c.objectId)
+				);
+			}
+			const [spitedCoin] = tx.splitCoins(coins[0].objectId, [amount]);
+			inputCoin = spitedCoin;
+		} else {
+			const { balance } = await suiClient.core.getBalance({
+				owner,
+				coinType,
+			});
+			const addressBalance = BigInt(balance.addressBalance);
+			if (sum + addressBalance < amount) {
+				throw new Error(
+					`Insufficient funds to create Coin ${coinType} with amount ${amount}`
+				);
+			}
+			const redeemedCoin = tx.moveCall({
+				target: '0x2::coin::redeem_funds',
+				typeArguments: [coinType],
+				arguments: [tx.withdrawal({ amount: amount - sum, type: coinType })],
+			});
+			if (coins.length === 0) {
+				inputCoin = redeemedCoin;
+			} else {
+				tx.mergeCoins(coins[0].objectId, [
+					...coins.slice(1).map((c) => c.objectId),
+					redeemedCoin,
+				]);
+				const [spitedCoin] = tx.splitCoins(coins[0].objectId, [amount]);
+				inputCoin = spitedCoin;
+			}
 		}
-		if (coins.length > 1) {
-			tx.mergeCoins(
-				coins[0].objectId,
-				coins.slice(1).map((c) => c.objectId)
-			);
-		}
-		const [spitedCoin] = tx.splitCoins(coins[0].objectId, [amount]);
-		inputCoin = spitedCoin;
 	}
 	return inputCoin;
 }
