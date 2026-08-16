@@ -180,7 +180,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [15, 2, 0];
+const sdkVersion = [15, 2, 1];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
