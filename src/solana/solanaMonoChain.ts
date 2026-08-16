@@ -104,7 +104,7 @@ export async function createMonoChainFromSolanaInstructions(
 		clientSwapRaw,
 		connection
 	);
-	validateJupSwap(clientSwap, destAcc, swapper, destination, swapper.equals(destination));
+	validateJupSwap(clientSwap, destAcc, swapper, swapper, swapper.equals(destination));
 	validateJupSwapInstructionData(clientSwap.swapInstruction, quote);
 	instructions.push(...clientSwap.computeBudgetInstructions);
 	if (clientSwap.setupInstructions) {
