@@ -733,8 +733,8 @@ export function validateMpsDepositAddress(quote: Quote, destinationAddress: stri
 		throw new Error('MPS deposit address is not supported for SUI');
 	} else {
 		const salt = ethers.keccak256(ethers.solidityPacked(
-			['bytes20', 'uint16', 'bytes32', 'bytes32'],
-			[ethers.hexlify(userId), chainDest, destWallet, destToken],
+			['uint16', 'bytes20', 'uint16', 'bytes32', 'bytes32'],
+			[quote.mpsIntegratorId, ethers.hexlify(userId), chainDest, destWallet, destToken],
 		));
 		const creationCode = ethers.concat([
 			'0x3d602d80600a3d3981f3363d3d373d3d3d363d73',
