@@ -1,16 +1,33 @@
+<div align="center">
 
-# Mayan Cross-Chain Swap SDK
-A minimal package for sending cross-chain swap transactions
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://cdn.mayan.finance/brand-kit/Mayan_Logo_White.png">
+  <img src="https://cdn.mayan.finance/brand-kit/Mayan_Logo_Black.png" alt="Mayan" width="320">
+</picture>
 
-## ⚠️ Breaking changes in v15.0.0
+# 🗿 Mayan Cross-Chain Swap SDK
 
-**Sui now runs on `@mysten/sui` v2 and the gRPC / Core API.** This affects the **Sui** integration only — Solana and EVM flows are unchanged. If you don't bridge from Sui, you are not affected (aside from the Node note below).
+[![npm version](https://img.shields.io/npm/v/@mayanfinance/swap-sdk.svg)](https://www.npmjs.com/package/@mayanfinance/swap-sdk)
+[![npm downloads](https://img.shields.io/npm/dw/@mayanfinance/swap-sdk.svg)](https://www.npmjs.com/package/@mayanfinance/swap-sdk)
+[![license](https://img.shields.io/npm/l/@mayanfinance/swap-sdk.svg)](./LICENSE)
 
-- **Upgrade `@mysten/sui` to `^2`.** It is now an **ESM-only** package and is required by the Sui swap functions (`createSwapFromSuiMoveCalls`, …).
-- **A v1 `SuiClient` no longer works — you must pass a v2 client.** The SDK now reads via the Sui **Core API** (`client.core.listCoins` / `getObject` / `getMoveFunction`). A v1 `SuiClient` does not implement these and throws `core.listCoins is not a function` on any Sui swap.
-- **Construct a v2 client and pass it exactly as before.** The `suiClient` parameter now accepts any client implementing the Core API (`ClientWithCoreApi`). **gRPC is recommended** (JSON-RPC is being deprecated by Mysten in favor of gRPC/GraphQL):
+</div>
 
-```ts
+TypeScript client for Mayan, an intent-based cross-chain swap protocol. Fetch a quote, build one transaction, and the user receives the output token on another chain.
+
+## ⚠️ Breaking changes
+
+<details>
+<summary><b>v15.0.0: Sui moves to <code>@mysten/sui</code> v2 and the gRPC / Core API</b></summary>
+
+<br />
+
+This affects the **Sui** integration only. Solana and EVM flows are unchanged. If you do not bridge from Sui you are unaffected, apart from the Node note below.
+
+- **Upgrade `@mysten/sui` to `^2`.** It is **ESM-only** and required by the Sui swap functions (`createSwapFromSuiMoveCalls`, …).
+- **Pass a v2 client.** A v1 `SuiClient` is not supported. The `suiClient` parameter accepts any client implementing the Sui Core API (`ClientWithCoreApi`): `SuiGrpcClient`, `SuiJsonRpcClient`, GraphQL, or `@mysten/dapp-kit`. **gRPC is recommended**, since Mysten is deprecating JSON-RPC.
+
+```typescript
 import { SuiGrpcClient } from '@mysten/sui/grpc';
 import { fetchQuote, createSwapFromSuiMoveCalls } from '@mayanfinance/swap-sdk';
 
@@ -21,399 +38,477 @@ const suiClient = new SuiGrpcClient({
 });
 
 const tx = await createSwapFromSuiMoveCalls(
-  quote, swapperWalletAddress, destinationWalletAddress, referrerAddresses, customPayload, suiClient, options,
+  quote, swapperWalletAddress, destinationWalletAddress,
+  referrerAddresses, customPayload, suiClient, options,
 );
 ```
 
-> A v2 `SuiJsonRpcClient` (`new SuiJsonRpcClient({ url, network })`) and other Core-API clients (GraphQL, `@mysten/dapp-kit`) also work, since the param is typed against `ClientWithCoreApi`. Prefer `SuiGrpcClient` for new integrations.
+- **`signAndExecuteTransaction` returns a different shape on v2 clients.** The result is `{ $kind, Transaction | FailedTransaction }`, so read the digest from the nested object. Wallet adapters and `@mysten/dapp-kit` follow their own v2 API.
 
-- **The Sui execution result shape changed (v2 clients).** `signAndExecuteTransaction(...)` now returns `{ $kind, Transaction | FailedTransaction }`. Read the digest from the nested object:
-
-```ts
+```typescript
 const res = await suiClient.signAndExecuteTransaction({ signer, transaction: tx });
 const digest = res.Transaction?.digest ?? res.FailedTransaction?.digest;
 ```
 
-> If you sign via a wallet adapter / `@mysten/dapp-kit`, follow its v2 API instead.
+- **TypeScript module resolution.** If you hit `Cannot find module '@mysten/sui/...'`, set `"moduleResolution": "bundler"` (or `node16` / `nodenext`) and `"module": "esnext"` in your `tsconfig.json`.
+- **CommonJS on older Node breaks, even if you never touch Sui.** On **Node < 20.19 / < 22.12**, `require('@mayanfinance/swap-sdk')` throws `ERR_REQUIRE_ESM`. Run on **Node ≥ 20.19 / ≥ 22.12**, or import the SDK as **ESM**. Bundlers that cannot `require()` an ES module, including some **Metro / React Native** setups, are affected the same way. ESM consumers are unaffected.
 
-- **TypeScript module resolution.** v2 ships an `exports` map; if you hit `Cannot find module '@mysten/sui/...'`, set `"moduleResolution": "bundler"` (or `node16` / `nodenext`) and `"module": "esnext"` in your `tsconfig.json`.
-- **CommonJS on older Node is affected — even if you don't bridge from Sui.** The SDK eagerly loads its ESM-only dependencies (`@mysten/sui` v2, and already `@solana/web3.js`) at import time, so on **Node < 20.19 / < 22.12** a plain `require('@mayanfinance/swap-sdk')` throws `ERR_REQUIRE_ESM` and the package fails to load **at all** — regardless of which chains you use. To consume v15 from CommonJS you must either:
-    - run on **Node ≥ 20.19 / ≥ 22.12** (where `require()` of an ES module is supported), or
-    - import the SDK as **ESM** (`import` instead of `require`).
+> **Packaging or install trouble with v15?** [Open an issue](https://github.com/mayan-finance/swap-sdk/issues).
 
-  Bundlers/runtimes that can't `require()` an ES module (e.g. some **Metro / React Native** setups) are affected the same way. **ESM consumers (`import`) on any modern runtime are unaffected.** *(This constraint already existed in v14 via `@solana/web3.js`'s ESM-only dependencies; the v2 Sui upgrade makes it unavoidable.)*
+</details>
 
-> **Bundling or install issues with v15?** If anything goes wrong packaging or installing the v15 package — ESM/CJS interop, bundler configuration, dependency resolution, etc. — please [open an issue](https://github.com/mayan-finance/swap-sdk/issues) or reach out to us. We're actively monitoring and will work with you to resolve it as soon as possible.
+<details>
+<summary><b>v14.0.0: HyperCore deposits no longer need an extra signature</b></summary>
 
-## ⚠️ Breaking changes in v14.0.0
+<br />
 
-- **HyperCore USDC deposits no longer require an extra user signature.** The previous flow that required the user to sign a USDC permit on Arbitrum has been removed. Just fetch a quote with `toChain: 'hypercore'` and call the regular `swapFromEvm` / `swapFromSolana` / `getSwapFromEvmTxPayload` — no extra signing step.
-- **Removed APIs** (callers must migrate):
-    - `getHyperCoreUSDCDepositPermitParams` — no replacement needed; signing is gone.
-    - `usdcPermitSignature` option on `swapFromEvm`, `swapFromSolana`, `getSwapFromEvmTxPayload`, `createSwapFromSuiMoveCalls`, etc. — drop the field from your call sites.
-    - `checkHyperCoreDeposit` API helper.
-    - `Quote.hyperCoreParams` field (replaced internally by `Quote.hcSwiftDeposit`, which the SDK consumes for you).
-- **Sui → HyperCore is temporarily disabled.** Calling `createSwapFromSuiMoveCalls` with a HyperCore destination now throws. A new dedicated method to deposit into HyperCore from Sui will ship in the next release.
+- **HyperCore USDC deposits no longer require an extra user signature.** Fetch a quote with `toChain: 'hypercore'` and call the regular `swapFromEvm` / `swapFromSolana` / `getSwapFromEvmTxPayload`.
+- **Removed APIs**:
+  - `getHyperCoreUSDCDepositPermitParams`. No replacement.
+  - `usdcPermitSignature`. Still accepted by `getSwapFromEvmTxPayload`, `estimateQuoteRequiredGas*` and `ComposableSuiMoveCallsOptions`, but ignored. Remove it from your call sites.
+  - `checkHyperCoreDeposit`.
+  - `Quote.hyperCoreParams`.
+- **Sui is not supported as a source chain for HyperCore deposits.**
 
-### Not breaking, but recommended
+**Recommended, not breaking:** `fetchQuote` now always POSTs. The `GET` endpoint is still reachable through `generateFetchQuoteUrl`. Switching to `generateFetchQuoteUrlAndBody`, which returns both the URL and a JSON body, unlocks features that do not fit in a query string, most notably Solana `extraInstructions`.
 
-- **`fetchQuote` now uses HTTP `POST` by default.** The `GET` endpoint is still supported, and `generateFetchQuoteUrl` continues to work for callers who already integrate against it. Switching to the new `generateFetchQuoteUrlAndBody` helper (which returns both the URL and a JSON body) unlocks features that don't fit in a query string — most notably the new Solana `extraInstructions` option described below.
+</details>
 
-## Installation:
+---
+
+## Install
 
 ```bash
 npm install --save @mayanfinance/swap-sdk
 ```
 
-## Usage:
+Node.js 20.19+ or 22.12+ if you `require()` the package. ESM has no version floor.
 
-Import the necessary functions and models:
+---
 
-```javascript
-import { fetchQuote, swapFromEvm, swapFromSolana, Quote, createSwapFromSuiMoveCalls } from '@mayanfinance/swap-sdk'
-```
+## Quickstart
 
-Then you will need to get a quote:
+250 USDC on Arbitrum to USDC on Solana.
 
-### Getting Quote:
-```javascript
+```typescript
+import { fetchQuote, swapFromEvm } from '@mayanfinance/swap-sdk';
+import { ethers } from 'ethers';
+
+// 1. Get a quote. One entry is returned per available route.
 const quotes = await fetchQuote({
-	amountIn64: "250000000", // if fromToken is USDC means 250 USDC
-	fromToken: fromToken.contract,
-	toToken: toToken.contract,
-	fromChain: "avalanche",
-	toChain: "solana",
-	slippageBps: "auto",
-	gasDrop: 0.04, // optional
-	referrer: "YOUR SOLANA WALLET ADDRESS", // optional
-	referrerBps: 5, // optional
-	apiKey: "YOUR API KEY", // optional
+  amountIn64: '250000000', // 250 USDC, in the input token's base units (6 decimals)
+  fromToken: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', // USDC on Arbitrum
+  toToken: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',  // USDC on Solana
+  fromChain: 'arbitrum',
+  toChain: 'solana',
+  slippageBps: 'auto',
 });
+
+const quote = quotes[0];
+
+// 2. Execute. One signature from the user, on the source chain only.
+const signer = await new ethers.BrowserProvider(window.ethereum).getSigner();
+const swapperAddress = await signer.getAddress();
+const destinationSolanaAddress = 'RECIPIENT SOLANA WALLET';
+
+const tx = await swapFromEvm(
+  quote,
+  swapperAddress,
+  destinationSolanaAddress,
+  null,  // referrerAddresses
+  signer,
+  null,  // permit
+  null,  // overrides
+  null,  // payload
+);
+
+// 3. Track it to completion.
+const txHash = typeof tx === 'string' ? tx : tx.hash; // gasless Swift orders return the order hash, see "Gasless swaps"
+const res = await fetch(`https://explorer-api.mayan.finance/v3/swap/trx/${txHash}`);
+const { clientStatus } = await res.json(); // INPROGRESS | COMPLETED | REFUNDED
 ```
-> `slippageBps` can either be a specific basis point number or the string **"auto"**. When set to "auto", the system determines the safest slippage based on the input and output tokens.
-You can also provide slippageBps directly as a number in basis points; for example, 300 means 3%. Regardless of whether you pass "auto" or a basis point number, the `slippageBps` field in the quote response will always be returned as a **basis point number**.
 
-> see the list of supported chains [here](./src/types.ts#L13).
+ERC20 inputs need an allowance for the Mayan Forwarder first. See [ERC20 allowance](#erc20-allowance).
 
-You can get the list of supported tokens using [Tokens API](https://price-api.mayan.finance/swagger/)
+Full runnable examples for EVM, Solana and Sui live in [`mayan-finance/sdk-example`](https://github.com/mayan-finance/sdk-example).
 
-#### Gas on destination:
-To enable [Gas on destination](https://docs.mayan.finance/dapp/gas-on-destination) set the gasDrop param to the amount of native token (e.g. ETH, BNB..) you want to receive on the destination chain.
+---
 
+## Supported chains
 
-```
-Maximum supported amount of gasDrop for each destination chain:
+Pass these identifiers as `fromChain` / `toChain`. The full union is `ChainName` in [`src/types.ts`](./src/types.ts).
 
-ethereum: 0.05 ETH
-bsc: 0.02 BNB
-polygon: 0.2 MATIC
-avalanche: 0.2 AVAX
-solana: 0.2 SOL
-arbitrum: 0.01 ETH
-optimism: 0.01 ETH
-unichain: 0.01 ETH
-base: 0.01 ETH
-```
+| Chain | `ChainName` | Chain | `ChainName` |
+|---|---|---|---|
+| Solana | `solana` | Base | `base` |
+| Ethereum | `ethereum` | Linea | `linea` |
+| BNB Smart Chain | `bsc` | Unichain | `unichain` |
+| Polygon | `polygon` | HyperEVM | `hyperevm` |
+| Avalanche | `avalanche` | HyperCore | `hypercore` |
+| Arbitrum | `arbitrum` | Monad | `monad` |
+| Optimism | `optimism` | Fogo | `fogo` |
+| Sui | `sui` | | |
 
-#### API Key:
-> The optional `apiKey` parameter in `fetchQuote` prevents the rate-limit-exceeded error on a per-IP basis. If you are running the SDK in your backend, you can also pass `apiKey` to other SDK functions (e.g. `swapFromEvm`, `swapFromSolana`, token list fetchers, etc.) to benefit from higher rate limits across all API calls. To obtain an API key, see the [API Key docs](https://docs.mayan.finance/integration/quote-api#api-key).
+Token addresses come from the [Tokens API](https://price-api.mayan.finance/swagger/).
 
-#### Referrer fee:
-> If you want to receive [referrer fee](https://docs.mayan.finance/integration/referral), set the `referrer` param to your wallet address.
+---
 
-#### Multiple referrer fees:
+## Fetching quotes
 
-If the referrer fee should be split between more than one wallet, pass the `referrers` option to `fetchQuote` instead of the `referrer`/`referrerBps` params. Each entry sets its own wallet address and fee share in bps:
+`fetchQuote(params, options)` returns a `Quote[]`, one entry per available route.
 
-```javascript
-const referrers = {
-	evm: [
-		{ address: "FIRST EVM WALLET", bps: 10 },
-		{ address: "SECOND EVM WALLET", bps: 5 },
-	],
-	solana: [
-		{ address: "FIRST SOLANA WALLET", bps: 10 },
-		{ address: "SECOND SOLANA WALLET", bps: 5 },
-	],
-};
+```typescript
+import { fetchQuote } from '@mayanfinance/swap-sdk';
 
 const quotes = await fetchQuote(
-	{
-		amountIn64: "250000000",
-		fromToken: fromToken.contract,
-		toToken: toToken.contract,
-		fromChain: "avalanche",
-		toChain: "solana",
-		slippageBps: "auto",
-	},
-	{ referrers },
+  {
+    amountIn64: '250000000', // base units of fromToken
+    fromToken: fromToken.contract,
+    toToken: toToken.contract,
+    fromChain: 'avalanche',
+    toChain: 'solana',
+    slippageBps: 'auto',
+    gasDrop: 0.04,                      // optional
+    referrer: 'YOUR SOLANA WALLET',     // optional
+    referrerBps: 5,                     // optional
+  },
+  {
+    apiKey: 'YOUR API KEY',             // optional
+  },
 );
 ```
 
-Then pass the **same** `referrers` object as the `referrerAddresses` argument of the swap functions (`swapFromSolana`, `swapFromEvm`, `createSwapFromSuiMoveCalls`):
+Each quote has a `type`:
 
-```javascript
-swapTrx = await swapFromSolana(quotes[0], originWalletAddress, destinationWalletAddress, referrers, signSolanaTransaction, solanaConnection);
+- `SWIFT`, the intent-based auction. The primary route.
+- `MCTP` and `FAST_MCTP`, over Circle CCTP. Suited to high-value stablecoin transfers.
+- `WH`, the legacy Wormhole Token Bridge route.
+- `MONO_CHAIN`, for same-chain swaps.
+
+Pick one and pass it to the swap function.
+
+### Slippage
+
+`slippageBps` takes basis points or `'auto'`. `300` means 3%. With `'auto'` Mayan picks the slippage for the pair, and `quote.slippageBps` holds the resolved value.
+
+### Gas on destination
+
+Set `gasDrop` to the amount of native token the user should receive on the destination chain.
+
+Maximum `gasDrop` per destination chain:
+
+| Chain | Max | Chain | Max |
+|---|---|---|---|
+| ethereum | 0.05 ETH | arbitrum | 0.01 ETH |
+| bsc | 0.02 BNB | optimism | 0.01 ETH |
+| polygon | 0.2 POL | unichain | 0.01 ETH |
+| avalanche | 0.2 AVAX | base | 0.01 ETH |
+| solana | 0.2 SOL | | |
+
+These figures are indicative. Read `quote.maxUserGasDrop` rather than hardcoding a ceiling. `gasDrop` is ignored for HyperCore deposits.
+
+### API key
+
+Optional. An `apiKey` lifts the per-IP rate limit. See [API keys](https://docs.mayan.finance/integration/quote-api?utm_source=npm&utm_medium=readme&utm_campaign=swap-sdk#api-key).
+
+### Guaranteed price
+
+A Swift quote with `swiftAuctionMode` equal to `3` has a guaranteed price. The user receives exactly `quote.minAmountOut`, not more and not less, and `expectedAmountOut` equals `minAmountOut`. In other auction modes the user receives at least `quote.minAmountOut`, and the final amount can be higher.
+
+---
+
+## Executing swaps
+
+### Solana
+
+```typescript
+const { signature } = await swapFromSolana(
+  quote,
+  originWalletAddress,
+  destinationWalletAddress,
+  referrerAddresses,
+  signSolanaTransaction,
+  solanaConnection,
+);
 ```
 
-- Do not set `referrer` or `referrerBps` when `referrers` is provided; the SDK throws.
-- A quote is bound to the referrer list it was fetched with: at swap time the SDK verifies that the `referrers` you pass match the quote and throws a mismatch error otherwise.
-- This is fully backward compatible. If you have a single referrer wallet per network type, keep using the legacy `referrer` param and `ReferrerAddresses` object; use `referrers` only when the fee is split between multiple wallets.
-- Like `extraInstructions`, `referrers` is only available through the POST flow (`fetchQuote` / `generateFetchQuoteUrlAndBody`).
+For manual control over the transaction, build instructions with `createSwapFromSolanaInstructions` and send them yourself.
 
-#### Slippage:
-> Slippage is in bps (basis points), so 300 means "up to three percent slippage".
+### EVM
 
-#### Deposit address (Mayan Payment Service):
-> If you want to receive funds via a deposit address — users simply send tokens to a generated address instead of signing swap transactions — see the [Mayan Payment Service docs](https://docs.mayan.finance/payment-service).
-
-<br />
-After you get the quote, you can build and send the swap transaction:
-
-### Bridge from Solana:
-
-```javascript
-swapTrx = await swapFromSolana(quotes[0], originWalletAddress, destinationWalletAddress, referrerAddresses, signSolanaTransaction, solanaConnection)
+```typescript
+const tx = await swapFromEvm(
+  quote,
+  swapperAddress,
+  destinationWalletAddress,
+  referrerAddresses,
+  signer,
+  permit,      // optional, EIP-2612
+  overrides,   // optional
+  payload,     // optional
+  options,     // optional: { apiKey, includeAllowanceTx, swiftRefundAddress }
+);
 ```
-<br />
 
-`referrerAddresses` is an optional object with two keys `evm` and `solana` that contains the referrer addresses for each network type.
-<br />
-example:
+The signer's address must match `swapperAddress`, and the signer must have a provider attached.
 
-```javascript
+To build the payload and send it yourself, use `getSwapFromEvmTxPayload`.
+
+#### ERC20 allowance
+
+To swap from an ERC20 token, approve enough allowance for the Mayan Forwarder contract first. Its address is `addresses.MAYAN_FORWARDER_CONTRACT`.
+
+Or pass a signed [EIP-2612](https://eips.ethereum.org/EIPS/eip-2612) permit:
+
+```typescript
 {
-  evm: "YOUR EVM WALLET",
-  solana: "YOUR SOLANA WALLET",
-  sui: "YOUR SUI WALLET"
+  value: bigint,
+  deadline: number,
+  v: number,
+  r: string,
+  s: string,
 }
 ```
-<br />
 
-If you need more control over the transaction and manually send the trx you can use `createSwapFromSolanaInstructions` function to build the solana instruction.
+#### Gasless swaps
 
-#### Bundling extra instructions in a single Solana transaction
+For gasless Swift quotes (`quote.type === 'SWIFT' && quote.gasless`), `swapFromEvm` returns the order hash as a `string` instead of a transaction response. Track it on the Explorer API like a transaction hash. Other quote types return a transaction response even when gasless. HyperCore withdrawals return the HyperCore order id.
 
-When you need to pack your own Solana instructions (e.g. a pre-swap token transfer, a wrap step, or any custom on-chain action) into the **same** transaction as the Mayan swap, you can describe them to the quoter ahead of time via the `extraInstructions` option on `fetchQuote`. The backend then sizes the swap route so that the final Mayan instructions plus your extra instructions fit inside a single Solana v0 transaction (under the UDP/MTU packet limit).
+#### Contract-level integration
 
-This feature is only available through the POST flow (`fetchQuote` / `generateFetchQuoteUrlAndBody`); it cannot be expressed as a `GET` query string.
+To integrate at the contract level, use the `_forwarder` object returned by `getSwapFromEvmTxPayload`. It carries the method name and parameters for a contract-level call.
+
+### Sui
+
+`suiClient` accepts any client implementing the Sui Core API (`ClientWithCoreApi`). `SuiGrpcClient` from `@mysten/sui/grpc` is recommended. TypeScript needs `"moduleResolution"` set to `bundler`, `node16` or `nodenext`.
+
+> Only `MCTP` quotes execute from Sui. Swift is not supported from Sui.
+
+```typescript
+const bridgeFromSuiMoveCalls = await createSwapFromSuiMoveCalls(
+  quote,                     // Quote
+  originWalletAddress,       // string
+  destinationWalletAddress,  // string
+  referrerAddresses,         // optional ReferrerAddresses
+  customPayload,             // optional Uint8Array | Buffer
+  suiClient,                 // ClientWithCoreApi
+  options,                   // optional ComposableSuiMoveCallsOptions
+);
+
+await suiClient.signAndExecuteTransaction({
+  signer: suiKeypair,
+  transaction: bridgeFromSuiMoveCalls,
+});
+```
+
+#### Composable Move calls and input coin
+
+- **Custom Move calls.** Pass your transaction as `options.builtTransaction`. The bridge calls are appended, and you sign and send the combined transaction.
+- **Custom input coin.** Pass a coin, for example one returned by an earlier Move call, as `options.inputCoin`.
+
+The full option set is `ComposableSuiMoveCallsOptions` in [`src/types.ts`](./src/types.ts).
+
+---
+
+## Earning fees
+
+Set `referrer` to your fee wallet and `referrerBps` to your rate.
+
+```typescript
+const quotes = await fetchQuote({
+  amountIn64: '250000000',
+  fromToken: fromToken.contract,
+  toToken: toToken.contract,
+  fromChain: 'avalanche',
+  toChain: 'solana',
+  slippageBps: 'auto',
+  referrer: 'YOUR SOLANA WALLET',
+  referrerBps: 5,
+});
+```
+
+At swap time pass `referrerAddresses` with an address for every network you route across. A route with no matching address earns no fee, and no error.
+
+```typescript
+{
+  evm: 'YOUR EVM WALLET',
+  solana: 'YOUR SOLANA WALLET',
+  sui: 'YOUR SUI WALLET',
+}
+```
+
+To split across wallets, pass `referrers` in `QuoteOptions` instead of `referrer` / `referrerBps`, and the same object as `referrerAddresses` at swap time:
+
+```typescript
+const referrers = {
+  evm: [
+    { address: 'FIRST EVM WALLET', bps: 10 },
+    { address: 'SECOND EVM WALLET', bps: 5 },
+  ],
+  solana: [
+    { address: 'FIRST SOLANA WALLET', bps: 10 },
+  ],
+};
+```
+
+Each `bps` must be an integer from 0 to 255. Pass the same object at swap time that you fetched the quote with, or the SDK throws. Never mix the two shapes in one object. Split referrers earn nothing on `WH`, or on `MCTP` and `FAST_MCTP` to a non-Solana destination.
+
+Rates per route, payout chains and collection: [fees earning](https://docs.mayan.finance/build/fees-earning?utm_source=npm&utm_medium=readme&utm_campaign=swap-sdk).
+
+---
+
+## Cross-chain deposits
+
+Give each user a permanent deposit address. Tokens sent there arrive as your configured output token on the destination chain. No wallet connection or approval needed.
+
+```typescript
+const quotes = await fetchQuote(
+  {
+    amountIn64: '250000000',
+    fromToken: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', // USDC on Arbitrum
+    toToken: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',  // USDC on Solana
+    fromChain: 'arbitrum',
+    toChain: 'solana',
+    slippageBps: 'auto',
+    destinationAddress: userSolanaWallet,
+  },
+  { mpsDeposit: true },
+);
+
+const depositAddress = quotes[0].mpsDepositAddress;
+```
+
+The address is deterministic per destination chain, wallet and token. Changing any of them gives a different address. Sui is not supported as a deposit chain.
+
+Call `validateMpsDepositAddress(quote, destinationAddress)` before showing an address to a user. It throws if the address is invalid.
+
+Supported chains and tokens, minimums, statuses and events: [Mayan Payment Service](https://docs.mayan.finance/payment-service?utm_source=npm&utm_medium=readme&utm_campaign=swap-sdk).
+
+---
+
+## Hyperliquid funding
+
+Pick the destination token by name from the Tokens API, `USDC (spot)` or `USDC (perps)`. Other destination tokens are not supported. The input token can be anything Mayan supports on the source chain.
+
+```typescript
+const quotes = await fetchQuote({
+  amountIn64: '250000000',
+  fromToken: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', // USDC on Arbitrum
+  fromChain: 'arbitrum',
+  toToken: hyperCoreUsdc.contract,                          // from fetchTokenList('hypercore')
+  toChain: 'hypercore',
+  slippageBps: 'auto',
+});
+
+// destinationAddress is the user's HyperCore address, EVM-style 0x...
+const tx = await swapFromEvm(
+  quotes[0], swapperAddress, hyperCoreAddress, null, signer, null, null, null,
+);
+```
+
+`gasDrop` is ignored, a custom payload is not supported, and the minimum deposit is around 5 USDC of output.
+
+> Sui is not supported as a source chain for HyperCore deposits. Route from an EVM chain or Solana instead.
+
+---
+
+## Advanced
+
+### Custom refund address (Swift)
+
+A Swift order that cannot be completed refunds to the wallet that started it. Pass `swiftRefundAddress` to redirect it to another source-chain address, for when the initiating wallet cannot receive funds.
+
+```typescript
+// EVM: via the options argument
+const tx = await swapFromEvm(
+  quote, swapperAddress, destinationWalletAddress, referrerAddresses,
+  signer, permit, overrides, payload,
+  { swiftRefundAddress: 'REFUND WALLET ON SOURCE CHAIN' },
+);
+
+// Solana: via the instructionOptions argument
+const swapTrx = await swapFromSolana(
+  quote, originWalletAddress, destinationWalletAddress, referrerAddresses,
+  signSolanaTransaction, solanaConnection, extraRpcs, sendOptions, jitoOptions,
+  { swiftRefundAddress: 'REFUND WALLET ON SOURCE CHAIN' },
+);
+```
+
+The same option exists on `getSwapFromEvmTxPayload` and `createSwapFromSolanaInstructions`.
+
+- **EVM.** Gasless Swift orders always refund to the swapper. A different `swiftRefundAddress` is rejected.
+- **Solana.** Only Swift V2 quotes (`quote.swiftVersion === 'V2'`) support a custom refund address.
+- **Swift quotes only.** Other quote types ignore the option and refund to the swapper wallet. If a separate refund address is critical, filter for `quote.type === 'SWIFT'`.
+- The refund address must be a valid wallet on the **source** chain. Zero addresses are rejected.
+
+### Bundling extra Solana instructions
+
+To pack your own instructions into the **same** transaction as the Mayan swap, describe them up front via `extraInstructions`, so the quote leaves room for them in one Solana v0 transaction.
+
+Only the POST flow (`fetchQuote` / `generateFetchQuoteUrlAndBody`) supports this.
 
 ```typescript
 import { fetchQuote, InstructionInfo } from '@mayanfinance/swap-sdk';
 
 const extraInstructions: InstructionInfo[] = [
-    {
-        programId: 'YourProgram1111111111111111111111111111111',
-        accounts: [
-            { pubkey: '...', isSigner: false, isWritable: true },
-            // ...
-        ],
-        data: 'BASE64_ENCODED_INSTRUCTION_DATA', // instruction data as base64
-    },
+  {
+    programId: 'YourProgram1111111111111111111111111111111',
+    accounts: [
+      { pubkey: '...', isSigner: false, isWritable: true },
+      // ...
+    ],
+    data: 'BASE64_ENCODED_INSTRUCTION_DATA',
+  },
 ];
 
 const quotes = await fetchQuote(
-    {
-        amountIn64: '250000000',
-        fromToken: fromToken.contract,
-        toToken: toToken.contract,
-        fromChain: 'solana',
-        toChain: 'arbitrum',
-        slippageBps: 'auto',
+  {
+    amountIn64: '250000000',
+    fromToken: fromToken.contract,
+    toToken: toToken.contract,
+    fromChain: 'solana',
+    toChain: 'arbitrum',
+    slippageBps: 'auto',
+  },
+  {
+    extraInstructions: {
+      instructions: extraInstructions,
+      lookupTables: [
+        // optional: base58 addresses of address lookup tables your
+        // instructions rely on, so the quoter can size the transaction
+      ],
     },
-    {
-        extraInstructions: {
-            instructions: extraInstructions,
-            lookupTables: [
-                // optional: base58 addresses of address lookup tables
-                // your extra instructions rely on, so the quoter can size
-                // the transaction correctly
-            ],
-        },
-    },
+  },
 );
 ```
 
-Type reference (defined in `src/types.ts`):
+`InstructionInfo` and `SolanaKeyInfo` are defined in [`src/types.ts`](./src/types.ts).
 
-```typescript
-type SolanaKeyInfo = {
-    pubkey: string;       // base58
-    isSigner: boolean;
-    isWritable: boolean;
-};
+You still append `extraInstructions` to the instruction list you submit on chain. The option is a sizing hint for the quote, nothing more.
 
-type InstructionInfo = {
-    programId: string;    // base58
-    accounts: SolanaKeyInfo[];
-    data: string;         // base64-encoded instruction data
-};
+---
+
+## Tracking swaps
+
+Query the [Explorer API](https://docs.mayan.finance/build/track-transactions) with the source transaction hash:
+
+```
+GET https://explorer-api.mayan.finance/v3/swap/trx/{txHash}
 ```
 
-The quoter will pick a swap route whose instructions, combined with the ones you provide, leave enough room in the resulting transaction. You are still responsible for appending your `extraInstructions` to the instruction list you submit on chain — `extraInstructions` is purely a *sizing hint* for the quote.
+Branch on `clientStatus`. It is `INPROGRESS` while the swap is running, `COMPLETED` when the user has received the output, or `REFUNDED` when funds were returned on the source chain.
 
-### Bridge from EVM:
+Full schema: [Explorer API reference](https://explorer-api.mayan.finance/swagger/#/default/SwapDetailsController_getSwapByTrxHash).
 
-```javascript
-swapTrx = await swapFromEvm(quotes[0], swapperAddress, destinationWalletAddress, referrerAddress, provider, signer, permit?)
-```
+---
 
-#### ERC20 Allowance
+## Support
 
-* If you want to initiate a swap using an ERC20 token as the input, ensure that you have already approved sufficient allowance for the Mayan Forwarder contract. The Forwarder's address can be accessed via `addresses.MAYAN_FORWARDER_CONTRACT`.
+- **Docs**: [docs.mayan.finance](https://docs.mayan.finance/?utm_source=npm&utm_medium=readme&utm_campaign=swap-sdk)
+- **Bugs and feature requests**: [GitHub issues](https://github.com/mayan-finance/swap-sdk/issues)
+- **Integration support**: [Discord](https://discord.com/invite/MayanFinance)
+- **Updates**: [@mayan on X](https://x.com/mayan)
 
+## License
 
-* Alternatively, the user can sign a permit message ([EIP-2612](https://eips.ethereum.org/EIPS/eip-2612)). The permit parameter is optional; you can pass the permit object to the function if the input token supports the permit standard. The permit object should contain the following fields:
-
-```javascript
-{
-	value: bigint,
-	deadline: number,
-	v: number,
-	r: string,
-	s: string,
-}
-```
-<br />
-
-### Bridge from Sui
-The `createSwapFromSuiMoveCalls` function returns a Transaction instance containing all the required Move calls. This transaction should then be signed by the user's wallet and broadcast to the Sui network.
-
-```javascript
-const bridgeFromSuiMoveCalls = await createSwapFromSuiMoveCalls(
-  	quote, // Quote
-	originWalletAddress, // string
-	destinationWalletAddress, // string
-	referrerAddresses, // Optional(ReferrerAddresses)
-	customPayload, // Optional(Uint8Array | Buffer)
-	suiClient, // SuiClient
-	options, // Optional(ComposableSuiMoveCallsOptions)
-);
-
-await suiClient.signAndExecuteTransaction({
-     signer: suiKeypair,
-     transaction: bridgeFromSuiMoveCalls,
- });
-```
-
-#### Composability on Move Calls and Input Coin
-
-The SDK offers composability for advanced use cases where you want to integrate bridge Move calls into an existing Sui transaction or use a specific coin as the input for bridging.
-
-- **Custom Move Calls**: To compose the bridge logic into an existing transaction, pass your transaction through the `builtTransaction` parameter. The bridge Move calls will be appended, allowing you to sign and send the combined transaction.
-
-- **Custom Input Coin**: If you'd like to use a specific coin (e.g., one returned from earlier Move calls) as the input for the bridge, provide it via the `inputCoin` parameter.
-
-```javascript
-type ComposableSuiMoveCallsOptions = {
-	builtTransaction?: SuiTransaction;
-	inputCoin?: SuiFunctionParameter;
-}
-```
-<br />
-
-### Depositing on HyperCore (Hyperliquid Core) as a Destination
-
-To deposit into HyperCore, fetch a quote as described earlier with `toChain` set to `hypercore`, then call the regular transaction-building method for the source chain (`swapFromEvm`, `swapFromSolana`, `getSwapFromEvmTxPayload`, …). No extra user signature is required — the SDK handles everything from a single signed swap transaction.
-
-Pass the user's HyperCore destination address (an EVM-style `0x…` address) as the `destinationAddress` argument, the same way you would for any other destination chain. The user's selection between **USDC (spot)** and **USDC (perps)** is encoded automatically based on the `toToken` returned in the quote.
-
-> **Sui → HyperCore is temporarily disabled** in this release. Calling `createSwapFromSuiMoveCalls` with `toChain: 'hypercore'` will throw. A new dedicated entry point will be added in the next release.
-
-<br />
-
-#### Gasless Transaction:
-> If the selected quote's `gasless` parameter is set to true (`quote.gasless == true`), the return value of the `swapFromEvm` function will be the order hash of the `string` type. This hash can be queried on the Mayan Explorer API, similar to a transaction hash.
-
-
-
-
-If you need to get the transaction payload and send it manually, you can use `getSwapFromEvmTxPayload` function to build the EVM transaction payload.
-
-#### Contract Level Integration:
->If you aim to integrate the Mayan protocol at the contract level, you can use the `_forwarder` object returned from the `getSwapFromEvmTxPayload`. It contains the method name and parameters for a contract level method call.
-
-### Custom Refund Address (Swift):
-
-By default, if a Swift order cannot be completed and gets refunded on the source chain, the funds return to the swapper wallet that initiated the swap. On SWIFT quotes you can receive refunds at a different source-chain address by passing the optional `swiftRefundAddress` — useful when the initiating wallet cannot receive funds back.
-
-```javascript
-// EVM: pass it via the options argument
-swapTrx = await swapFromEvm(quote, swapperAddress, destinationWalletAddress, referrerAddresses, signer, permit, overrides, payload, {
-	swiftRefundAddress: "REFUND WALLET ON SOURCE CHAIN",
-});
-
-// Solana: pass it via the instructionOptions argument
-swapTrx = await swapFromSolana(quote, originWalletAddress, destinationWalletAddress, referrerAddresses, signSolanaTransaction, solanaConnection, extraRpcs, sendOptions, jitoOptions, {
-	swiftRefundAddress: "REFUND WALLET ON SOURCE CHAIN",
-});
-```
-
-The same option is available on `getSwapFromEvmTxPayload` and `createSwapFromSolanaInstructions` if you build the transaction manually.
-
-- **Request the quote with `gasless: false`.** Gasless Swift orders require the refund address to be the same as the order signer, so the SDK throws if a gasless quote is combined with a different `swiftRefundAddress`. Keep the `gasless` quote option unset or explicitly `false` (it defaults to `false`).
-- **`swiftRefundAddress` only applies to SWIFT quotes.** Other quote types ignore it and refund to the swapper wallet. If receiving refunds at the separate address is critical for your integration, filter the fetched quotes and only proceed when `quote.type === 'SWIFT'`:
-
-```javascript
-const quote = quotes.find((q) => q.type === "SWIFT");
-if (!quote) {
-	throw new Error("No SWIFT quote available");
-}
-```
-
-- The refund address must be a valid wallet address on the **source** chain; zero addresses are rejected.
-
-### Tracking:
-To track the progress of swaps, you can use [Mayan Explorer API](https://explorer-api.mayan.finance/swagger/#/default/SwapDetailsController_getSwapByTrxHash) by passing the transaction hash of the swap transaction.
-
-<br />
-The response contains a lot of info about the swap but the important field is `clientStatus` which can be one of the following values:
-
-- `INPROGRESS` - the swap is being processed
-- `COMPLETED` - the swap is completed
-- `REFUNDED` - the swap has refunded
-
-<br />
-
-## 📱 React Native Support (Solana Mobile SDK):
-
-You can also use this SDK in your react native app:
-<br />
-```javascript
-import { transact, Web3MobileWallet } from '@solana-mobile/mobile-wallet-adapter-protocol-web3js';
-```
-
-For swaps from solana after importing the above functions from Solana Mobile SDK you have to pass a callback function that calls `transact` function as the `signSolanaTransaction` parameter of `swapFromSolana` function:
-
-
-```javascript
-const signSolanaTransaction = useCallback(
-async (tx: Transaction) => {
-  return await transact(async (wallet: Web3MobileWallet) => {
-    authorizeSession(wallet);
-    const signedTransactions = await wallet.signTransactions({
-      transactions: [tx],
-    });
-
-    return signedTransactions[0];
-  });
-},
-[authorizeSession],
-);
-```
-
-For swaps from EVM you can use `useWalletConnectModal` hook from  [WalletConnet](https://github.com/WalletConnect/modal-react-native) to get the provider and pass it to `swapFromEvm` function as the `signer`:
-
-```javascript
-import {useWalletConnectModal} from '@walletconnect/modal-react-native';
-...
-const { provider: evmWalletProvider} =
-    useWalletConnectModal();
-...
-const web3Provider = new ethers.providers.Web3Provider(
-                    evmWalletProvider,
-                  );
-const signer = web3Provider.getSigner(0);
-```
-
-To learn more about how to use Mayan SDK in a react-native project, you can check [this scaffold](https://github.com/mayan-finance/react-native-scaffold).
+[MIT](./LICENSE)
