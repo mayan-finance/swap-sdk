@@ -1,98 +1,98 @@
 {
-  "name": "@mayanfinance/swap-sdk",
-  "description": "TypeScript SDK for fast, intent-based cross-chain swaps and bridging across Mayan-supported networks, built for wallets, apps and payments.",
-  "version": "15.2.2",
-  "source": "src/main.ts",
-  "main": "dist/index.js",
-  "module": "dist/index.esm.min.js",
-  "unpkg": "dist/index.iife.min.js",
-  "types": "dist/index.d.ts",
-  "homepage": "https://docs.mayan.finance/get-started/quickstart?utm_source=npm&utm_medium=package&utm_campaign=swap-sdk",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/mayan-finance/swap-sdk.git"
-  },
-  "bugs": {
-    "url": "https://github.com/mayan-finance/swap-sdk/issues"
-  },
-  "keywords": [
-    "cross-chain",
-    "cross-chain-swap",
-    "cross-chain-bridge",
-    "bridge-sdk",
-    "swap-sdk",
-    "cross-chain-api",
-    "intent-based",
-    "multichain",
-    "stablecoin",
-    "stablecoin-bridge",
-    "stablecoin-swap",
-    "guaranteed-price",
-    "cross-chain-deposits",
-    "deposit-address",
-    "wallet-sdk",
-    "payments",
-    "treasury",
-    "solana",
-    "evm",
-    "ethereum",
-    "base",
-    "arbitrum",
-    "bsc",
-    "sui",
-    "monad",
-    "hyperevm",
-    "hyperliquid",
-    "hypercore",
-    "wormhole",
-    "mayan",
-    "mayanfinance"
-  ],
-  "exports": {
-    ".": {
-      "require": "./dist/index.js",
-      "import": "./dist/index.mjs",
-      "types": "./dist/index.d.ts"
-    }
-  },
-  "files": [
-    "dist/**/*",
-    "LICENSE",
-    "README.md"
-  ],
-  "scripts": {
-    "build": "tsup --clean && tsup --minify",
-    "watch": "tsup --watch",
-    "lint": "prettier src -c",
-    "format": "prettier src --write",
-    "prepack": "npm run build",
-    "release": "npm run prepack && npx np --no-tests"
-  },
-  "devDependencies": {
-    "prettier": "^2.6.2",
-    "tsup": "^6.7.0",
-    "typescript": "^5.8.3"
-  },
-  "prettier": {
-    "singleQuote": true
-  },
-  "license": "MIT",
-  "publishConfig": {
-    "registry": "https://registry.npmjs.org",
-    "access": "public"
-  },
-  "author": {
-    "name": "Mayan Finance",
-    "url": "https://mayan.finance"
-  },
-  "dependencies": {
-    "@mysten/sui": "^2.17.0",
-    "@noble/hashes": "1.8.0",
-    "@solana/buffer-layout": "^4 || ^3",
-    "@solana/web3.js": "^1.87.6",
-    "bs58": "^6.0.0",
-    "cross-fetch": "^3.1.5",
-    "ethers": "^6",
-    "js-sha3": "^0.8.0"
-  }
+	"name": "@mayanfinance/swap-sdk",
+	"description": "The TypeScript SDK for Mayan, the execution layer for moving value across chains. Swap any asset to any chain, instantly, from Solana, EVM and Sui.",
+	"version": "15.2.2",
+	"source": "src/main.ts",
+	"main": "dist/index.js",
+	"module": "dist/index.esm.min.js",
+	"unpkg": "dist/index.iife.min.js",
+	"types": "dist/index.d.ts",
+	"homepage": "https://docs.mayan.finance/get-started/quickstart?utm_source=npm&utm_medium=package&utm_campaign=swap-sdk",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/mayan-finance/swap-sdk.git"
+	},
+	"bugs": {
+		"url": "https://github.com/mayan-finance/swap-sdk/issues"
+	},
+	"keywords": [
+		"cross-chain",
+		"cross-chain-swap",
+		"cross-chain-bridge",
+		"bridge-sdk",
+		"swap-sdk",
+		"cross-chain-api",
+		"intent-based",
+		"multichain",
+		"stablecoin",
+		"stablecoin-bridge",
+		"stablecoin-swap",
+		"guaranteed-price",
+		"cross-chain-deposits",
+		"deposit-address",
+		"wallet-sdk",
+		"payments",
+		"treasury",
+		"solana",
+		"evm",
+		"ethereum",
+		"base",
+		"arbitrum",
+		"bsc",
+		"sui",
+		"monad",
+		"hyperevm",
+		"hyperliquid",
+		"hypercore",
+		"wormhole",
+		"mayan",
+		"mayanfinance"
+	],
+	"exports": {
+		".": {
+			"require": "./dist/index.js",
+			"import": "./dist/index.mjs",
+			"types": "./dist/index.d.ts"
+		}
+	},
+	"files": [
+		"dist/**/*",
+		"LICENSE",
+		"README.md"
+	],
+	"scripts": {
+		"build": "tsup --clean && tsup --minify",
+		"watch": "tsup --watch",
+		"lint": "prettier src -c",
+		"format": "prettier src --write",
+		"prepack": "npm run build",
+		"release": "npm run prepack && npx np --no-tests"
+	},
+	"devDependencies": {
+		"prettier": "^2.6.2",
+		"tsup": "^6.7.0",
+		"typescript": "^5.8.3"
+	},
+	"prettier": {
+		"singleQuote": true
+	},
+	"license": "MIT",
+	"publishConfig": {
+		"registry": "https://registry.npmjs.org",
+		"access": "public"
+	},
+	"author": {
+		"name": "Mayan Finance",
+		"url": "https://mayan.finance"
+	},
+	"dependencies": {
+		"@mysten/sui": "^2.17.0",
+		"@noble/hashes": "1.8.0",
+		"@solana/buffer-layout": "^4 || ^3",
+		"@solana/web3.js": "^1.87.6",
+		"bs58": "^6.0.0",
+		"cross-fetch": "^3.1.5",
+		"ethers": "^6",
+		"js-sha3": "^0.8.0"
+	}
 }
