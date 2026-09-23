@@ -5,7 +5,7 @@
   <img src="https://cdn.mayan.finance/brand-kit/Mayan_Logo_Black.png" alt="Mayan" width="320">
 </picture>
 
-# 🗿 Mayan Cross-Chain Swap SDK
+# 🗿 Mayan Cross-Chain Swap SDK 
 
 [![npm version](https://img.shields.io/npm/v/@mayanfinance/swap-sdk.svg)](https://www.npmjs.com/package/@mayanfinance/swap-sdk)
 [![npm downloads](https://img.shields.io/npm/dw/@mayanfinance/swap-sdk.svg)](https://www.npmjs.com/package/@mayanfinance/swap-sdk)
