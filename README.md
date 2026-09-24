@@ -184,8 +184,19 @@ Each quote has a `type`:
 - `MCTP` and `FAST_MCTP`, over Circle CCTP. Suited to high-value stablecoin transfers.
 - `WH`, the legacy Wormhole Token Bridge route.
 - `MONO_CHAIN`, for same-chain swaps.
+- `HULAR`, Mayan's inventory-backed route. See [Hular](#hular).
 
 Pick one and pass it to the swap function.
+
+### Hular
+
+`HULAR` quotes are offered by default. Pass `hular: false` in `QuoteOptions` to leave them out.
+
+A `HULAR` quote is a price preview. When you pass it to a swap function the SDK asks Mayan for the concrete order, bound to the swapper (refund address) and the destination address, verifies the returned order hash and amounts against the quote, and then builds the deposit. The order expires after a short deposit deadline, so build and send the transaction promptly.
+
+Referrer splits work the same way as for Swift V2: pass `referrers` when fetching the quote and the same object as `referrerAddresses` at swap time. Hular pays every listed wallet on the source chain.
+
+Unlike the other routes, EVM deposits do not go through the Mayan forwarder. Tokens are pulled by the Hular router, so an ERC20 approval must target the router. Use `includeAllowanceTx` to bundle the approval, or call `fetchHularOrder` first and approve `order.quote.routerAddress`. When the order allows a direct transfer the SDK sends a plain ERC20 transfer to the router instead, and no approval is needed. A `permit` is honored only if it was signed for the router as spender.
 
 ### Slippage
 

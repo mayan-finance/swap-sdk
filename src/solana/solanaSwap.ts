@@ -51,6 +51,7 @@ import bs58 from 'bs58';
 import { createHyperCoreDepositFromSolanaInstructions } from './solanaHyperCore';
 import { createMonoChainFromSolanaInstructions } from './solanaMonoChain';
 import { createFastMctpFromSolanaInstructions } from './solanaFastMctp';
+import { createHularFromSolanaInstructions } from './solanaHular';
 
 
 const STATE_SIZE = 420;
@@ -119,6 +120,15 @@ export async function createSwapFromSolanaInstructions(
 
 	if (quote.type === 'FAST_MCTP') {
 		return createFastMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
+	}
+
+	if (quote.type === 'HULAR') {
+		if (options.customPayload) {
+			throw new Error('Custom payload is not supported for HULAR');
+		}
+		return createHularFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddresses, connection, {
+			apiKey: options.apiKey,
+		});
 	}
 
 	if (options.customPayload) {

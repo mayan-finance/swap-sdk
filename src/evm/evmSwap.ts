@@ -36,6 +36,7 @@ import {
 	getHyperCoreWithdrawParams
 } from './evmHyperCore';
 import { getMonoChainFromEvmTxPayload } from './evmMonoChain';
+import { getHularFromEvmTxPayload, HULAR_EVM_DEPOSIT_GAS_UNITS } from './evmHular';
 
 export type ContractRelayerFees = {
 	swapFee: bigint;
@@ -277,6 +278,18 @@ export async function getSwapFromEvmTxPayload(
 			referrerAddress,
 			signerChainId,
 			permit
+		);
+	}
+
+	if (quote.type === 'HULAR') {
+		return getHularFromEvmTxPayload(
+			quote,
+			swapperAddress,
+			destinationAddress,
+			referrerAddresses,
+			signerChainId,
+			permit,
+			options?.apiKey
 		);
 	}
 
@@ -524,6 +537,9 @@ export async function estimateQuoteRequiredGas(
 	if (quote.type === 'SWIFT' && quote.gasless) {
 		return BigInt(0);
 	}
+	if (quote.type === 'HULAR') {
+		return HULAR_EVM_DEPOSIT_GAS_UNITS;
+	}
 	const transactionRequest = await getSwapFromEvmTxPayload(
 		quote,
 		swapperAddress,
@@ -567,6 +583,9 @@ export async function estimateQuoteRequiredGasAprox(
 	if (quote.type === 'SWIFT' && quote.gasless) {
 		return BigInt(0);
 	}
+	if (quote.type === 'HULAR') {
+		return HULAR_EVM_DEPOSIT_GAS_UNITS;
+	}
 	const transactionRequest = await getSwapFromEvmTxPayload(
 		quote,
 		signerAddress,
@@ -607,6 +626,21 @@ export async function estimateQuoteRequiredGasAprox2(
 			gasPrice: BigInt(0),
 			requiredNative: BigInt(0),
 		}
+	}
+	if (quote.type === 'HULAR') {
+		const { gasPrice } = await getEstimateGasEvm({
+			from: signerAddress,
+			chainId: signerChainId,
+			tokenIn: ZeroAddress,
+			value: '0x0',
+			data: '0x',
+			to: signerAddress,
+		});
+		return {
+			estimateGas: HULAR_EVM_DEPOSIT_GAS_UNITS,
+			gasPrice: gasPrice,
+			requiredNative: gasPrice * HULAR_EVM_DEPOSIT_GAS_UNITS,
+		};
 	}
 	const transactionRequest = await getSwapFromEvmTxPayload(
 		quote,
@@ -709,13 +743,15 @@ async function handleAtomicBatch(
 	}
 	const erc20Contract = new Contract(quote.fromToken.contract, ERC20Artifact.abi, signer);
 	const approveCalls: Array<object> = [];
+	// hular deposits go straight to the hular router, every other route goes through the forwarder
+	const spender = quote.type === 'HULAR' ? (transactionRequest.to as string) : addresses.MAYAN_FORWARDER_CONTRACT;
 	const USDT_ETHEREUM_ADDRESS = '0xdac17f958d2ee523a2206206994597c13d831ec7';
 	if (quote.fromChain === 'ethereum' && quote.fromToken.contract.toLowerCase() === USDT_ETHEREUM_ADDRESS) {
 		// USDT on Ethereum has a non-standard approve that requires resetting to zero first if the current allowance is non-zero.
-		const currentAllowance: bigint = await erc20Contract.allowance(signerAddress, addresses.MAYAN_FORWARDER_CONTRACT);
+		const currentAllowance: bigint = await erc20Contract.allowance(signerAddress, spender);
 		if (currentAllowance > BigInt(0)) {
 			const resetData = erc20Contract.interface.encodeFunctionData('approve', [
-				addresses.MAYAN_FORWARDER_CONTRACT,
+				spender,
 				BigInt(0),
 			]);
 			approveCalls.push({
@@ -726,7 +762,7 @@ async function handleAtomicBatch(
 		}
 	}
 	const approveData = erc20Contract.interface.encodeFunctionData('approve', [
-		addresses.MAYAN_FORWARDER_CONTRACT,
+		spender,
 		BigInt(quote.effectiveAmountIn64),
 	]);
 	approveCalls.push({
