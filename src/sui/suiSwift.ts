@@ -67,6 +67,7 @@ export async function createSwiftFromSuiMoveCalls(
 			inputCoinType: quote.fromToken.contract,
 			middleCoinType: quote.swiftInputContract,
 			userWallet: swapperAddress,
+			destinationWallet: destinationAddress,
 			withWhFee: false,
 			referrerAddress,
 			inputCoin: options?.inputCoin,
