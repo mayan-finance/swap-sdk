@@ -617,6 +617,7 @@ export async function createFastMctpFromSolanaInstructions(
 			minMiddleAmount: quote.minMiddleAmount,
 			middleToken: quote.fastMctpInputContract,
 			userWallet: swapperAddress,
+			destinationWallet: destinationAddress,
 			userLedger: ledger.toString(),
 			slippageBps: quote.slippageBps,
 			fromToken: quote.fromToken.contract,
