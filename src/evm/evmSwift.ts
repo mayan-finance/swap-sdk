@@ -250,6 +250,8 @@ export async function getSwiftFromEvmTxPayload(
 			chainName: quote.fromChain,
 			amountIn64: quote.effectiveAmountIn64,
 			apiKey: apiKey,
+			userWallet: swapperAddress,
+			destinationWallet: destinationAddress,
 		});
 		if (!quote.minMiddleAmount) {
 			throw new Error('Swift swap requires middle amount, router address and calldata');

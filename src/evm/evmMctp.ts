@@ -235,7 +235,7 @@ function getEvmMctpCreateOrderTxPayload(
 }
 
 export async function getMctpFromEvmTxPayload(
-	quote: Quote, destinationAddress: string, referrerAddress: string | null | undefined,
+	quote: Quote, swapperAddress: string, destinationAddress: string, referrerAddress: string | null | undefined,
 	signerChainId: number | string, permit: Erc20Permit | null | undefined,
 	payload: Uint8Array | Buffer | null | undefined, apiKey?: string,
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
@@ -322,6 +322,8 @@ export async function getMctpFromEvmTxPayload(
 			chainName: quote.fromChain,
 			middleToken: quote.mctpInputContract,
 			apiKey: apiKey,
+			userWallet: swapperAddress,
+			destinationWallet: destinationAddress,
 		});
 		if (!minMiddleAmount) {
 			throw new Error('MCTP swap requires middle amount, router address and calldata');
