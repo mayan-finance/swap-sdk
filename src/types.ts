@@ -301,6 +301,8 @@ type BaseGetEvmSwapParams = {
 	referrerAddress?: string | null,
 	slippageBps: number,
 	apiKey?: string,
+	userWallet: string,
+	destinationWallet: string,
 }
 
 export type GetEvmSwapParams = BaseGetEvmSwapParams;
