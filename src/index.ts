@@ -5,4 +5,5 @@ export * from './sui';
 export * from './types';
 export * from './utils';
 export * from './hular/order';
+export * from './hular/types';
 export { default as addresses } from './addresses';

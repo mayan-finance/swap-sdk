@@ -1,8 +1,8 @@
-import { suiOrderDepositCall } from '@mayanfinance/hular-sdk';
 import { ClientWithCoreApi } from '@mysten/sui/client';
 import { Transaction, TransactionObjectArgument } from '@mysten/sui/transactions';
 import type { ChainReferrers, ComposableSuiMoveCallsOptions, Quote, ReferrerAddresses } from '../types';
-import { fetchHularOrder } from '../hular/order';
+import { hexToUint8Array } from '../utils';
+import { fetchHularOrder, isHularSourceSwap } from '../hular/order';
 import { resolveInputCoin } from './utils';
 
 export async function createHularFromSuiMoveCalls(
@@ -20,15 +20,30 @@ export async function createHularFromSuiMoveCalls(
 		throw new Error('Unsupported source chain for hular: ' + quote.fromChain);
 	}
 	const order = await fetchHularOrder(quote, swapperAddress, destinationAddress, referrerAddresses, options?.apiKey);
+	const params = order.quote.orderParams;
+	if (isHularSourceSwap(params)) {
+		throw new Error('Hular swap deposits are unavailable on sui');
+	}
+	if (!order.chain.escrow) {
+		throw new Error('Hular deposits are unavailable on sui');
+	}
 	const tx = options?.builtTransaction ?? new Transaction();
 	const inputCoin = await resolveInputCoin(
-		BigInt(order.quote.orderParams!.amountIn),
+		BigInt(params.amountIn),
 		swapperAddress,
-		order.quote.orderParams!.srcToken,
+		params.srcToken,
 		suiClient,
 		tx,
 		options?.inputCoin
 	);
-	suiOrderDepositCall(order, tx, inputCoin as TransactionObjectArgument);
+	tx.moveCall({
+		target: `${params.routerAddress}::hular::deposit`,
+		typeArguments: [params.srcToken],
+		arguments: [
+			tx.object(order.chain.escrow),
+			tx.pure.vector('u8', hexToUint8Array(order.quote.quoteHash)),
+			inputCoin as TransactionObjectArgument,
+		],
+	});
 	return tx;
 }

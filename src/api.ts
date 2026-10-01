@@ -1,5 +1,4 @@
 import fetch from 'cross-fetch';
-import type { JsonValue } from '@bufbuild/protobuf';
 import {
 	Token,
 	ChainName,
@@ -16,6 +15,7 @@ import {
 	GetEvmSwapParams,
 	HyperCoreWithdrawCircleTypedData,
 } from './types';
+import type { HularQuoteRequest } from './hular/types';
 import addresses from './addresses';
 import { checkSdkVersionSupport, getSdkVersion } from './utils';
 import { SwiftEvmGasLessParams } from './evm/evmSwift';
@@ -284,10 +284,7 @@ export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions
 	return result.quotes as Quote[];
 }
 
-export async function getHularOrder(
-	request: JsonValue,
-	apiKey?: string
-): Promise<JsonValue> {
+export async function getHularOrder(request: HularQuoteRequest, apiKey?: string): Promise<any> {
 	const res = await fetch(`${addresses.PRICE_URL}/quote/hular/order${apiKey ? '?apiKey=' + apiKey : ''}`, {
 		method: 'POST',
 		headers: {
@@ -305,10 +302,10 @@ export async function getHularOrder(
 			data: result?.data,
 		} as QuoteError;
 	}
-	return result as JsonValue;
+	return result;
 }
 
-export async function getHularSwapInstructions(quoteHash: string, apiKey?: string): Promise<JsonValue> {
+export async function getHularSwapInstructions(quoteHash: string, apiKey?: string): Promise<any> {
 	const res = await fetch(`${addresses.PRICE_URL}/quote/hular/instructions/${quoteHash}${apiKey ? '?apiKey=' + apiKey : ''}`, {
 		method: 'GET',
 		redirect: 'follow',
@@ -318,10 +315,10 @@ export async function getHularSwapInstructions(quoteHash: string, apiKey?: strin
 	if (res.status !== 200 && res.status !== 201) {
 		throw result;
 	}
-	return result as JsonValue;
+	return result;
 }
 
-export async function getHularChains(apiKey?: string): Promise<JsonValue> {
+export async function getHularChains(apiKey?: string): Promise<any> {
 	const res = await fetch(`${addresses.PRICE_URL}/quote/hular/chains${apiKey ? '?apiKey=' + apiKey : ''}`, {
 		method: 'GET',
 		redirect: 'follow',
@@ -331,7 +328,7 @@ export async function getHularChains(apiKey?: string): Promise<JsonValue> {
 	if (res.status !== 200 && res.status !== 201) {
 		throw result;
 	}
-	return result as JsonValue;
+	return result;
 }
 
 export async function getCurrentChainTime(chain: ChainName, apiKey?: string): Promise<number> {

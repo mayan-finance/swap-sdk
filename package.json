@@ -86,8 +86,6 @@
     "url": "https://mayan.finance"
   },
   "dependencies": {
-    "@bufbuild/protobuf": "^2.2.0",
-    "@mayanfinance/hular-sdk": "^0.1.7",
     "@mysten/sui": "^2.17.0",
     "@noble/hashes": "1.8.0",
     "@solana/buffer-layout": "^4 || ^3",

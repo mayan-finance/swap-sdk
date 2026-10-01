@@ -8,7 +8,6 @@ export default defineConfig((options) => {
 
 	return {
 		entry: ['src/index.ts'],
-		noExternal: ['@bufbuild/protobuf', '@mayanfinance/hular-sdk'],
 		splitting: false,
 		sourcemap: false,
 		clean: false,

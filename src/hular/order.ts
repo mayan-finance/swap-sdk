@@ -1,27 +1,79 @@
-import { create, fromJson, toJson } from '@bufbuild/protobuf';
-import {
-	assertOrderMatches,
-	ChainsResponseSchema,
-	decodeCrossChainQuote,
-	isSourceSwap,
-	QuoteRequestSchema,
-	SUPPORTED_PARAMS_VERSION,
-	SwapInstructionsSchema,
-	TradeType,
-	type HularOrder,
-	type SwapInstructions,
-} from '@mayanfinance/hular-sdk';
 import { SystemProgram } from '@solana/web3.js';
 import { parseUnits, ZeroAddress } from 'ethers';
 import { getHularChains, getHularOrder, getHularSwapInstructions } from '../api';
-import type { ChainName, ChainReferrers, Quote, ReferrerAddresses, Token } from '../types';
+import type { ChainName, ChainReferrers, Quote, Referrer, ReferrerAddresses, Token } from '../types';
 import { getGasDecimal, getHularReferrers } from '../utils';
+import { decodeHularChains, decodeHularQuote, decodeHularSwapInstructions } from './decode';
+import { assertHularQuoteHash, HULAR_SUPPORTED_PARAMS_VERSION } from './hash';
+import type { HularOrder, HularOrderParams, HularQuote, HularQuoteRequest, HularSwapInstructions } from './types';
 
 function getHularTokenAddress(chain: ChainName, token: Token): string {
 	if (chain === 'solana' && token.contract === ZeroAddress) {
 		return SystemProgram.programId.toBase58();
 	}
 	return token.contract;
+}
+
+export function isHularSourceSwap(params: HularOrderParams): boolean {
+	return params.srcToken !== params.bridgeTokenSrc;
+}
+
+function assertDepositDeadline(quote: HularQuote): void {
+	if (!quote.depositDeadline) {
+		return;
+	}
+	const deadline = new Date(quote.depositDeadline).getTime();
+	if (!Number.isNaN(deadline) && deadline <= Date.now()) {
+		throw new Error('Hular quote deposit deadline passed, request a new quote');
+	}
+}
+
+type OrderExpectation = {
+	srcChain: string;
+	dstChain: string;
+	amountIn: bigint;
+	recipient: string;
+	refundAddress: string;
+	minAmountOut?: bigint;
+	referrers: Referrer[];
+};
+
+function sameAddress(a: string, b: string): boolean {
+	return a.toLowerCase() === b.toLowerCase();
+}
+
+function referrerKey(referrer: Referrer): string {
+	return `${referrer.address.toLowerCase()}:${referrer.bps}`;
+}
+
+function sameReferrers(a: Referrer[], b: Referrer[]): boolean {
+	if (a.length !== b.length) {
+		return false;
+	}
+	const keys = new Set(a.map(referrerKey));
+	return b.every((referrer) => keys.has(referrerKey(referrer)));
+}
+
+function assertOrderMatches(quote: HularQuote, expected: OrderExpectation): void {
+	const params = quote.orderParams;
+	if (params.srcChain !== expected.srcChain || params.dstChain !== expected.dstChain) {
+		throw new Error('Hular order chains do not match the quote');
+	}
+	if (BigInt(params.amountIn) !== expected.amountIn) {
+		throw new Error('Hular order amount does not match the quote');
+	}
+	if (!sameAddress(params.recipient, expected.recipient)) {
+		throw new Error('Hular order recipient does not match the destination address');
+	}
+	if (!sameAddress(params.refundAddress, expected.refundAddress)) {
+		throw new Error('Hular order refund address does not match');
+	}
+	if (expected.minAmountOut !== undefined && BigInt(params.minAmountOut) < expected.minAmountOut) {
+		throw new Error('Hular order minimum output is below the quoted minimum, request a new quote');
+	}
+	if (!sameReferrers(params.referrers, expected.referrers)) {
+		throw new Error('Hular order referrers do not match the requested referrers');
+	}
 }
 
 export async function fetchHularOrder(
@@ -45,7 +97,7 @@ export async function fetchHularOrder(
 	}
 	const referrers = getHularReferrers(quote, referrerAddresses);
 	const gasDropDecimals = getGasDecimal(quote.toChain);
-	const request = create(QuoteRequestSchema, {
+	const request: HularQuoteRequest = {
 		srcChain: quote.fromChain,
 		dstChain: quote.toChain,
 		srcToken: getHularTokenAddress(quote.fromChain, quote.fromToken),
@@ -56,17 +108,17 @@ export async function fetchHularOrder(
 		slippageBps: quote.slippageBps,
 		referrers,
 		gasDrop: parseUnits((quote.gasDrop || 0).toFixed(gasDropDecimals), gasDropDecimals).toString(),
-		gasless: false,
-		sponsorFees: false,
-		tradeType: TradeType.EXACT_INPUT,
-		supportedParamsVersion: SUPPORTED_PARAMS_VERSION,
-	});
+		tradeType: 'TRADE_TYPE_EXACT_INPUT',
+		supportedParamsVersion: HULAR_SUPPORTED_PARAMS_VERSION,
+	};
 	const [quoteJson, chainsJson] = await Promise.all([
-		getHularOrder(toJson(QuoteRequestSchema, request), apiKey),
+		getHularOrder(request, apiKey),
 		getHularChains(apiKey),
 	]);
-	const orderQuote = decodeCrossChainQuote(quoteJson);
-	const chain = fromJson(ChainsResponseSchema, chainsJson).chains.find((c) => c.chain === quote.fromChain);
+	const orderQuote = decodeHularQuote(quoteJson);
+	assertHularQuoteHash(orderQuote);
+	assertDepositDeadline(orderQuote);
+	const chain = decodeHularChains(chainsJson).find((c) => c.chain === quote.fromChain);
 	if (!chain) {
 		throw new Error('Hular chain not found: ' + quote.fromChain);
 	}
@@ -79,10 +131,9 @@ export async function fetchHularOrder(
 		minAmountOut: quote.minReceivedBaseUnits ? BigInt(quote.minReceivedBaseUnits) : undefined,
 		referrers,
 	});
-	const params = orderQuote.orderParams!;
-	let swap: SwapInstructions | undefined;
-	if (isSourceSwap(params)) {
-		swap = fromJson(SwapInstructionsSchema, await getHularSwapInstructions(orderQuote.quoteHash, apiKey));
+	let swap: HularSwapInstructions | undefined;
+	if (isHularSourceSwap(orderQuote.orderParams)) {
+		swap = decodeHularSwapInstructions(await getHularSwapInstructions(orderQuote.quoteHash, apiKey));
 	}
 	return { quote: orderQuote, swap, chain };
 }

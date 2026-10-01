@@ -1,4 +1,3 @@
-export type { HularOrder } from '@mayanfinance/hular-sdk';
 import {
 	CompileV0Args,
 	Transaction,
