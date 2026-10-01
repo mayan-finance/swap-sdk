@@ -10,6 +10,7 @@ import { getQuoteSuitableReferrerAddress } from '../utils';
 import { createMctpFromSuiMoveCalls } from './suiMctp';
 import { Buffer } from 'buffer';
 import {createSwiftFromSuiMoveCalls} from "./suiSwift";
+import { createHularFromSuiMoveCalls } from './suiHular';
 
 export async function createSwapFromSuiMoveCalls(
 	quote: Quote,
@@ -47,6 +48,15 @@ export async function createSwapFromSuiMoveCalls(
 			destinationAddress,
 			referrerAddress,
 			payload,
+			suiClient,
+			options
+		);
+	} else if (quote.type === 'HULAR') {
+		return createHularFromSuiMoveCalls(
+			quote,
+			swapperWalletAddress,
+			destinationAddress,
+			referrerAddresses,
 			suiClient,
 			options
 		);

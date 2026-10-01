@@ -15,6 +15,7 @@ import {
 	GetEvmSwapParams,
 	HyperCoreWithdrawCircleTypedData,
 } from './types';
+import type { HularQuoteRequest } from './hular/types';
 import addresses from './addresses';
 import { checkSdkVersionSupport, getSdkVersion } from './utils';
 import { SwiftEvmGasLessParams } from './evm/evmSwift';
@@ -121,6 +122,7 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		guaranteedOutput: quoteOptions.guaranteedOutput !== false, // default to true
 		payload: typeof quoteOptions.payload === 'string' ? quoteOptions.payload : undefined,
 		monoChain: quoteOptions.monoChain !== false, // default to true
+		hular: quoteOptions.hular !== false, // default to true
 		apiKey: typeof quoteOptions.apiKey === 'string' ? quoteOptions.apiKey : undefined,
 		memoHex: typeof quoteOptions.memoHex === 'string' ? quoteOptions.memoHex : undefined,
 	}
@@ -197,6 +199,7 @@ export function generateFetchQuoteUrlAndBody(
 				? quoteOptions.payload
 				: undefined,
 		monoChain: quoteOptions.monoChain !== false, // default to true
+		hular: quoteOptions.hular !== false, // default to true
 		memoHex:
 			typeof quoteOptions.memoHex === 'string'
 				? quoteOptions.memoHex
@@ -279,6 +282,53 @@ export async function fetchQuote(params: QuoteParams, quoteOptions: QuoteOptions
 		} as QuoteError
 	}
 	return result.quotes as Quote[];
+}
+
+export async function getHularOrder(request: HularQuoteRequest, apiKey?: string): Promise<any> {
+	const res = await fetch(`${addresses.PRICE_URL}/quote/hular/order${apiKey ? '?apiKey=' + apiKey : ''}`, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify(request),
+		redirect: 'follow',
+	});
+	await check5xxError(res);
+	const result = await res.json();
+	if (res.status !== 200 && res.status !== 201) {
+		throw {
+			code: result?.code || 0,
+			message: result?.msg || result?.message || 'Route not found',
+			data: result?.data,
+		} as QuoteError;
+	}
+	return result;
+}
+
+export async function getHularSwapInstructions(quoteHash: string, apiKey?: string): Promise<any> {
+	const res = await fetch(`${addresses.PRICE_URL}/quote/hular/instructions/${quoteHash}${apiKey ? '?apiKey=' + apiKey : ''}`, {
+		method: 'GET',
+		redirect: 'follow',
+	});
+	await check5xxError(res);
+	const result = await res.json();
+	if (res.status !== 200 && res.status !== 201) {
+		throw result;
+	}
+	return result;
+}
+
+export async function getHularChains(apiKey?: string): Promise<any> {
+	const res = await fetch(`${addresses.PRICE_URL}/quote/hular/chains${apiKey ? '?apiKey=' + apiKey : ''}`, {
+		method: 'GET',
+		redirect: 'follow',
+	});
+	await check5xxError(res);
+	const result = await res.json();
+	if (res.status !== 200 && res.status !== 201) {
+		throw result;
+	}
+	return result;
 }
 
 export async function getCurrentChainTime(chain: ChainName, apiKey?: string): Promise<number> {

@@ -73,7 +73,7 @@ export type QuoteError = {
 	data: any,
 }
 
-export type QuoteType = 'WH' | 'SWIFT' | 'MCTP' | 'SHUTTLE' | 'FAST_MCTP' | 'MONO_CHAIN';
+export type QuoteType = 'WH' | 'SWIFT' | 'MCTP' | 'SHUTTLE' | 'FAST_MCTP' | 'MONO_CHAIN' | 'HULAR';
 export type Quote = {
 	type: QuoteType;
 	/**
@@ -199,6 +199,7 @@ export type QuoteOptions = {
 	guaranteedOutput?: boolean;
 	payload?: string;
 	monoChain?: boolean;
+	hular?: boolean;
 	apiKey?: string;
 	memoHex?: string,
 	extraInstructions?: {
