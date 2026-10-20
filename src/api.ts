@@ -121,6 +121,7 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		guaranteedOutput: quoteOptions.guaranteedOutput !== false, // default to true
 		payload: typeof quoteOptions.payload === 'string' ? quoteOptions.payload : undefined,
 		monoChain: quoteOptions.monoChain !== false, // default to true
+		blink: quoteOptions.blink !== false, // default to true
 		apiKey: typeof quoteOptions.apiKey === 'string' ? quoteOptions.apiKey : undefined,
 		memoHex: typeof quoteOptions.memoHex === 'string' ? quoteOptions.memoHex : undefined,
 	}
@@ -139,6 +140,7 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		referrerBps: Number.isFinite(referrerBps) ? referrerBps : undefined,
 		gasDrop: Number.isFinite(gasDrop) ? gasDrop : undefined,
 		destinationAddress: params.destinationAddress ?? undefined,
+		refundAddress: params.refundAddress ?? undefined,
 		sdkVersion: getSdkVersion(),
 	};
 	const baseUrl = `${addresses.PRICE_URL}/quote?`;
@@ -197,6 +199,7 @@ export function generateFetchQuoteUrlAndBody(
 				? quoteOptions.payload
 				: undefined,
 		monoChain: quoteOptions.monoChain !== false, // default to true
+		blink: quoteOptions.blink !== false, // default to true
 		memoHex:
 			typeof quoteOptions.memoHex === 'string'
 				? quoteOptions.memoHex
@@ -229,6 +232,7 @@ export function generateFetchQuoteUrlAndBody(
 		referrerBps: Number.isFinite(referrerBps) ? referrerBps : undefined,
 		gasDrop: Number.isFinite(gasDrop) ? gasDrop : undefined,
 		destinationAddress: params.destinationAddress ?? undefined,
+		refundAddress: params.refundAddress ?? undefined,
 		sdkVersion: getSdkVersion(),
 		mpsUserId: quoteOptions.mpsUserId ?? undefined,
 	};
