@@ -4,4 +4,5 @@ export * from './solana';
 export * from './sui';
 export * from './types';
 export * from './utils';
+export * from './blink';
 export { default as addresses } from './addresses';

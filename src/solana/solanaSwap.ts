@@ -51,6 +51,7 @@ import bs58 from 'bs58';
 import { createHyperCoreDepositFromSolanaInstructions } from './solanaHyperCore';
 import { createMonoChainFromSolanaInstructions } from './solanaMonoChain';
 import { createFastMctpFromSolanaInstructions } from './solanaFastMctp';
+import { createBlinkFromSolanaInstructions, swapBlinkGaslessFromSolana } from './solanaBlink';
 
 
 const STATE_SIZE = 420;
@@ -119,6 +120,13 @@ export async function createSwapFromSolanaInstructions(
 
 	if (quote.type === 'FAST_MCTP') {
 		return createFastMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
+	}
+
+	if (quote.type === 'BLINK') {
+		if (options.customPayload) {
+			throw new Error('Custom payload is not supported for BLINK');
+		}
+		return createBlinkFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddresses, connection, options.apiKey);
 	}
 
 	if (options.customPayload) {
@@ -344,6 +352,14 @@ export async function swapFromSolana(
 	signature: string,
 	serializedTrx: Uint8Array | null,
 }> {
+	if (quote.type === 'BLINK' && quote.gasless) {
+		if (instructionOptions?.customPayload) {
+			throw new Error('Custom payload is not supported for BLINK');
+		}
+		return swapBlinkGaslessFromSolana(
+			quote, swapperWalletAddress, destinationAddress, referrerAddresses, signTransaction, connection, extraParams?.apiKey
+		);
+	}
 
 	const jitoEnabled = !!(
 		!quote.gasless &&
