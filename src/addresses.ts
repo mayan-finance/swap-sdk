@@ -39,6 +39,7 @@ export default {
 	"RELAYER_URL": "https://relayer-api.mayan.finance/v3",
 	"SWIFT_RELAYER_URL": "https://swift-relayer-api.mayan.finance/v3",
 	"GAS_ESTIMATE_URL": "https://gas-estimate.mayan.finance/v2",
+	"BLINK_API_URL": "https://blink-api.mayan.finance/json",
 	"HC_ARBITRUM_BRIDGE": "0x2df1c51e09aecf9cacb7bc98cb1742757f163df7",
 	"HC_ARBITRUM_DEPOSIT_PROCESSOR": "0xdDd77e62C848C3334f1148d4F1457FC59ede4E4B",
 	"HC_HYPEREVM_DEPOSIT_PROCESSOR": "0x56032241c0adab58a29b13e94fb595a4bc414e33",

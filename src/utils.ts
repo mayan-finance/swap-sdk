@@ -320,7 +320,7 @@ function getVerifiedMixedReferrerAddressEvm(quote: Quote, referrers: Referrer[])
 	return calculated;
 }
 
-function isChainReferrers(
+export function isChainReferrers(
 	referrers: ReferrerAddresses | ChainReferrers,
 ): referrers is ChainReferrers {
 	return Array.isArray(referrers.solana || referrers.evm || referrers.sui);
@@ -422,7 +422,41 @@ export function getQuoteSuitableReferrerAddress(
 		}
 		return referrerAddresses.evm || null;
 	}
+	if (quote.type === 'BLINK') {
+		if (quote.fromChain === 'solana') {
+			return referrerAddresses.solana || null;
+		} else if (quote.fromChain === 'sui') {
+			return referrerAddresses.sui || null;
+		}
+		return referrerAddresses.evm || null;
+	}
 	return null;
+}
+
+export function getBlinkReferrers(
+	quote: Quote,
+	referrerAddresses?: ReferrerAddresses | ChainReferrers | null,
+): Referrer[] {
+	if (!quote || !referrerAddresses) {
+		return [];
+	}
+	if (isChainReferrers(referrerAddresses)) {
+		const list =
+			quote.fromChain === 'solana' ? referrerAddresses.solana
+			: quote.fromChain === 'sui' ? referrerAddresses.sui
+			: referrerAddresses.evm;
+		const referrers = (list || []).map((r) => ({ address: r.address, bps: r.bps }));
+		const totalBps = referrers.reduce((sum, r) => sum + r.bps, 0);
+		if (totalBps !== (quote.referrerBps || 0)) {
+			throw new Error(
+				`Referrer bps mismatch: quote has ${quote.referrerBps || 0} but referrers total ${totalBps}. ` +
+				'Make sure the same referrers were passed when fetching the quote.'
+			);
+		}
+		return referrers;
+	}
+	const address = getQuoteSuitableReferrerAddress(quote, referrerAddresses);
+	return address && quote.referrerBps ? [{ address, bps: quote.referrerBps }] : [];
 }
 
 export const MCTP_PAYLOAD_TYPE_DEFAULT = 1;

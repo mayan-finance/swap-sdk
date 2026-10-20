@@ -89,6 +89,7 @@
     "@mysten/sui": "^2.17.0",
     "@noble/hashes": "1.8.0",
     "@solana/buffer-layout": "^4 || ^3",
+    "@solana/spl-token": "^0.4.15",
     "@solana/web3.js": "^1.87.6",
     "bs58": "^6.0.0",
     "cross-fetch": "^3.1.5",
