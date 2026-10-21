@@ -188,14 +188,14 @@ function getEvmFastMctpCreateOrderParams(
 
 	const deadline = BigInt(quote.deadline64);
 
-	if (quote.toChain === 'sui' && !quote.toToken.verifiedAddress) {
-		throw new Error('To token verified address is missing for SUI');
+	if (quote.toChain === 'sui' && !quote.toToken.currencyId) {
+		throw new Error('To token currency id is missing for SUI');
 	}
 	const tokenOut =
 		quote.toToken.contract === ZeroAddress ?
 			nativeAddressToHexString(SystemProgram.programId.toString(), getWormholeChainIdByName('solana')) :
 			nativeAddressToHexString(
-				quote.toChain === 'sui' ? quote.toToken.verifiedAddress! : quote.toToken.contract,
+				quote.toChain === 'sui' ? quote.toToken.currencyId! : quote.toToken.contract,
 				quote.toToken.wChainId,
 			);
 

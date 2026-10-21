@@ -33,6 +33,7 @@ export type Token = {
 	verified: boolean;
 	standard: TokenStandard,
 	verifiedAddress?: string,
+	currencyId?: string,
 };
 
 export type QuoteParams = {
@@ -161,6 +162,7 @@ export type Quote = {
 	circleMaxFee64: string;
 	fastMctpMayanContract: string;
 	fastMctpInputContract: string;
+	fastMctpInputCurrencyId?: string;
 	fastMctpMinFinality: number;
 	hcSwiftDeposit?: {
 		relayerFee64: string;

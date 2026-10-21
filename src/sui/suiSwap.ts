@@ -8,6 +8,7 @@ import { ClientWithCoreApi } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
 import { getQuoteSuitableReferrerAddress } from '../utils';
 import { createMctpFromSuiMoveCalls } from './suiMctp';
+import { createFastMctpFromSuiMoveCalls } from './suiFastMctp';
 import { Buffer } from 'buffer';
 import {createSwiftFromSuiMoveCalls} from "./suiSwift";
 
@@ -31,6 +32,16 @@ export async function createSwapFromSuiMoveCalls(
 
 	if (quote.type === 'MCTP') {
 		return createMctpFromSuiMoveCalls(
+			quote,
+			swapperWalletAddress,
+			destinationAddress,
+			referrerAddress,
+			payload,
+			suiClient,
+			options
+		);
+	} else if (quote.type === 'FAST_MCTP') {
+		return createFastMctpFromSuiMoveCalls(
 			quote,
 			swapperWalletAddress,
 			destinationAddress,

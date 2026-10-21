@@ -282,7 +282,7 @@ To integrate at the contract level, use the `_forwarder` object returned by `get
 
 `suiClient` accepts any client implementing the Sui Core API (`ClientWithCoreApi`). `SuiGrpcClient` from `@mysten/sui/grpc` is recommended. TypeScript needs `"moduleResolution"` set to `bundler`, `node16` or `nodenext`.
 
-> Only `MCTP` quotes execute from Sui. Swift is not supported from Sui.
+> Only `MCTP` and `FAST_MCTP` quotes execute from Sui. Swift is not supported from Sui.
 
 ```typescript
 const bridgeFromSuiMoveCalls = await createSwapFromSuiMoveCalls(

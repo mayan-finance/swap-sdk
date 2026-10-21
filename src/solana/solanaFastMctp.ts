@@ -474,17 +474,13 @@ export async function createFastMctpFromSolanaInstructions(
 		new PublicKey(quote.fastMctpInputContract), ledger, true
 	);
 
-	if (quote.toChain === 'sui' && !quote.toToken.verifiedAddress) {
-		throw new Error('Missing verified address for SUI coin');
+	if (quote.toChain === 'sui' && !quote.toToken.currencyId) {
+		throw new Error('Missing currency id for SUI coin');
 	}
 
-	const tokenOut = quote.toChain === 'sui' ? quote.toToken.verifiedAddress : quote.toToken.contract;
+	const tokenOut = quote.toChain === 'sui' ? quote.toToken.currencyId : quote.toToken.contract;
 	if (!tokenOut) {
 		throw new Error('Missing tokenOut address in quote');
-	}
-
-	if (quote.toChain === 'sui') {
-		throw new Error('Fast MCTP does not support SUI as destination chain');
 	}
 
 	if (options.customPayload && quote.hasAuction) {
