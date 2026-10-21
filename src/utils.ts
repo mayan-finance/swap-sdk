@@ -180,7 +180,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [15, 2, 2];
+const sdkVersion = [15, 3, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -410,9 +410,10 @@ export function getQuoteSuitableReferrerAddress(
 		if (quote.toChain === 'solana') {
 			return referrerAddresses.solana || null;
 		}
-		if (quote.toChain !== 'sui') {
-			return referrerAddresses.evm || null;
+		if (quote.toChain === 'sui') {
+			return referrerAddresses.sui || null;
 		}
+		return referrerAddresses.evm || null;
 	}
 	if (quote.type === 'MONO_CHAIN') {
 		if (quote.fromChain === 'solana') {

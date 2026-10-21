@@ -377,6 +377,7 @@ export async function swapFromEvm(
 		apiKey?: string;
 		includeAllowanceTx?: boolean;
 		swiftRefundAddress?: string;
+		evmProvider?: ethers.JsonRpcProvider;
 	}
 ): Promise<TransactionResponse | string> {
 	if (!signer.provider) {
@@ -493,7 +494,12 @@ export async function swapFromEvm(
 	if (overrides?.gasLimit) {
 		transactionRequest.gasLimit = overrides.gasLimit;
 	} else {
-		const estimatedGas = await signer.estimateGas(transactionRequest);
+		let estimatedGas: bigint;
+		if (options?.evmProvider) {
+			estimatedGas = await options.evmProvider.estimateGas({ ...transactionRequest, from: signerAddress });
+		} else {
+			estimatedGas = await signer.estimateGas(transactionRequest);
+		}
 		// convert gasLimit to string for support ethers.js v5
 		transactionRequest.gasLimit = String(
 			(BigInt(String(estimatedGas)) * BigInt(110)) / BigInt(100)
