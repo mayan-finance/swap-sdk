@@ -14,6 +14,7 @@ import {
 	type TransferFee,
 } from '@solana/spl-token';
 import {
+	type AccountMeta,
 	AddressLookupTableAccount,
 	ComputeBudgetProgram,
 	Connection,
@@ -91,6 +92,17 @@ function escrowAuthority(programId: PublicKey): PublicKey {
 	return PublicKey.findProgramAddressSync([Buffer.from('escrow')], programId)[0];
 }
 
+function eventAuthority(programId: PublicKey): PublicKey {
+	return PublicKey.findProgramAddressSync([Buffer.from('__event_authority')], programId)[0];
+}
+
+function eventCpiAccounts(programId: PublicKey): AccountMeta[] {
+	return [
+		{ pubkey: eventAuthority(programId), isSigner: false, isWritable: false },
+		{ pubkey: programId, isSigner: false, isWritable: false },
+	];
+}
+
 export function blinkSvmSwapAuthority(programId: PublicKey, owner: PublicKey, quoteHash: string): PublicKey {
 	return PublicKey.findProgramAddressSync(
 		[Buffer.from('swap_authority'), owner.toBytes(), hexToUint8Array(quoteHash)],
@@ -118,6 +130,7 @@ function depositNativeInstruction(
 			{ pubkey: owner, isSigner: true, isWritable: true },
 			{ pubkey: escrowAuthority(programId), isSigner: false, isWritable: true },
 			{ pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+			...eventCpiAccounts(programId),
 		],
 		data: depositData('deposit_native', quoteHash, amount),
 	});
@@ -142,6 +155,7 @@ async function depositTokenInstruction(
 			{ pubkey: escrow, isSigner: false, isWritable: false },
 			{ pubkey: associatedTokenAddress(escrow, mint, tokenProgram), isSigner: false, isWritable: true },
 			{ pubkey: tokenProgram, isSigner: false, isWritable: false },
+			...eventCpiAccounts(programId),
 		],
 		data: depositData('deposit_token', quoteHash, amount),
 	});
@@ -587,6 +601,7 @@ async function buildSwapDepositInstructions(
 			{ pubkey: authority, isSigner: false, isWritable: false },
 			{ pubkey: new PublicKey(swap.swap.programId), isSigner: false, isWritable: false },
 			{ pubkey: tokenProgram, isSigner: false, isWritable: false },
+			...eventCpiAccounts(programId),
 			...swap.swap.accounts.map((meta) => {
 				const pubkey = new PublicKey(meta.pubkey);
 				return {
