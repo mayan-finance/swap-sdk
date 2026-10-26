@@ -472,6 +472,7 @@ export async function createSwiftFromSolanaInstructions(
 			minMiddleAmount: quote.minMiddleAmount,
 			middleToken: quote.swiftInputContract,
 			userWallet: swapperAddress,
+			destinationWallet: destinationAddress,
 			slippageBps: quote.slippageBps,
 			fromToken: quote.fromToken.contract,
 			amountIn64: quote.effectiveAmountIn64,

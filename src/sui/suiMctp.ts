@@ -76,6 +76,7 @@ export async function createMctpFromSuiMoveCalls(
 			inputCoinType: quote.fromToken.contract,
 			middleCoinType: quote.mctpInputContract,
 			userWallet: swapperAddress,
+			destinationWallet: destinationAddress,
 			withWhFee: quote.hasAuction || quote.cheaperChain !== 'sui',
 			referrerAddress,
 			inputCoin: options?.inputCoin,
