@@ -15,8 +15,7 @@ import { fetchBlinkOrder, isBlinkSourceSwap } from '../blink/order';
 import { submitAndTrackBlinkGaslessOrder } from '../blink/gasless';
 import type { BlinkOrder } from '../blink/types';
 import ERC20Artifact from './ERC20Artifact';
-
-export const BLINK_PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+import addresses from '../addresses';
 
 const PERMIT_DEADLINE_SECS = 1800;
 
@@ -215,7 +214,7 @@ export function blinkPermit2WitnessTypedData(
 		domain: {
 			name: 'Permit2',
 			chainId,
-			verifyingContract: BLINK_PERMIT2_ADDRESS,
+			verifyingContract: addresses.BLINK_PERMIT2_ADDRESS,
 		},
 		types: {
 			TokenPermissions: [
@@ -277,7 +276,7 @@ async function signPermit2Approval(
 		},
 		{
 			owner,
-			spender: BLINK_PERMIT2_ADDRESS,
+			spender: addresses.BLINK_PERMIT2_ADDRESS,
 			value: MaxUint256,
 			nonce,
 			deadline,
@@ -309,7 +308,7 @@ export async function swapBlinkGaslessFromEvm(
 	const amountIn = BigInt(params.amountIn);
 	const spender = order.contracts.router;
 	const erc20 = new Contract(params.srcToken, ERC20Artifact.abi, signer.provider);
-	const permit2Allowance: bigint = await erc20.allowance(swapperAddress, BLINK_PERMIT2_ADDRESS);
+	const permit2Allowance: bigint = await erc20.allowance(swapperAddress, addresses.BLINK_PERMIT2_ADDRESS);
 	const deadline = permitDeadline();
 	const permitSignature =
 		permit2Allowance < amountIn ? await signPermit2Approval(quote, signer, swapperAddress, deadline) : undefined;
