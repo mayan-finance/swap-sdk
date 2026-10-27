@@ -10,6 +10,7 @@ export type BlinkOrderParams = {
 	amountIn: string;
 	amountOut: string;
 	bridgeAmount: string;
+	bridgeOut: string;
 	minBridgeOut: string;
 	minAmountOut: string;
 	gasDrop: string;
@@ -17,11 +18,8 @@ export type BlinkOrderParams = {
 	refundAddress: string;
 	refundToken: string;
 	referrers: Referrer[];
-	slippageBps: number;
-	srcSlippageBps: number;
 	routerAddress: string;
 	refundFeeBridge: string;
-	refundFeeNative: string;
 	nonce: Uint8Array;
 	paramsVersion: number;
 };

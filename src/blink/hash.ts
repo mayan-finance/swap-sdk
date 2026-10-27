@@ -24,16 +24,19 @@ function encodeField(tag: number, value: Buffer): Buffer {
 }
 
 function encodeReferrers(referrers: Referrer[]): Buffer {
-	return Buffer.concat(
-		referrers.map((referrer) => {
+	const count = Buffer.alloc(2);
+	count.writeUInt16BE(referrers.length, 0);
+	return Buffer.concat([
+		count,
+		...referrers.map((referrer) => {
 			const address = Buffer.from(referrer.address, 'utf8');
 			const addressLength = Buffer.alloc(2);
 			addressLength.writeUInt16BE(address.length, 0);
 			const bps = Buffer.alloc(2);
 			bps.writeUInt16BE(referrer.bps, 0);
 			return Buffer.concat([addressLength, address, bps]);
-		})
-	);
+		}),
+	]);
 }
 
 export function encodeBlinkOrderParams(params: BlinkOrderParams): Buffer {
@@ -52,19 +55,17 @@ export function encodeBlinkOrderParams(params: BlinkOrderParams): Buffer {
 		int(7, BigInt(params.amountIn || '0')),
 		int(8, BigInt(params.amountOut || '0')),
 		int(9, BigInt(params.bridgeAmount || '0')),
-		int(10, BigInt(params.minBridgeOut || '0')),
-		int(11, BigInt(params.minAmountOut || '0')),
-		int(12, BigInt(params.gasDrop || '0')),
-		str(13, params.recipient),
-		str(14, params.refundAddress),
-		str(15, params.refundToken),
-		encodeField(16, encodeReferrers(params.referrers)),
-		int(17, BigInt(params.slippageBps)),
-		int(18, BigInt(params.srcSlippageBps)),
-		str(19, params.routerAddress),
-		int(20, BigInt(params.refundFeeBridge || '0')),
-		int(21, BigInt(params.refundFeeNative || '0')),
-		encodeField(22, Buffer.from(params.nonce)),
+		int(10, BigInt(params.bridgeOut || '0')),
+		int(11, BigInt(params.minBridgeOut || '0')),
+		int(12, BigInt(params.minAmountOut || '0')),
+		int(13, BigInt(params.gasDrop || '0')),
+		str(14, params.recipient),
+		str(15, params.refundAddress),
+		str(16, params.refundToken),
+		encodeField(17, encodeReferrers(params.referrers)),
+		str(18, params.routerAddress),
+		int(19, BigInt(params.refundFeeBridge || '0')),
+		encodeField(20, Buffer.from(params.nonce)),
 	]);
 }
 
