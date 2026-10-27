@@ -65,7 +65,7 @@ function decodeOrderParams(json: any): BlinkOrderParams {
 		routerAddress: text(json.router_address),
 		refundFeeBridge: text(json.refund_fee_bridge),
 		refundFeeNative: text(json.refund_fee_native),
-		nonce: Uint8Array.from(Buffer.from(text(json.nonce), 'base64')),
+		nonce: Buffer.from(text(json.nonce), 'base64'),
 		paramsVersion: count(json.params_version),
 	};
 }

@@ -1,14 +1,11 @@
 import { getBlinkOrder, getBlinkSourceSwap, submitBlinkGaslessOrder } from './api';
 import type { BlinkGaslessOrderRequest } from './types';
+import { wait } from '../utils';
 
 const GASLESS_POLL_MS = 2000;
 const SOURCE_SWAP_POLL_MS = 2000;
 const SOURCE_SWAP_SETTLE_MS = 120_000;
 const SOURCE_SWAP_UNSEEN_MS = 420_000;
-
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 export async function submitAndTrackBlinkGaslessOrder(request: BlinkGaslessOrderRequest): Promise<string> {
 	let submission = await submitBlinkGaslessOrder(request);
@@ -19,7 +16,7 @@ export async function submitAndTrackBlinkGaslessOrder(request: BlinkGaslessOrder
 		if (submission.txHash) {
 			return submission.txHash;
 		}
-		await sleep(GASLESS_POLL_MS);
+		await wait(GASLESS_POLL_MS);
 		submission = await submitBlinkGaslessOrder({ quoteHash: request.quoteHash });
 	}
 }
@@ -43,6 +40,6 @@ export async function trackBlinkSourceSwap(quoteHash: string): Promise<string> {
 				`The Blink source swap did not run (${swap?.reason ?? 'expired'}); the funds never left the wallet`
 			);
 		}
-		await sleep(SOURCE_SWAP_POLL_MS);
+		await wait(SOURCE_SWAP_POLL_MS);
 	}
 }

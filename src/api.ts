@@ -17,6 +17,7 @@ import {
 } from './types';
 import addresses from './addresses';
 import { checkSdkVersionSupport, getSdkVersion } from './utils';
+import { BLINK_SUPPORTED_PARAMS_VERSION } from './blink/hash';
 import { SwiftEvmGasLessParams } from './evm/evmSwift';
 
 function toQueryString(params: Record<string, any>): string {
@@ -142,6 +143,7 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		destinationAddress: params.destinationAddress ?? undefined,
 		refundAddress: params.refundAddress ?? undefined,
 		sdkVersion: getSdkVersion(),
+		blinkParamsVersion: BLINK_SUPPORTED_PARAMS_VERSION,
 	};
 	const baseUrl = `${addresses.PRICE_URL}/quote?`;
 	const queryString = toQueryString(queryParams);
@@ -234,6 +236,7 @@ export function generateFetchQuoteUrlAndBody(
 		destinationAddress: params.destinationAddress ?? undefined,
 		refundAddress: params.refundAddress ?? undefined,
 		sdkVersion: getSdkVersion(),
+		blinkParamsVersion: BLINK_SUPPORTED_PARAMS_VERSION,
 		mpsUserId: quoteOptions.mpsUserId ?? undefined,
 	};
 	const url = `${addresses.PRICE_URL}/quote${
