@@ -1,71 +1,71 @@
-import { keccak256, toUtf8Bytes } from 'ethers';
+import { keccak256 } from 'ethers';
+import { Buffer } from 'buffer';
 import type { Referrer } from '../types';
 import type { BlinkOrderParams, BlinkQuote } from './types';
 
 export const BLINK_SUPPORTED_PARAMS_VERSION = 1;
 
-function minimalBigEndian(value: bigint): Uint8Array {
-	const bytes: number[] = [];
-	let rest = value;
-	while (rest > BigInt(0)) {
-		bytes.unshift(Number(rest & BigInt(0xff)));
-		rest >>= BigInt(8);
+function minimalBigEndian(value: bigint): Buffer {
+	if (value <= BigInt(0)) {
+		return Buffer.alloc(0);
 	}
-	return Uint8Array.from(bytes);
+	const hex = value.toString(16);
+	return Buffer.from(hex.length % 2 === 0 ? hex : '0' + hex, 'hex');
 }
 
-function writeField(out: number[], tag: number, value: Uint8Array): void {
+function encodeField(tag: number, value: Buffer): Buffer {
 	if (value.length === 0) {
-		return;
+		return Buffer.alloc(0);
 	}
-	out.push((tag >>> 8) & 0xff, tag & 0xff);
-	const length = value.length;
-	out.push((length >>> 24) & 0xff, (length >>> 16) & 0xff, (length >>> 8) & 0xff, length & 0xff);
-	for (const byte of value) {
-		out.push(byte);
-	}
+	const header = Buffer.alloc(6);
+	header.writeUInt16BE(tag, 0);
+	header.writeUInt32BE(value.length, 2);
+	return Buffer.concat([header, value]);
 }
 
-function referrersValue(referrers: Referrer[]): Uint8Array {
-	const out: number[] = [];
-	for (const referrer of referrers) {
-		const address = toUtf8Bytes(referrer.address);
-		out.push((address.length >>> 8) & 0xff, address.length & 0xff);
-		for (const byte of address) {
-			out.push(byte);
-		}
-		out.push((referrer.bps >>> 8) & 0xff, referrer.bps & 0xff);
-	}
-	return Uint8Array.from(out);
+function encodeReferrers(referrers: Referrer[]): Buffer {
+	return Buffer.concat(
+		referrers.map((referrer) => {
+			const address = Buffer.from(referrer.address, 'utf8');
+			const addressLength = Buffer.alloc(2);
+			addressLength.writeUInt16BE(address.length, 0);
+			const bps = Buffer.alloc(2);
+			bps.writeUInt16BE(referrer.bps, 0);
+			return Buffer.concat([addressLength, address, bps]);
+		})
+	);
 }
 
-export function encodeBlinkOrderParams(params: BlinkOrderParams): Uint8Array {
-	const out: number[] = [params.paramsVersion & 0xff];
-	const str = (tag: number, value: string) => writeField(out, tag, toUtf8Bytes(value));
-	const int = (tag: number, value: bigint) => writeField(out, tag, minimalBigEndian(value));
-	str(1, params.srcChain);
-	str(2, params.dstChain);
-	str(3, params.srcToken);
-	str(4, params.dstToken);
-	str(5, params.bridgeTokenSrc);
-	str(6, params.bridgeTokenDst);
-	int(7, BigInt(params.amountIn || '0'));
-	int(8, BigInt(params.amountOut || '0'));
-	int(9, BigInt(params.bridgeAmount || '0'));
-	int(10, BigInt(params.minBridgeOut || '0'));
-	int(11, BigInt(params.minAmountOut || '0'));
-	int(12, BigInt(params.gasDrop || '0'));
-	str(13, params.recipient);
-	str(14, params.refundAddress);
-	str(15, params.refundToken);
-	writeField(out, 16, referrersValue(params.referrers));
-	int(17, BigInt(params.slippageBps));
-	int(18, BigInt(params.srcSlippageBps));
-	str(19, params.routerAddress);
-	int(20, BigInt(params.refundFeeBridge || '0'));
-	int(21, BigInt(params.refundFeeNative || '0'));
-	writeField(out, 22, params.nonce);
-	return Uint8Array.from(out);
+export function encodeBlinkOrderParams(params: BlinkOrderParams): Buffer {
+	const str = (tag: number, value: string) => encodeField(tag, Buffer.from(value, 'utf8'));
+	const int = (tag: number, value: bigint) => encodeField(tag, minimalBigEndian(value));
+	const version = Buffer.alloc(1);
+	version.writeUInt8(params.paramsVersion, 0);
+	return Buffer.concat([
+		version,
+		str(1, params.srcChain),
+		str(2, params.dstChain),
+		str(3, params.srcToken),
+		str(4, params.dstToken),
+		str(5, params.bridgeTokenSrc),
+		str(6, params.bridgeTokenDst),
+		int(7, BigInt(params.amountIn || '0')),
+		int(8, BigInt(params.amountOut || '0')),
+		int(9, BigInt(params.bridgeAmount || '0')),
+		int(10, BigInt(params.minBridgeOut || '0')),
+		int(11, BigInt(params.minAmountOut || '0')),
+		int(12, BigInt(params.gasDrop || '0')),
+		str(13, params.recipient),
+		str(14, params.refundAddress),
+		str(15, params.refundToken),
+		encodeField(16, encodeReferrers(params.referrers)),
+		int(17, BigInt(params.slippageBps)),
+		int(18, BigInt(params.srcSlippageBps)),
+		str(19, params.routerAddress),
+		int(20, BigInt(params.refundFeeBridge || '0')),
+		int(21, BigInt(params.refundFeeNative || '0')),
+		encodeField(22, Buffer.from(params.nonce)),
+	]);
 }
 
 export function computeBlinkQuoteHash(params: BlinkOrderParams): string {

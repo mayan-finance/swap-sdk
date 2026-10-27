@@ -1,19 +1,4 @@
 import {
-	addExtraAccountMetasForExecute,
-	createAssociatedTokenAccountIdempotentInstruction,
-	createHarvestWithheldTokensToMintInstruction,
-	createSyncNativeInstruction,
-	createTransferCheckedInstruction,
-	createTransferCheckedWithFeeInstruction,
-	getAssociatedTokenAddressSync,
-	getEpochFee,
-	getTransferFeeConfig,
-	getTransferHook,
-	unpackMint,
-	type Mint,
-	type TransferFee,
-} from '@solana/spl-token';
-import {
 	type AccountMeta,
 	AddressLookupTableAccount,
 	ComputeBudgetProgram,
@@ -35,19 +20,26 @@ import type {
 	SolanaTransactionSigner,
 	SwapMessageV0Params,
 } from '../types';
-import { hexToUint8Array } from '../utils';
+import { getAssociatedTokenAddress, hexToUint8Array } from '../utils';
 import { getBlinkPriorityFee } from '../blink/api';
 import { submitAndTrackBlinkGaslessOrder } from '../blink/gasless';
 import { fetchBlinkOrder, isBlinkSourceSwap } from '../blink/order';
 import type { BlinkOrder, BlinkSvmInstruction, BlinkSvmSwap } from '../blink/types';
-import { getAddressLookupTableAccounts, getAnchorInstructionData, solMint } from './utils';
+import {
+	createAssociatedTokenAccountInstruction,
+	createSplTransferInstruction,
+	createSyncNativeInstruction,
+	deserializeInstructionInfo,
+	getAddressLookupTableAccounts,
+	getAnchorInstructionData,
+	solMint,
+	TOKEN_ACCOUNT_LEN,
+} from './utils';
 
 const TOKEN_PROGRAM_ID = new PublicKey(addresses.TOKEN_PROGRAM_ID);
 const TOKEN_2022_PROGRAM_ID = new PublicKey(addresses.TOKEN_2022_PROGRAM_ID);
 const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey(addresses.ASSOCIATED_TOKEN_PROGRAM_ID);
 
-const ONE_IN_BASIS_POINTS = BigInt(10_000);
-const TOKEN_ACCOUNT_LEN = 165;
 const TOKEN_2022_ACCOUNT_TYPE_ACCOUNT = 2;
 
 const DEPOSIT_COMPUTE_UNIT_LIMIT = 50_000;
@@ -82,10 +74,6 @@ async function tokenProgramOf(connection: Connection, mint: PublicKey): Promise<
 		throw new Error(`mint ${mint.toBase58()} not found`);
 	}
 	return info.owner;
-}
-
-function associatedTokenAddress(owner: PublicKey, mint: PublicKey, tokenProgram: PublicKey): PublicKey {
-	return getAssociatedTokenAddressSync(mint, owner, true, tokenProgram, ASSOCIATED_TOKEN_PROGRAM_ID);
 }
 
 function escrowAuthority(programId: PublicKey): PublicKey {
@@ -151,9 +139,9 @@ async function depositTokenInstruction(
 		keys: [
 			{ pubkey: owner, isSigner: true, isWritable: true },
 			{ pubkey: mint, isSigner: false, isWritable: false },
-			{ pubkey: associatedTokenAddress(owner, mint, tokenProgram), isSigner: false, isWritable: true },
+			{ pubkey: getAssociatedTokenAddress(mint, owner, true, tokenProgram), isSigner: false, isWritable: true },
 			{ pubkey: escrow, isSigner: false, isWritable: false },
-			{ pubkey: associatedTokenAddress(escrow, mint, tokenProgram), isSigner: false, isWritable: true },
+			{ pubkey: getAssociatedTokenAddress(mint, escrow, true, tokenProgram), isSigner: false, isWritable: true },
 			{ pubkey: tokenProgram, isSigner: false, isWritable: false },
 			...eventCpiAccounts(programId),
 		],
@@ -169,18 +157,6 @@ async function depositInstruction(connection: Connection, order: BlinkOrder, own
 		return depositNativeInstruction(programId, owner, order.quote.quoteHash, amount);
 	}
 	return depositTokenInstruction(connection, programId, owner, new PublicKey(params.srcToken), order.quote.quoteHash, amount);
-}
-
-function toInstruction(ix: BlinkSvmInstruction): TransactionInstruction {
-	return new TransactionInstruction({
-		programId: new PublicKey(ix.programId),
-		keys: ix.accounts.map((meta) => ({
-			pubkey: new PublicKey(meta.pubkey),
-			isSigner: meta.isSigner,
-			isWritable: meta.isWritable,
-		})),
-		data: Buffer.from(ix.data, 'base64'),
-	});
 }
 
 function rejectSwap(reason: string): never {
@@ -233,7 +209,7 @@ function authorityTokenAccountCreated(
 	if (!isTokenProgram(tokenProgram)) {
 		rejectSwap(`setup creates a token account under ${tokenProgram.toBase58()}`);
 	}
-	if (!address.equals(associatedTokenAddress(authority, mint, tokenProgram))) {
+	if (!address.equals(getAssociatedTokenAddress(mint, authority, true, tokenProgram))) {
 		rejectSwap(`setup creates ${address.toBase58()}, not the swap authority's associated token account`);
 	}
 	return { address, mint, tokenProgram };
@@ -389,32 +365,10 @@ async function simulateSwapDeposit(
 type TokenMint = {
 	address: PublicKey;
 	tokenProgram: PublicKey;
-	state: Mint;
 };
 
 async function loadMint(connection: Connection, address: PublicKey): Promise<TokenMint> {
-	const info = await connection.getAccountInfo(address);
-	if (!info) {
-		throw new Error(`mint ${address.toBase58()} not found`);
-	}
-	return {
-		address,
-		tokenProgram: info.owner,
-		state: unpackMint(address, info, info.owner),
-	};
-}
-
-function grossForNetTransfer(fee: TransferFee, net: bigint): bigint {
-	const bps = BigInt(fee.transferFeeBasisPoints);
-	if (bps === BigInt(0) || net === BigInt(0)) {
-		return net;
-	}
-	if (bps === ONE_IN_BASIS_POINTS) {
-		return net + fee.maximumFee;
-	}
-	const denominator = ONE_IN_BASIS_POINTS - bps;
-	const raw = (net * ONE_IN_BASIS_POINTS + denominator - BigInt(1)) / denominator;
-	return raw - net >= fee.maximumFee ? net + fee.maximumFee : raw;
+	return { address, tokenProgram: await tokenProgramOf(connection, address) };
 }
 
 type AuthorityFunding = {
@@ -435,57 +389,18 @@ function fundAuthorityWithLamports(depositor: PublicKey, authorityInput: PublicK
 	};
 }
 
-async function fundAuthorityWithTokens(
-	connection: Connection,
+function fundAuthorityWithTokens(
 	depositor: PublicKey,
 	authorityInput: PublicKey,
 	source: TokenMint,
 	amount: bigint
-): Promise<AuthorityFunding> {
-	const depositorInput = associatedTokenAddress(depositor, source.address, source.tokenProgram);
-	const feeConfig = getTransferFeeConfig(source.state);
-	const gross = feeConfig
-		? grossForNetTransfer(getEpochFee(feeConfig, BigInt((await connection.getEpochInfo()).epoch)), amount)
-		: amount;
-	const transfer = feeConfig
-		? createTransferCheckedWithFeeInstruction(
-				depositorInput,
-				source.address,
-				authorityInput,
-				depositor,
-				gross,
-				source.state.decimals,
-				gross - amount,
-				[],
-				source.tokenProgram
-		  )
-		: createTransferCheckedInstruction(
-				depositorInput,
-				source.address,
-				authorityInput,
-				depositor,
-				amount,
-				source.state.decimals,
-				[],
-				source.tokenProgram
-		  );
-	const hook = getTransferHook(source.state);
-	if (hook && !hook.programId.equals(PublicKey.default)) {
-		await addExtraAccountMetasForExecute(
-			connection,
-			transfer,
-			hook.programId,
-			depositorInput,
-			source.address,
-			authorityInput,
-			depositor,
-			gross,
-			'confirmed'
-		);
-	}
+): AuthorityFunding {
+	const depositorInput = getAssociatedTokenAddress(source.address, depositor, true, source.tokenProgram);
 	return {
-		instructions: [transfer],
-		spend: { account: depositorInput, amount: gross },
+		instructions: [
+			createSplTransferInstruction(depositorInput, authorityInput, depositor, amount, source.tokenProgram),
+		],
+		spend: { account: depositorInput, amount },
 	};
 }
 
@@ -501,10 +416,9 @@ function closeAuthorityAccount(
 	quoteHash: string,
 	depositor: PublicKey,
 	authority: PublicKey,
-	account: AuthorityTokenAccount,
-	mint: TokenMint
-): TransactionInstruction[] {
-	const close = new TransactionInstruction({
+	account: AuthorityTokenAccount
+): TransactionInstruction {
+	return new TransactionInstruction({
 		programId,
 		keys: [
 			{ pubkey: depositor, isSigner: true, isWritable: true },
@@ -514,10 +428,6 @@ function closeAuthorityAccount(
 		],
 		data: closeSwapAccountData(quoteHash),
 	});
-	if (!getTransferFeeConfig(mint.state)) {
-		return [close];
-	}
-	return [createHarvestWithheldTokensToMintInstruction(mint.address, [account.address], account.tokenProgram), close];
 }
 
 function swapDepositData(
@@ -576,28 +486,23 @@ async function buildSwapDepositInstructions(
 	const tokenProgram = await tokenProgramOf(connection, bridgeMint);
 	const nativeSrc = isNativeBlinkSvmToken(params.srcToken);
 	const source = await loadMint(connection, nativeSrc ? solMint : new PublicKey(params.srcToken));
-	const authorityInput = associatedTokenAddress(authority, source.address, source.tokenProgram);
+	const authorityInput = getAssociatedTokenAddress(source.address, authority, true, source.tokenProgram);
 	const swapPrograms = order.contracts.swapPrograms.map((p) => new PublicKey(p));
 	const created = checkSwapInstructions(owner, authority, swap, swapPrograms);
 	const funding = nativeSrc
 		? fundAuthorityWithLamports(owner, authorityInput, amount)
-		: await fundAuthorityWithTokens(connection, owner, authorityInput, source, amount);
+		: fundAuthorityWithTokens(owner, authorityInput, source, amount);
 	const authorityAccounts = uniqueAuthorityAccounts([
 		{ address: authorityInput, mint: source.address, tokenProgram: source.tokenProgram },
 		...created,
 	]);
-	const authorityMints = await Promise.all(
-		authorityAccounts.map((account) =>
-			account.mint.equals(source.address) ? source : loadMint(connection, account.mint)
-		)
-	);
 	const depositIx = new TransactionInstruction({
 		programId,
 		keys: [
 			{ pubkey: owner, isSigner: true, isWritable: true },
 			{ pubkey: bridgeMint, isSigner: false, isWritable: false },
 			{ pubkey: escrow, isSigner: false, isWritable: false },
-			{ pubkey: associatedTokenAddress(escrow, bridgeMint, tokenProgram), isSigner: false, isWritable: true },
+			{ pubkey: getAssociatedTokenAddress(bridgeMint, escrow, true, tokenProgram), isSigner: false, isWritable: true },
 			{ pubkey: authority, isSigner: false, isWritable: false },
 			{ pubkey: new PublicKey(swap.swap.programId), isSigner: false, isWritable: false },
 			{ pubkey: tokenProgram, isSigner: false, isWritable: false },
@@ -620,20 +525,11 @@ async function buildSwapDepositInstructions(
 		),
 	});
 	const body = [
-		createAssociatedTokenAccountIdempotentInstruction(
-			owner,
-			authorityInput,
-			authority,
-			source.address,
-			source.tokenProgram,
-			ASSOCIATED_TOKEN_PROGRAM_ID
-		),
+		createAssociatedTokenAccountInstruction(owner, authorityInput, authority, source.address, source.tokenProgram),
 		...funding.instructions,
-		...swap.setup.map(toInstruction),
+		...swap.setup.map(deserializeInstructionInfo),
 		depositIx,
-		...authorityAccounts.flatMap((account, i) =>
-			closeAuthorityAccount(programId, quoteHash, owner, authority, account, authorityMints[i])
-		),
+		...authorityAccounts.map((account) => closeAuthorityAccount(programId, quoteHash, owner, authority, account)),
 	];
 	const watched = await collectDepositorTokenAccounts(connection, body, owner, funding.spend);
 	const tableAddresses = swap.lookupTables.map((table) => table.address);

@@ -160,7 +160,7 @@ export function createAssociatedTokenAccountInstruction(
 	});
 }
 
-const TOKEN_ACCOUNT_LEN = 165;
+export const TOKEN_ACCOUNT_LEN = 165;
 export async function createInitializeRandomTokenAccountInstructions(
 	connection: Connection,
 	payer: PublicKey,
