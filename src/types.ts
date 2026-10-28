@@ -10,6 +10,7 @@ import {
 	TransactionResult as SuiTransactionResult,
 } from '@mysten/sui/transactions';
 import { Buffer } from 'buffer';
+import type { BlinkOrder } from './blink/types';
 
 export type ChainName = 'solana'
 	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' |
@@ -66,6 +67,7 @@ export type QuoteParams = {
 	referrer?: string;
 	referrerBps?: number;
 	destinationAddress?: string;
+	refundAddress?: string;
 };
 
 export type QuoteError = {
@@ -74,7 +76,7 @@ export type QuoteError = {
 	data: any,
 }
 
-export type QuoteType = 'WH' | 'SWIFT' | 'MCTP' | 'SHUTTLE' | 'FAST_MCTP' | 'MONO_CHAIN';
+export type QuoteType = 'WH' | 'SWIFT' | 'MCTP' | 'SHUTTLE' | 'FAST_MCTP' | 'MONO_CHAIN' | 'BLINK';
 export type Quote = {
 	type: QuoteType;
 	/**
@@ -187,6 +189,7 @@ export type Quote = {
 	mpsUserId?: string,
 	mpsIntegratorId?: string,
 	mixedRefAddress?: string,
+	blinkQuote?: Record<string, unknown>,
 };
 
 export type QuoteOptions = {
@@ -201,6 +204,7 @@ export type QuoteOptions = {
 	guaranteedOutput?: boolean;
 	payload?: string;
 	monoChain?: boolean;
+	blink?: boolean;
 	apiKey?: string;
 	memoHex?: string,
 	extraInstructions?: {
@@ -413,6 +417,7 @@ export type ComposableSuiMoveCallsOptions = {
 	whFeeCoin?: SuiFunctionParameter | null;
 	usdcPermitSignature?: string | null;
 	apiKey?: string;
+	blinkOrder?: BlinkOrder | null;
 };
 
 export type SwapMessageV0Params = {

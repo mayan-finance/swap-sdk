@@ -36,6 +36,9 @@ import {
 	getHyperCoreWithdrawParams
 } from './evmHyperCore';
 import { getMonoChainFromEvmTxPayload } from './evmMonoChain';
+import { getBlinkFromEvmTxPayload, swapBlinkGaslessFromEvm } from './evmBlink';
+
+const SAMPLE_SUI_ADDRESS = '0xcde6dbe01902be1f200ff03dbbd149e586847be8cee15235f82750d9b06c0e04';
 
 export type ContractRelayerFees = {
 	swapFee: bigint;
@@ -280,6 +283,18 @@ export async function getSwapFromEvmTxPayload(
 		);
 	}
 
+	if (quote.type === 'BLINK') {
+		return getBlinkFromEvmTxPayload(
+			quote,
+			swapperAddress,
+			destinationAddress,
+			referrerAddresses,
+			signerChainId,
+			permit,
+			options?.apiKey
+		);
+	}
+
 	if (quote.type != 'WH') {
 		throw new Error('Unsupported quote type');
 	}
@@ -453,6 +468,17 @@ export async function swapFromEvm(
 		await submitSwiftEvmSwap(gasLessParams, signedOrderHash, options?.apiKey);
 		return gasLessParams.orderHash;
 	}
+	if (quote.type === 'BLINK' && quote.gasless) {
+		return swapBlinkGaslessFromEvm(
+			quote,
+			swapperAddress,
+			destinationAddress,
+			referrerAddresses,
+			signer,
+			signerChainId,
+			options?.apiKey
+		);
+	}
 	const transactionRequest = await getSwapFromEvmTxPayload(
 		quote,
 		swapperAddress,
@@ -467,10 +493,14 @@ export async function swapFromEvm(
 	// @ts-ignore
 	delete transactionRequest._forwarder;
 
+	const blinkDirectTransfer =
+		quote.type === 'BLINK' &&
+		String(transactionRequest.to).toLowerCase() === quote.fromToken.contract.toLowerCase();
 	if (
 		options?.includeAllowanceTx &&
 		!quote.gasless &&
-		quote.fromToken.contract !== ZeroAddress
+		quote.fromToken.contract !== ZeroAddress &&
+		!blinkDirectTransfer
 	) {
 		return handleAtomicBatch(
 			quote,
@@ -525,9 +555,11 @@ export async function estimateQuoteRequiredGas(
 	const sampleDestinationAddress: string =
 		quote.toChain === 'solana'
 			? 'ENsytooJVSZyNHbxvueUeX8Am8gcNqPivVVE8USCBiy5'
+			: quote.toChain === 'sui'
+			? SAMPLE_SUI_ADDRESS
 			: '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
 	const signerChainId = Number((await signer.provider!.getNetwork()).chainId);
-	if (quote.type === 'SWIFT' && quote.gasless) {
+	if ((quote.type === 'SWIFT' || quote.type === 'BLINK') && quote.gasless) {
 		return BigInt(0);
 	}
 	const transactionRequest = await getSwapFromEvmTxPayload(
@@ -547,7 +579,7 @@ export async function estimateQuoteRequiredGas(
 	let baseGas = await signer.estimateGas(transactionRequest);
 	// make sure about baseGas type (ethers 5)
 	baseGas = BigInt(String(baseGas));
-	if (quote.type === 'MCTP' || quote.type === 'SWIFT') {
+	if (quote.type === 'MCTP' || quote.type === 'SWIFT' || quote.type === 'BLINK') {
 		return (baseGas * BigInt(110)) / BigInt(100);
 	}
 	return baseGas;
@@ -568,9 +600,11 @@ export async function estimateQuoteRequiredGasAprox(
 	const sampleDestinationAddress: string =
 		quote.toChain === 'solana'
 			? 'ENsytooJVSZyNHbxvueUeX8Am8gcNqPivVVE8USCBiy5'
+			: quote.toChain === 'sui'
+			? SAMPLE_SUI_ADDRESS
 			: '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
 	const signerChainId = quote?.fromToken?.chainId;
-	if (quote.type === 'SWIFT' && quote.gasless) {
+	if ((quote.type === 'SWIFT' || quote.type === 'BLINK') && quote.gasless) {
 		return BigInt(0);
 	}
 	const transactionRequest = await getSwapFromEvmTxPayload(
@@ -604,10 +638,10 @@ export async function estimateQuoteRequiredGasAprox2(
 		quote.toChain === 'solana'
 			? 'ENsytooJVSZyNHbxvueUeX8Am8gcNqPivVVE8USCBiy5'
 			: quote.toChain === 'sui'
-			? '0xcde6dbe01902be1f200ff03dbbd149e586847be8cee15235f82750d9b06c0e04'
+			? SAMPLE_SUI_ADDRESS
 			: '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
 	const signerChainId = getEvmChainIdByName(quote.fromChain);
-	if (quote.type === 'SWIFT' && quote.gasless) {
+	if ((quote.type === 'SWIFT' || quote.type === 'BLINK') && quote.gasless) {
 		return {
 			estimateGas: BigInt(0),
 			gasPrice: BigInt(0),
@@ -715,13 +749,14 @@ async function handleAtomicBatch(
 	}
 	const erc20Contract = new Contract(quote.fromToken.contract, ERC20Artifact.abi, signer);
 	const approveCalls: Array<object> = [];
+	const spender = quote.type === 'BLINK' ? String(transactionRequest.to) : addresses.MAYAN_FORWARDER_CONTRACT;
 	const USDT_ETHEREUM_ADDRESS = '0xdac17f958d2ee523a2206206994597c13d831ec7';
 	if (quote.fromChain === 'ethereum' && quote.fromToken.contract.toLowerCase() === USDT_ETHEREUM_ADDRESS) {
 		// USDT on Ethereum has a non-standard approve that requires resetting to zero first if the current allowance is non-zero.
-		const currentAllowance: bigint = await erc20Contract.allowance(signerAddress, addresses.MAYAN_FORWARDER_CONTRACT);
+		const currentAllowance: bigint = await erc20Contract.allowance(signerAddress, spender);
 		if (currentAllowance > BigInt(0)) {
 			const resetData = erc20Contract.interface.encodeFunctionData('approve', [
-				addresses.MAYAN_FORWARDER_CONTRACT,
+				spender,
 				BigInt(0),
 			]);
 			approveCalls.push({
@@ -732,7 +767,7 @@ async function handleAtomicBatch(
 		}
 	}
 	const approveData = erc20Contract.interface.encodeFunctionData('approve', [
-		addresses.MAYAN_FORWARDER_CONTRACT,
+		spender,
 		BigInt(quote.effectiveAmountIn64),
 	]);
 	approveCalls.push({

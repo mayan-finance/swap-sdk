@@ -17,6 +17,7 @@ import {
 } from './types';
 import addresses from './addresses';
 import { checkSdkVersionSupport, getSdkVersion } from './utils';
+import { BLINK_SUPPORTED_PARAMS_VERSION } from './blink/hash';
 import { SwiftEvmGasLessParams } from './evm/evmSwift';
 
 function toQueryString(params: Record<string, any>): string {
@@ -121,6 +122,7 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		guaranteedOutput: quoteOptions.guaranteedOutput !== false, // default to true
 		payload: typeof quoteOptions.payload === 'string' ? quoteOptions.payload : undefined,
 		monoChain: quoteOptions.monoChain !== false, // default to true
+		blink: quoteOptions.blink !== false, // default to true
 		apiKey: typeof quoteOptions.apiKey === 'string' ? quoteOptions.apiKey : undefined,
 		memoHex: typeof quoteOptions.memoHex === 'string' ? quoteOptions.memoHex : undefined,
 	}
@@ -139,7 +141,9 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		referrerBps: Number.isFinite(referrerBps) ? referrerBps : undefined,
 		gasDrop: Number.isFinite(gasDrop) ? gasDrop : undefined,
 		destinationAddress: params.destinationAddress ?? undefined,
+		refundAddress: params.refundAddress ?? undefined,
 		sdkVersion: getSdkVersion(),
+		blinkParamsVersion: BLINK_SUPPORTED_PARAMS_VERSION,
 	};
 	const baseUrl = `${addresses.PRICE_URL}/quote?`;
 	const queryString = toQueryString(queryParams);
@@ -197,6 +201,7 @@ export function generateFetchQuoteUrlAndBody(
 				? quoteOptions.payload
 				: undefined,
 		monoChain: quoteOptions.monoChain !== false, // default to true
+		blink: quoteOptions.blink !== false, // default to true
 		memoHex:
 			typeof quoteOptions.memoHex === 'string'
 				? quoteOptions.memoHex
@@ -229,7 +234,9 @@ export function generateFetchQuoteUrlAndBody(
 		referrerBps: Number.isFinite(referrerBps) ? referrerBps : undefined,
 		gasDrop: Number.isFinite(gasDrop) ? gasDrop : undefined,
 		destinationAddress: params.destinationAddress ?? undefined,
+		refundAddress: params.refundAddress ?? undefined,
 		sdkVersion: getSdkVersion(),
+		blinkParamsVersion: BLINK_SUPPORTED_PARAMS_VERSION,
 		mpsUserId: quoteOptions.mpsUserId ?? undefined,
 	};
 	const url = `${addresses.PRICE_URL}/quote${

@@ -184,8 +184,23 @@ Each quote has a `type`:
 - `MCTP` and `FAST_MCTP`, over Circle CCTP. Suited to high-value stablecoin transfers.
 - `WH`, the legacy Wormhole Token Bridge route.
 - `MONO_CHAIN`, for same-chain swaps.
+- `BLINK`, Mayan's inventory-backed route. See [Blink](#blink).
 
 Pick one and pass it to the swap function.
+
+### Blink
+
+`BLINK` quotes are offered by default. Pass `blink: false` in `QuoteOptions` to leave them out.
+
+When `fetchQuote` is called with both `destinationAddress` and `refundAddress`, the returned `BLINK` quote carries the signed Blink order bound to those addresses, and the swap functions use it as is. Without them the quote is a price preview, and the swap function fetches the order from Mayan at swap time with the swapper as the refund address. In both cases the SDK verifies the order hash, the amounts, the recipient, the refund address and the referrers against the quote, and checks every contract it touches against the guardian-signed Blink contract manifest before building the deposit. Orders expire after a short deposit deadline, so build and send the transaction promptly.
+
+Referrer splits work the same way as for Swift V2: pass `referrers` when fetching the quote and the same object as `referrerAddresses` at swap time. Blink pays every listed wallet on the source chain.
+
+EVM deposits do not go through the Mayan forwarder. Tokens are pulled by the Blink router, so an ERC20 approval must target the deposit contract. Use `includeAllowanceTx` to bundle the approval, or call `fetchBlinkOrder` first and approve `order.quote.routerAddress` (or `order.swap.routerAddress` when the order starts with a source swap). When the order allows a direct transfer the SDK sends a plain ERC20 transfer to the router instead, and no approval is needed. A `permit` is honored only if it was signed for the router as spender.
+
+Gasless `BLINK` quotes (`gasless: true` in `QuoteOptions`) are submitted to Blink instead of being sent by the user. On EVM the user signs a Permit2 witness (plus an EIP-2612 permit for Permit2 when the token supports it and no Permit2 allowance exists), on Solana the user signs a transaction whose fee payer is the Blink sponsor, and on Sui use `swapBlinkGaslessFromSui` with a `signTransaction` callback. The swap functions return the Blink quote hash, which is also the explorer order id prefixed with `BLINK_`.
+
+Sui orders that start with a source swap are opened by the user and executed by Blink. Pass a prefetched order through `ComposableSuiMoveCallsOptions.blinkOrder` and track the execution with `trackBlinkSourceSwap(order.quote.quoteHash)`.
 
 ### Slippage
 
