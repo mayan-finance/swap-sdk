@@ -61,6 +61,7 @@
     "README.md"
   ],
   "scripts": {
+    "test": "npm run build && node --test test/*.test.cjs",
     "build": "tsup --clean && tsup --minify",
     "watch": "tsup --watch",
     "lint": "prettier src -c",
