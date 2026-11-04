@@ -11,6 +11,7 @@ import {
 	TransactionMessage,
 	VersionedTransaction,
 } from '@solana/web3.js';
+import { blob, struct, u32 } from '@solana/buffer-layout';
 import { Buffer } from 'buffer';
 import addresses from '../addresses';
 import type {
@@ -20,7 +21,7 @@ import type {
 	SolanaTransactionSigner,
 	SwapMessageV0Params,
 } from '../types';
-import { getAssociatedTokenAddress, hexToUint8Array } from '../utils';
+import { getAssociatedTokenAddress, getSafeU64Blob, hexToUint8Array } from '../utils';
 import { getBlinkPriorityFee } from '../blink/api';
 import { submitAndTrackBlinkGaslessOrder } from '../blink/gasless';
 import { fetchBlinkOrder, isBlinkSourceSwap } from '../blink/order';
@@ -41,6 +42,8 @@ const TOKEN_2022_PROGRAM_ID = new PublicKey(addresses.TOKEN_2022_PROGRAM_ID);
 const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey(addresses.ASSOCIATED_TOKEN_PROGRAM_ID);
 
 const TOKEN_2022_ACCOUNT_TYPE_ACCOUNT = 2;
+const TOKEN_ACCOUNT_OWNER_OFFSET = 32;
+const TOKEN_ACCOUNT_AMOUNT_OFFSET = 64;
 
 const DEPOSIT_COMPUTE_UNIT_LIMIT = 50_000;
 const MAX_COMPUTE_UNIT_LIMIT = 1_400_000;
@@ -98,12 +101,19 @@ export function blinkSvmSwapAuthority(programId: PublicKey, owner: PublicKey, qu
 	)[0];
 }
 
+const DepositLayout = struct<any>([blob(8, 'instruction'), blob(32, 'quoteHash'), blob(8, 'amount')]);
+
 function depositData(name: string, quoteHash: string, amount: bigint): Buffer {
-	const out = Buffer.alloc(48);
-	getAnchorInstructionData(name).copy(out, 0);
-	out.set(hexToUint8Array(quoteHash), 8);
-	out.writeBigUInt64LE(amount, 40);
-	return out;
+	const data = Buffer.alloc(DepositLayout.span);
+	DepositLayout.encode(
+		{
+			instruction: getAnchorInstructionData(name),
+			quoteHash: Buffer.from(hexToUint8Array(quoteHash)),
+			amount: getSafeU64Blob(amount),
+		},
+		data
+	);
+	return data;
 }
 
 function depositNativeInstruction(
@@ -260,11 +270,12 @@ function isDepositorTokenAccount(owner: PublicKey, programId: PublicKey, data: U
 	if (data.length > TOKEN_ACCOUNT_LEN && data[TOKEN_ACCOUNT_LEN] !== TOKEN_2022_ACCOUNT_TYPE_ACCOUNT) {
 		return false;
 	}
-	return new PublicKey(data.slice(32, 64)).equals(owner);
+	const ownerBytes = data.slice(TOKEN_ACCOUNT_OWNER_OFFSET, TOKEN_ACCOUNT_OWNER_OFFSET + 32);
+	return new PublicKey(ownerBytes).equals(owner);
 }
 
 function tokenAccountAmount(data: Uint8Array): bigint {
-	return Buffer.from(data.buffer, data.byteOffset, data.byteLength).readBigUInt64LE(64);
+	return Buffer.from(data).readBigUInt64LE(TOKEN_ACCOUNT_AMOUNT_OFFSET);
 }
 
 function describeSimulationError(err: unknown, logs: string[]): string {
@@ -298,8 +309,14 @@ async function collectDepositorTokenAccounts(
 	depositor: PublicKey,
 	spend: TokenSpend | undefined
 ): Promise<WatchedAccount[]> {
-	const writable = instructions.flatMap((ix) => ix.keys.filter((k) => k.isWritable).map((k) => k.pubkey));
-	const unique = [...new Map(writable.map((k) => [k.toBase58(), k])).values()];
+	const unique: PublicKey[] = [];
+	for (const ix of instructions) {
+		for (const key of ix.keys) {
+			if (key.isWritable && !unique.some((known) => known.equals(key.pubkey))) {
+				unique.push(key.pubkey);
+			}
+		}
+	}
 	const watched: WatchedAccount[] = [];
 	for (let i = 0; i < unique.length; i += 100) {
 		const chunk = unique.slice(i, i + 100);
@@ -362,53 +379,18 @@ async function simulateSwapDeposit(
 	return sim.value.unitsConsumed;
 }
 
-type TokenMint = {
-	address: PublicKey;
-	tokenProgram: PublicKey;
-};
-
-async function loadMint(connection: Connection, address: PublicKey): Promise<TokenMint> {
-	return { address, tokenProgram: await tokenProgramOf(connection, address) };
-}
-
-type AuthorityFunding = {
-	instructions: TransactionInstruction[];
-	spend?: TokenSpend;
-};
-
-function fundAuthorityWithLamports(depositor: PublicKey, authorityInput: PublicKey, amount: bigint): AuthorityFunding {
-	return {
-		instructions: [
-			SystemProgram.transfer({
-				fromPubkey: depositor,
-				toPubkey: authorityInput,
-				lamports: amount,
-			}),
-			createSyncNativeInstruction(authorityInput),
-		],
-	};
-}
-
-function fundAuthorityWithTokens(
-	depositor: PublicKey,
-	authorityInput: PublicKey,
-	source: TokenMint,
-	amount: bigint
-): AuthorityFunding {
-	const depositorInput = getAssociatedTokenAddress(source.address, depositor, true, source.tokenProgram);
-	return {
-		instructions: [
-			createSplTransferInstruction(depositorInput, authorityInput, depositor, amount, source.tokenProgram),
-		],
-		spend: { account: depositorInput, amount },
-	};
-}
+const CloseSwapAccountLayout = struct<any>([blob(8, 'instruction'), blob(32, 'quoteHash')]);
 
 function closeSwapAccountData(quoteHash: string): Buffer {
-	const out = Buffer.alloc(40);
-	getAnchorInstructionData('close_swap_account').copy(out, 0);
-	out.set(hexToUint8Array(quoteHash), 8);
-	return out;
+	const data = Buffer.alloc(CloseSwapAccountLayout.span);
+	CloseSwapAccountLayout.encode(
+		{
+			instruction: getAnchorInstructionData('close_swap_account'),
+			quoteHash: Buffer.from(hexToUint8Array(quoteHash)),
+		},
+		data
+	);
+	return data;
 }
 
 function closeAuthorityAccount(
@@ -430,6 +412,15 @@ function closeAuthorityAccount(
 	});
 }
 
+const DepositSwapLayout = struct<any>([
+	blob(8, 'instruction'),
+	blob(32, 'quoteHash'),
+	blob(32, 'srcMint'),
+	blob(8, 'srcAmount'),
+	blob(8, 'minLockAmount'),
+	u32('swapDataLength'),
+]);
+
 function swapDepositData(
 	quoteHash: string,
 	srcMint: PublicKey,
@@ -437,19 +428,29 @@ function swapDepositData(
 	minLockAmount: bigint,
 	swapData: Buffer
 ): Buffer {
-	const out = Buffer.alloc(92 + swapData.length);
-	getAnchorInstructionData('deposit_swap').copy(out, 0);
-	out.set(hexToUint8Array(quoteHash), 8);
-	out.set(srcMint.toBytes(), 40);
-	out.writeBigUInt64LE(srcAmount, 72);
-	out.writeBigUInt64LE(minLockAmount, 80);
-	out.writeUInt32LE(swapData.length, 88);
-	swapData.copy(out, 92);
-	return out;
+	const header = Buffer.alloc(DepositSwapLayout.span);
+	DepositSwapLayout.encode(
+		{
+			instruction: getAnchorInstructionData('deposit_swap'),
+			quoteHash: Buffer.from(hexToUint8Array(quoteHash)),
+			srcMint: srcMint.toBuffer(),
+			srcAmount: getSafeU64Blob(srcAmount),
+			minLockAmount: getSafeU64Blob(minLockAmount),
+			swapDataLength: swapData.length,
+		},
+		header
+	);
+	return Buffer.concat([header, swapData]);
 }
 
 function uniqueAuthorityAccounts(accounts: AuthorityTokenAccount[]): AuthorityTokenAccount[] {
-	return [...new Map(accounts.map((a) => [a.address.toBase58(), a])).values()];
+	const unique: AuthorityTokenAccount[] = [];
+	for (const account of accounts) {
+		if (!unique.some((known) => known.address.equals(account.address))) {
+			unique.push(account);
+		}
+	}
+	return unique;
 }
 
 async function compileSwapDeposit(
@@ -485,15 +486,29 @@ async function buildSwapDepositInstructions(
 	const escrow = escrowAuthority(programId);
 	const tokenProgram = await tokenProgramOf(connection, lockMint);
 	const nativeSrc = isNativeBlinkSvmToken(params.srcToken);
-	const source = await loadMint(connection, nativeSrc ? solMint : new PublicKey(params.srcToken));
-	const authorityInput = getAssociatedTokenAddress(source.address, authority, true, source.tokenProgram);
+	const sourceMint = nativeSrc ? solMint : new PublicKey(params.srcToken);
+	const sourceTokenProgram = await tokenProgramOf(connection, sourceMint);
+	const authorityInput = getAssociatedTokenAddress(sourceMint, authority, true, sourceTokenProgram);
 	const swapPrograms = order.contracts.swapPrograms.map((p) => new PublicKey(p));
 	const created = checkSwapInstructions(owner, authority, swap, swapPrograms);
-	const funding = nativeSrc
-		? fundAuthorityWithLamports(owner, authorityInput, amount)
-		: fundAuthorityWithTokens(owner, authorityInput, source, amount);
+
+	// move the input from the depositor into the swap authority's token account
+	let fundingInstructions: TransactionInstruction[];
+	let spend: TokenSpend | undefined;
+	if (nativeSrc) {
+		fundingInstructions = [
+			SystemProgram.transfer({ fromPubkey: owner, toPubkey: authorityInput, lamports: amount }),
+			createSyncNativeInstruction(authorityInput),
+		];
+	} else {
+		const depositorInput = getAssociatedTokenAddress(sourceMint, owner, true, sourceTokenProgram);
+		fundingInstructions = [
+			createSplTransferInstruction(depositorInput, authorityInput, owner, amount, sourceTokenProgram),
+		];
+		spend = { account: depositorInput, amount };
+	}
 	const authorityAccounts = uniqueAuthorityAccounts([
-		{ address: authorityInput, mint: source.address, tokenProgram: source.tokenProgram },
+		{ address: authorityInput, mint: sourceMint, tokenProgram: sourceTokenProgram },
 		...created,
 	]);
 	const depositIx = new TransactionInstruction({
@@ -525,13 +540,13 @@ async function buildSwapDepositInstructions(
 		),
 	});
 	const body = [
-		createAssociatedTokenAccountInstruction(owner, authorityInput, authority, source.address, source.tokenProgram),
-		...funding.instructions,
+		createAssociatedTokenAccountInstruction(owner, authorityInput, authority, sourceMint, sourceTokenProgram),
+		...fundingInstructions,
 		...swap.setup.map(deserializeInstructionInfo),
 		depositIx,
 		...authorityAccounts.map((account) => closeAuthorityAccount(programId, quoteHash, owner, authority, account)),
 	];
-	const watched = await collectDepositorTokenAccounts(connection, body, owner, funding.spend);
+	const watched = await collectDepositorTokenAccounts(connection, body, owner, spend);
 	const tableAddresses = swap.lookupTables.map((table) => table.address);
 	const lookupTables = await getAddressLookupTableAccounts(tableAddresses, connection);
 	if (lookupTables.length !== tableAddresses.length) {
@@ -567,8 +582,7 @@ export async function createBlinkFromSolanaInstructions(
 	swapperAddress: string,
 	destinationAddress: string,
 	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
-	connection: Connection,
-	apiKey?: string
+	connection: Connection
 ): Promise<{
 	instructions: TransactionInstruction[];
 	signers: Keypair[];
@@ -580,7 +594,7 @@ export async function createBlinkFromSolanaInstructions(
 		throw new Error('Gasless Blink quotes are submitted through swapFromSolana');
 	}
 	const [order, computeUnitPrice] = await Promise.all([
-		fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses, apiKey),
+		fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses),
 		getBlinkPriorityFee(quote.fromChain),
 	]);
 	const owner = new PublicKey(swapperAddress);
@@ -601,14 +615,13 @@ export async function swapBlinkGaslessFromSolana(
 	destinationAddress: string,
 	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	signTransaction: SolanaTransactionSigner,
-	connection: Connection,
-	apiKey?: string
+	connection: Connection
 ): Promise<{ signature: string; serializedTrx: Uint8Array | null }> {
 	assertBlinkSolanaQuote(quote);
 	if (!quote.gasless) {
 		throw new Error('Quote is not a gasless BLINK quote');
 	}
-	const order = await fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses, apiKey);
+	const order = await fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses);
 	if (isBlinkSourceSwap(order.quote.orderParams)) {
 		throw new Error('Gasless Blink swap deposits are unavailable on solana');
 	}

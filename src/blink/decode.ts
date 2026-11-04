@@ -6,7 +6,9 @@ import type {
 	BlinkGaslessSubmission,
 	BlinkOrderDetail,
 	BlinkOrderParams,
+	BlinkOrderParamsJson,
 	BlinkQuote,
+	BlinkQuoteJson,
 	BlinkSourceSwapStatus,
 	BlinkSvmInstruction,
 	BlinkSwapInstructions,
@@ -42,7 +44,7 @@ function decodeReferrer(json: any): Referrer {
 	return { address: text(json?.address), bps: count(json?.bps) };
 }
 
-function decodeOrderParams(json: any): BlinkOrderParams {
+function decodeOrderParams(json: BlinkOrderParamsJson): BlinkOrderParams {
 	return {
 		srcChain: text(json.src_chain),
 		dstChain: text(json.dst_chain),
@@ -65,7 +67,7 @@ function decodeOrderParams(json: any): BlinkOrderParams {
 	};
 }
 
-export function decodeBlinkQuote(json: any): BlinkQuote {
+export function decodeBlinkQuote(json: BlinkQuoteJson | null | undefined): BlinkQuote {
 	const crossChain = json?.cross_chain;
 	const quote = crossChain ?? json?.same_chain_swap;
 	if (!quote) {
@@ -82,19 +84,19 @@ export function decodeBlinkQuote(json: any): BlinkQuote {
 		slippageBps: count(quote.slippage_bps),
 		routerAddress: text(quote.router_address),
 		orderParams: decodeOrderParams(quote.order_params),
-		gasless: crossChain ? flag(quote.gasless) : false,
-		sponsorFees: crossChain ? flag(quote.sponsor_fees) : false,
-		gaslessRouterAddress: optionalText(quote.gasless_router_address),
-		sponsorAddress: optionalText(quote.sponsor_address),
+		gasless: flag(crossChain?.gasless),
+		sponsorFees: flag(crossChain?.sponsor_fees),
+		gaslessRouterAddress: optionalText(crossChain?.gasless_router_address),
+		sponsorAddress: optionalText(crossChain?.sponsor_address),
 		sponsorGasBudget:
-			quote.sponsor_gas_budget !== undefined && quote.sponsor_gas_budget !== null
-				? BigInt(quote.sponsor_gas_budget)
+			crossChain?.sponsor_gas_budget !== undefined && crossChain?.sponsor_gas_budget !== null
+				? BigInt(crossChain.sponsor_gas_budget)
 				: undefined,
 		fulfillEtaSecs:
 			quote.fulfill_eta_secs !== undefined && quote.fulfill_eta_secs !== null
 				? count(quote.fulfill_eta_secs)
 				: undefined,
-		directTransfer: crossChain ? flag(quote.direct_transfer) : false,
+		directTransfer: flag(crossChain?.direct_transfer),
 		expiresAt: text(quote.expires_at),
 		guardianSetIndex: count(quote.guardian_set_index),
 	};

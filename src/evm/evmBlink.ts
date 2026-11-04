@@ -22,14 +22,11 @@ const PERMIT_DEADLINE_SECS = 1800;
 const blinkRouterInterface = new Interface([
 	'function depositNative(bytes32 quoteHash)',
 	'function depositToken(bytes32 quoteHash, address token, uint256 amount)',
-	'function depositWithSwap(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address lockToken, uint256 minLockAmount)',
-	'function swapAndForward(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address dstToken, uint256 minAmountOut, uint256 amountOut, uint16 referrerBps, address recipient)',
 	'function depositTokenWithPermit(bytes32 quoteHash, address token, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s)',
-	'function depositTokenWithPermit2(bytes32 quoteHash, address token, uint256 amount, uint256 nonce, uint256 deadline, bytes signature)',
+	'function depositWithSwap(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address lockToken, uint256 minLockAmount)',
 	'function depositWithSwapAndPermit(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address lockToken, uint256 minLockAmount, uint256 deadline, uint8 v, bytes32 r, bytes32 s)',
-	'function depositWithSwapAndPermit2(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address lockToken, uint256 minLockAmount, uint256 nonce, uint256 deadline, bytes signature)',
+	'function swapAndForward(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address dstToken, uint256 minAmountOut, uint256 amountOut, uint16 referrerBps, address recipient)',
 	'function swapAndForwardWithPermit(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address dstToken, uint256 minAmountOut, uint256 amountOut, uint16 referrerBps, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)',
-	'function swapAndForwardWithPermit2(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address dstToken, uint256 minAmountOut, uint256 amountOut, uint16 referrerBps, address recipient, uint256 nonce, uint256 deadline, bytes signature)',
 ]);
 
 const erc20Interface = new Interface(ERC20Artifact.abi);
@@ -37,10 +34,6 @@ const erc20Interface = new Interface(ERC20Artifact.abi);
 export function isNativeBlinkEvmToken(address: string): boolean {
 	return /^0x0*$/i.test(address);
 }
-
-export type BlinkEvmDepositSignature =
-	| { kind: 'permit'; deadline: bigint; v: number; r: string; s: string }
-	| { kind: 'permit2'; nonce: bigint; deadline: bigint; signature: string };
 
 export type BlinkEvmDepositCall = {
 	to: string;
@@ -62,81 +55,76 @@ function referrerTotalBps(referrers: { bps: number }[]): number {
 	return referrers.reduce((total, r) => total + r.bps, 0);
 }
 
-export function buildBlinkEvmDepositCall(order: BlinkOrder, signature?: BlinkEvmDepositSignature): BlinkEvmDepositCall {
+/**
+ * The transaction that deposits the order into the Blink router. A permit signed with the
+ * router as spender is appended to the ERC20 variants; without one the router must already be
+ * approved. When the quote allows it an ERC20 order becomes a plain transfer to the router with
+ * the quote hash appended, which needs no approval at all.
+ */
+export function buildBlinkEvmDepositCall(order: BlinkOrder, permit?: Erc20Permit | null): BlinkEvmDepositCall {
 	const { quoteHash, orderParams: params } = order.quote;
 	const amountIn = BigInt(params.expectedAmountIn);
 	const native = isNativeBlinkEvmToken(params.srcToken);
-	if (!signature && usesBlinkDirectTransfer(order)) {
-		return {
-			to: params.srcToken,
-			data: erc20Interface.encodeFunctionData('transfer', [params.routerAddress, amountIn]) + quoteHash.slice(2),
-			value: BigInt(0),
-		};
-	}
-	if (native && signature) {
+	const swap = order.swap;
+
+	if (native && permit) {
 		throw new Error('Native Blink deposits do not take a permit');
 	}
-	const sameChain = params.srcChain === params.dstChain;
-	const swap = order.swap;
 	if (swap && !swap.evm) {
 		throw new Error('Blink returned swap instructions that are not for EVM');
 	}
-	const to = swap ? swap.routerAddress : signature ? order.contracts.router : params.routerAddress;
-	const value = swap?.evm ? BigInt(swap.evm.value) : native ? amountIn : BigInt(0);
-	const swapArgs = swap?.evm
-		? sameChain
-			? [
-					quoteHash,
-					params.srcToken,
-					amountIn,
-					swap.evm.aggregator,
-					swap.evm.swapCalldata,
-					params.dstToken,
-					BigInt(params.minAmountOut),
-					BigInt(params.expectedAmountOut),
-					referrerTotalBps(params.referrers),
-					params.recipient,
-			  ]
-			: [
-					quoteHash,
-					swap.srcToken,
-					BigInt(swap.amountIn),
-					swap.evm.aggregator,
-					swap.evm.swapCalldata,
-					swap.lockToken,
-					BigInt(swap.minLockAmount),
-			  ]
-		: null;
-	const swapMethod = sameChain ? 'swapAndForward' : 'depositWithSwap';
-	let data: string;
-	if (!signature) {
-		data = swapArgs
-			? blinkRouterInterface.encodeFunctionData(swapMethod, swapArgs)
-			: native
-			? blinkRouterInterface.encodeFunctionData('depositNative', [quoteHash])
-			: blinkRouterInterface.encodeFunctionData('depositToken', [quoteHash, params.srcToken, amountIn]);
-	} else if (signature.kind === 'permit') {
-		const permitArgs = [signature.deadline, signature.v, signature.r, signature.s];
-		data = swapArgs
-			? blinkRouterInterface.encodeFunctionData(`${swapMethod}AndPermit`, [...swapArgs, ...permitArgs])
-			: blinkRouterInterface.encodeFunctionData('depositTokenWithPermit', [
-					quoteHash,
-					params.srcToken,
-					amountIn,
-					...permitArgs,
-			  ]);
-	} else {
-		const permit2Args = [signature.nonce, signature.deadline, signature.signature];
-		data = swapArgs
-			? blinkRouterInterface.encodeFunctionData(`${swapMethod}AndPermit2`, [...swapArgs, ...permit2Args])
-			: blinkRouterInterface.encodeFunctionData('depositTokenWithPermit2', [
-					quoteHash,
-					params.srcToken,
-					amountIn,
-					...permit2Args,
-			  ]);
+
+	if (!permit && usesBlinkDirectTransfer(order)) {
+		const transfer = erc20Interface.encodeFunctionData('transfer', [params.routerAddress, amountIn]);
+		return { to: params.srcToken, data: transfer + quoteHash.slice(2), value: BigInt(0) };
 	}
-	return { to, data, value };
+
+	let method: string;
+	let args: any[];
+	let value = BigInt(0);
+	if (!swap || !swap.evm) {
+		if (native) {
+			method = 'depositNative';
+			args = [quoteHash];
+			value = amountIn;
+		} else {
+			method = permit ? 'depositTokenWithPermit' : 'depositToken';
+			args = [quoteHash, params.srcToken, amountIn];
+		}
+	} else if (params.srcChain === params.dstChain) {
+		method = permit ? 'swapAndForwardWithPermit' : 'swapAndForward';
+		args = [
+			quoteHash,
+			params.srcToken,
+			amountIn,
+			swap.evm.aggregator,
+			swap.evm.swapCalldata,
+			params.dstToken,
+			BigInt(params.minAmountOut),
+			BigInt(params.expectedAmountOut),
+			referrerTotalBps(params.referrers),
+			params.recipient,
+		];
+		value = BigInt(swap.evm.value);
+	} else {
+		method = permit ? 'depositWithSwapAndPermit' : 'depositWithSwap';
+		args = [
+			quoteHash,
+			swap.srcToken,
+			BigInt(swap.amountIn),
+			swap.evm.aggregator,
+			swap.evm.swapCalldata,
+			swap.lockToken,
+			BigInt(swap.minLockAmount),
+		];
+		value = BigInt(swap.evm.value);
+	}
+	if (permit) {
+		args.push(BigInt(permit.deadline), permit.v, permit.r, permit.s);
+	}
+
+	const to = swap ? swap.routerAddress : permit ? order.contracts.router : params.routerAddress;
+	return { to, data: blinkRouterInterface.encodeFunctionData(method, args), value };
 }
 
 function assertSignerChain(quote: Quote, signerChainId: number | string): number {
@@ -147,9 +135,7 @@ function assertSignerChain(quote: Quote, signerChainId: number | string): number
 	const sourceChainId = getWormholeChainIdByName(quote.fromChain);
 	if (sourceChainId !== signerWormholeChainId) {
 		throw new Error(
-			`Signer chain id(${Number(
-				signerChainId
-			)}) and quote from chain are not same! ${sourceChainId} !== ${signerWormholeChainId}`
+			`Signer chain id(${Number(signerChainId)}) and quote from chain are not same! ${sourceChainId} !== ${signerWormholeChainId}`
 		);
 	}
 	return Number(signerChainId);
@@ -161,8 +147,7 @@ export async function getBlinkFromEvmTxPayload(
 	destinationAddress: string,
 	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	signerChainId: number | string,
-	permit: Erc20Permit | null | undefined,
-	apiKey?: string
+	permit: Erc20Permit | null | undefined
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 	if (quote.type !== 'BLINK') {
 		throw new Error('Quote type is not BLINK');
@@ -171,15 +156,11 @@ export async function getBlinkFromEvmTxPayload(
 		throw new Error('Gasless Blink quotes are submitted through swapFromEvm');
 	}
 	const chainId = assertSignerChain(quote, signerChainId);
-	const order = await fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses, apiKey);
+	const order = await fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses);
 	const params = order.quote.orderParams;
-	const usePermit = !!permit && !isNativeBlinkEvmToken(params.srcToken) && permit.value >= BigInt(params.expectedAmountIn);
-	const call = buildBlinkEvmDepositCall(
-		order,
-		usePermit && permit
-			? { kind: 'permit', deadline: BigInt(permit.deadline), v: permit.v, r: permit.r, s: permit.s }
-			: undefined
-	);
+	const permitCoversAmount =
+		!!permit && !isNativeBlinkEvmToken(params.srcToken) && permit.value >= BigInt(params.expectedAmountIn);
+	const call = buildBlinkEvmDepositCall(order, permitCoversAmount ? permit : null);
 	return {
 		to: call.to,
 		data: call.data,
@@ -290,8 +271,7 @@ export async function swapBlinkGaslessFromEvm(
 	destinationAddress: string,
 	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	signer: Signer,
-	signerChainId: number | string,
-	apiKey?: string
+	signerChainId: number | string
 ): Promise<string> {
 	if (quote.type !== 'BLINK' || !quote.gasless) {
 		throw new Error('Quote is not a gasless BLINK quote');
@@ -300,7 +280,7 @@ export async function swapBlinkGaslessFromEvm(
 		throw new Error('No provider found for signer');
 	}
 	const chainId = assertSignerChain(quote, signerChainId);
-	const order = await fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses, apiKey);
+	const order = await fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses);
 	const params = order.quote.orderParams;
 	if (isNativeBlinkEvmToken(params.srcToken)) {
 		throw new Error('Gasless Blink deposits require an ERC20 input token');
@@ -310,6 +290,7 @@ export async function swapBlinkGaslessFromEvm(
 	const erc20 = new Contract(params.srcToken, ERC20Artifact.abi, signer.provider);
 	const permit2Allowance: bigint = await erc20.allowance(swapperAddress, addresses.BLINK_PERMIT2_ADDRESS);
 	const deadline = permitDeadline();
+	// Permit2 needs an allowance on the token; sign an EIP-2612 permit for it when there is none
 	const permitSignature =
 		permit2Allowance < amountIn ? await signPermit2Approval(quote, signer, swapperAddress, deadline) : undefined;
 	const nonce = BigInt(hexlify(randomBytes(32)));

@@ -290,8 +290,7 @@ export async function getSwapFromEvmTxPayload(
 			destinationAddress,
 			referrerAddresses,
 			signerChainId,
-			permit,
-			options?.apiKey
+			permit
 		);
 	}
 
@@ -475,8 +474,7 @@ export async function swapFromEvm(
 			destinationAddress,
 			referrerAddresses,
 			signer,
-			signerChainId,
-			options?.apiKey
+			signerChainId
 		);
 	}
 	const transactionRequest = await getSwapFromEvmTxPayload(

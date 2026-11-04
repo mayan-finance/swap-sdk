@@ -10,7 +10,7 @@ import {
 	TransactionResult as SuiTransactionResult,
 } from '@mysten/sui/transactions';
 import { Buffer } from 'buffer';
-import type { BlinkOrder } from './blink/types';
+import type { BlinkOrder, BlinkQuoteJson } from './blink/types';
 
 export type ChainName = 'solana'
 	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' |
@@ -189,7 +189,11 @@ export type Quote = {
 	mpsUserId?: string,
 	mpsIntegratorId?: string,
 	mixedRefAddress?: string,
-	blinkQuote?: Record<string, unknown>,
+	/**
+	 * Blink order bound to `destinationAddress` and `refundAddress`, embedded only when both were
+	 * passed to {@link fetchQuote}. A BLINK quote without it is a price preview and cannot be swapped.
+	 */
+	blinkQuote?: BlinkQuoteJson,
 };
 
 export type QuoteOptions = {

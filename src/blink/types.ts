@@ -158,3 +158,98 @@ export type BlinkOrder = {
 	swap?: BlinkSwapInstructions;
 	contracts: BlinkChainContracts;
 };
+
+// Proto JSON (snake_case, as Mayan's quote API embeds it in `Quote.blinkQuote`) of Blink's
+// `QuoteResponse`. Fields at their proto default (0, false, "", empty list) are omitted, and
+// 64-bit integers are decimal strings. `decodeBlinkQuote` turns this into a `BlinkQuote`.
+
+export type BlinkReferrerJson = {
+	address?: string;
+	bps?: number;
+};
+
+/** The fields the quote hash commits to; see `encodeBlinkOrderParams`. */
+export type BlinkOrderParamsJson = {
+	src_chain?: string;
+	dst_chain?: string;
+	src_token?: string;
+	dst_token?: string;
+	lock_token?: string;
+	expected_amount_in?: string;
+	expected_amount_out?: string;
+	expected_lock_amount?: string;
+	min_lock_amount?: string;
+	min_amount_out?: string;
+	gas_drop?: string;
+	recipient?: string;
+	refund_address?: string;
+	referrers?: BlinkReferrerJson[];
+	router_address?: string;
+	refund_fee_bridge?: string;
+	/** base64 */
+	random?: string;
+	params_version?: number;
+};
+
+export type BlinkFeeComponentJson = {
+	name?: string;
+	side?: string;
+	usd_micros?: string;
+	native?: string;
+};
+
+export type BlinkFeeBreakdownJson = {
+	components?: BlinkFeeComponentJson[];
+	dst_total_usd_micros?: string;
+	src_total_usd_micros?: string;
+	dst_gas_native?: string;
+	src_gas_native?: string;
+};
+
+export type BlinkCrossChainQuoteJson = {
+	quote_hash?: string;
+	amount_in?: string;
+	amount_out?: string;
+	min_amount_out?: string;
+	amount_in_usd_micros?: string;
+	amount_out_usd_micros?: string;
+	slippage_bps?: number;
+	fee_breakdown?: BlinkFeeBreakdownJson;
+	router_address?: string;
+	order_params?: BlinkOrderParamsJson;
+	gasless?: boolean;
+	sponsor_fees?: boolean;
+	gasless_router_address?: string;
+	sponsor_address?: string;
+	fulfill_eta_secs?: string;
+	direct_transfer?: boolean;
+	/** RFC 3339 */
+	expires_at?: string;
+	sponsor_gas_budget?: string;
+	guardian_set_index?: number;
+	is_guaranteed?: boolean;
+	sponsor_gas_max?: string;
+};
+
+export type BlinkSameChainSwapQuoteJson = {
+	quote_hash?: string;
+	amount_in?: string;
+	amount_out?: string;
+	min_amount_out?: string;
+	amount_in_usd_micros?: string;
+	amount_out_usd_micros?: string;
+	slippage_bps?: number;
+	fee_breakdown?: BlinkFeeBreakdownJson;
+	router_address?: string;
+	order_params?: BlinkOrderParamsJson;
+	fulfill_eta_secs?: string;
+	/** RFC 3339 */
+	expires_at?: string;
+	guardian_set_index?: number;
+};
+
+/** Exactly one of the two variants is set. */
+export type BlinkQuoteJson = {
+	cross_chain?: BlinkCrossChainQuoteJson;
+	same_chain_swap?: BlinkSameChainSwapQuoteJson;
+};
