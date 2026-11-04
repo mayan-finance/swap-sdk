@@ -1,61 +1,69 @@
-import { keccak256 } from 'ethers';
+import { keccak256, toBeHex, zeroPadValue } from 'ethers';
 import { Buffer } from 'buffer';
 import type { Referrer } from '../types';
+import { hexToUint8Array } from '../utils';
 import type { BlinkOrderParams, BlinkQuote } from './types';
 
 export const BLINK_SUPPORTED_PARAMS_VERSION = 1;
 
-function uint256BigEndian(value: bigint): Buffer {
-	return Buffer.from(value.toString(16).padStart(64, '0'), 'hex');
+// The quote hash is keccak256 over the order params laid out as
+//   u8 paramsVersion, then every field as   u16 tag | u32 length | bytes
+// Strings are utf8, amounts are 32-byte big-endian integers, and the referrer list is
+//   u16 count, then per referrer   u16 address length | utf8 address | u16 bps
+
+function u16(value: number): Buffer {
+	const buf = Buffer.alloc(2);
+	buf.writeUInt16BE(value);
+	return buf;
 }
 
-function encodeField(tag: number, value: Buffer): Buffer {
-	const header = Buffer.alloc(6);
-	header.writeUInt16BE(tag, 0);
-	header.writeUInt32BE(value.length, 2);
-	return Buffer.concat([header, value]);
+function u32(value: number): Buffer {
+	const buf = Buffer.alloc(4);
+	buf.writeUInt32BE(value);
+	return buf;
 }
 
-function encodeReferrers(referrers: Referrer[]): Buffer {
-	const count = Buffer.alloc(2);
-	count.writeUInt16BE(referrers.length, 0);
-	return Buffer.concat([
-		count,
-		...referrers.map((referrer) => {
-			const address = Buffer.from(referrer.address, 'utf8');
-			const addressLength = Buffer.alloc(2);
-			addressLength.writeUInt16BE(address.length, 0);
-			const bps = Buffer.alloc(2);
-			bps.writeUInt16BE(referrer.bps, 0);
-			return Buffer.concat([addressLength, address, bps]);
-		}),
-	]);
+function taggedField(tag: number, bytes: Uint8Array): Buffer {
+	return Buffer.concat([u16(tag), u32(bytes.length), bytes]);
+}
+
+function stringField(tag: number, value: string): Buffer {
+	return taggedField(tag, Buffer.from(value, 'utf8'));
+}
+
+function amountField(tag: number, value: string): Buffer {
+	const uint256 = zeroPadValue(toBeHex(BigInt(value || '0')), 32);
+	return taggedField(tag, hexToUint8Array(uint256));
+}
+
+function referrersField(tag: number, referrers: Referrer[]): Buffer {
+	const entries = referrers.map((referrer) => {
+		const address = Buffer.from(referrer.address, 'utf8');
+		return Buffer.concat([u16(address.length), address, u16(referrer.bps)]);
+	});
+	return taggedField(tag, Buffer.concat([u16(referrers.length), ...entries]));
 }
 
 export function encodeBlinkOrderParams(params: BlinkOrderParams): Buffer {
-	const str = (tag: number, value: string) => encodeField(tag, Buffer.from(value, 'utf8'));
-	const int = (tag: number, value: string) => encodeField(tag, uint256BigEndian(BigInt(value || '0')));
-	const version = Buffer.alloc(1);
-	version.writeUInt8(params.paramsVersion, 0);
 	return Buffer.concat([
-		version,
-		str(1, params.srcChain),
-		str(2, params.dstChain),
-		str(3, params.srcToken),
-		str(4, params.dstToken),
-		str(5, params.lockToken),
-		int(6, params.expectedAmountIn),
-		int(7, params.expectedAmountOut),
-		int(8, params.expectedLockAmount),
-		int(9, params.minLockAmount),
-		int(10, params.minAmountOut),
-		int(11, params.gasDrop),
-		str(12, params.recipient),
-		str(13, params.refundAddress),
-		encodeField(14, encodeReferrers(params.referrers)),
-		str(15, params.routerAddress),
-		int(16, params.refundFeeBridge),
-		encodeField(17, Buffer.from(params.random)),
+		Buffer.from([params.paramsVersion]),
+		stringField(1, params.srcChain),
+		stringField(2, params.dstChain),
+		stringField(3, params.srcToken),
+		stringField(4, params.dstToken),
+		stringField(5, params.lockToken),
+		amountField(6, params.expectedAmountIn),
+		amountField(7, params.expectedAmountOut),
+		amountField(8, params.expectedLockAmount),
+		amountField(9, params.minLockAmount),
+		amountField(10, params.minAmountOut),
+		amountField(11, params.gasDrop),
+		stringField(12, params.recipient),
+		stringField(13, params.refundAddress),
+		referrersField(14, params.referrers),
+		stringField(15, params.routerAddress),
+		amountField(16, params.refundFeeBridge),
+		taggedField(17, params.random),
 	]);
 }
 

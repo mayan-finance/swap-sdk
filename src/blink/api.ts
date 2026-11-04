@@ -62,15 +62,8 @@ function blinkPost(path: string, body: unknown): Promise<any> {
 	});
 }
 
-async function unlessNotFound<T>(call: () => Promise<T>): Promise<T | null> {
-	try {
-		return await call();
-	} catch (err) {
-		if (err instanceof BlinkApiError && (err.status === 404 || err.code === BLINK_GRPC_NOT_FOUND)) {
-			return null;
-		}
-		throw err;
-	}
+function isNotFound(err: unknown): boolean {
+	return err instanceof BlinkApiError && (err.status === 404 || err.code === BLINK_GRPC_NOT_FOUND);
 }
 
 export async function getBlinkSwapInstructions(quoteHash: string): Promise<BlinkSwapInstructions> {
@@ -90,14 +83,26 @@ export async function getBlinkPriorityFee(chain: string): Promise<bigint> {
 	return BigInt(json?.compute_unit_price_micro_lamports ?? 0);
 }
 
-export function getBlinkOrder(quoteHash: string): Promise<BlinkOrderDetail | null> {
-	return unlessNotFound(async () => decodeBlinkOrderDetail(await blinkRequest(`/v1/orders/${quoteHash}`)));
+export async function getBlinkOrder(quoteHash: string): Promise<BlinkOrderDetail | null> {
+	try {
+		return decodeBlinkOrderDetail(await blinkRequest(`/v1/orders/${quoteHash}`));
+	} catch (err) {
+		if (isNotFound(err)) {
+			return null;
+		}
+		throw err;
+	}
 }
 
-export function getBlinkSourceSwap(quoteHash: string): Promise<BlinkSourceSwapStatus | null> {
-	return unlessNotFound(async () =>
-		decodeBlinkSourceSwapStatus(await blinkRequest(`/v1/orders/${quoteHash}/source-swap`))
-	);
+export async function getBlinkSourceSwap(quoteHash: string): Promise<BlinkSourceSwapStatus | null> {
+	try {
+		return decodeBlinkSourceSwapStatus(await blinkRequest(`/v1/orders/${quoteHash}/source-swap`));
+	} catch (err) {
+		if (isNotFound(err)) {
+			return null;
+		}
+		throw err;
+	}
 }
 
 export async function submitBlinkGaslessOrder(request: BlinkGaslessOrderRequest): Promise<BlinkGaslessSubmission> {

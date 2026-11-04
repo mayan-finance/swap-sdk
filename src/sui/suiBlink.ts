@@ -148,7 +148,7 @@ export async function createBlinkFromSuiMoveCalls(
 	}
 	const order =
 		options?.blinkOrder ??
-		(await fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses, options?.apiKey));
+		(await fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses));
 	return buildDepositTransaction(order, swapperAddress, suiClient, options);
 }
 
@@ -191,7 +191,7 @@ export async function swapBlinkGaslessFromSui(
 	}
 	const order =
 		options?.blinkOrder ??
-		(await fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses, options?.apiKey));
+		(await fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses));
 	const sponsor = order.quote.sponsorAddress;
 	const gasBudget = order.quote.sponsorGasBudget;
 	if (!sponsor || gasBudget === undefined) {

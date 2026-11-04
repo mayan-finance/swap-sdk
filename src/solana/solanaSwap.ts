@@ -126,7 +126,7 @@ export async function createSwapFromSolanaInstructions(
 		if (options.customPayload) {
 			throw new Error('Custom payload is not supported for BLINK');
 		}
-		return createBlinkFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddresses, connection, options.apiKey);
+		return createBlinkFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddresses, connection);
 	}
 
 	if (options.customPayload) {
@@ -357,7 +357,7 @@ export async function swapFromSolana(
 			throw new Error('Custom payload is not supported for BLINK');
 		}
 		return swapBlinkGaslessFromSolana(
-			quote, swapperWalletAddress, destinationAddress, referrerAddresses, signTransaction, connection, extraParams?.apiKey
+			quote, swapperWalletAddress, destinationAddress, referrerAddresses, signTransaction, connection
 		);
 	}
 
