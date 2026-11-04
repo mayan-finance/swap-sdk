@@ -5,22 +5,19 @@ export type BlinkOrderParams = {
 	dstChain: string;
 	srcToken: string;
 	dstToken: string;
-	bridgeTokenSrc: string;
-	bridgeTokenDst: string;
-	amountIn: string;
-	amountOut: string;
-	bridgeAmount: string;
-	bridgeOut: string;
-	minBridgeOut: string;
+	lockToken: string;
+	expectedAmountIn: string;
+	expectedAmountOut: string;
+	expectedLockAmount: string;
+	minLockAmount: string;
 	minAmountOut: string;
 	gasDrop: string;
 	recipient: string;
 	refundAddress: string;
-	refundToken: string;
 	referrers: Referrer[];
 	routerAddress: string;
 	refundFeeBridge: string;
-	nonce: Uint8Array;
+	random: Uint8Array;
 	paramsVersion: number;
 };
 
@@ -39,7 +36,7 @@ export type BlinkQuote = {
 	sponsorGasBudget?: bigint;
 	fulfillEtaSecs?: number;
 	directTransfer: boolean;
-	depositDeadline: string;
+	expiresAt: string;
 	guardianSetIndex: number;
 };
 
@@ -77,8 +74,8 @@ export type BlinkSwapInstructions = {
 	routerAddress: string;
 	srcToken: string;
 	amountIn: string;
-	bridgeToken: string;
-	minBridgeOut: string;
+	lockToken: string;
+	minLockAmount: string;
 	evm?: BlinkEvmSwap;
 	svm?: BlinkSvmSwap;
 };

@@ -10,20 +10,20 @@ import { assertBlinkQuoteHash } from './hash';
 import type { BlinkOrder, BlinkOrderParams, BlinkQuote } from './types';
 
 export function isBlinkSourceSwap(params: BlinkOrderParams): boolean {
-	return params.srcToken !== params.bridgeTokenSrc;
+	return params.srcToken !== params.lockToken;
 }
 
 export function isBlinkQuoteExpired(quote: BlinkQuote): boolean {
-	if (!quote.depositDeadline) {
+	if (!quote.expiresAt) {
 		return false;
 	}
-	const deadline = new Date(quote.depositDeadline).getTime();
-	return !Number.isNaN(deadline) && deadline <= Date.now();
+	const expiry = new Date(quote.expiresAt).getTime();
+	return !Number.isNaN(expiry) && expiry <= Date.now();
 }
 
-function assertDepositDeadline(quote: BlinkQuote): void {
+function assertNotExpired(quote: BlinkQuote): void {
 	if (isBlinkQuoteExpired(quote)) {
-		throw new Error('Blink quote deposit deadline passed, request a new quote');
+		throw new Error('Blink quote expired, request a new quote');
 	}
 }
 
@@ -59,7 +59,7 @@ function orderMismatch(quote: BlinkQuote, expected: OrderExpectation): string | 
 	if (params.srcChain !== expected.srcChain || params.dstChain !== expected.dstChain) {
 		return 'Blink order chains do not match the quote';
 	}
-	if (BigInt(params.amountIn) !== expected.amountIn) {
+	if (BigInt(params.expectedAmountIn) !== expected.amountIn) {
 		return 'Blink order amount does not match the quote';
 	}
 	if (!sameAddress(params.recipient, expected.recipient)) {
@@ -185,7 +185,7 @@ export async function fetchBlinkOrder(
 		}
 	}
 	assertBlinkQuoteHash(orderQuote);
-	assertDepositDeadline(orderQuote);
+	assertNotExpired(orderQuote);
 	const params = orderQuote.orderParams;
 	await assertBlinkContractRegistered(params.srcChain, params.routerAddress, orderQuote.guardianSetIndex);
 	const contracts = await getBlinkChainContracts(params.srcChain, orderQuote.guardianSetIndex);

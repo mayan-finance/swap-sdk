@@ -22,12 +22,12 @@ const PERMIT_DEADLINE_SECS = 1800;
 const blinkRouterInterface = new Interface([
 	'function depositNative(bytes32 quoteHash)',
 	'function depositToken(bytes32 quoteHash, address token, uint256 amount)',
-	'function depositWithSwap(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address bridgeToken, uint256 minBridgeOut)',
+	'function depositWithSwap(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address lockToken, uint256 minLockAmount)',
 	'function swapAndForward(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address dstToken, uint256 minAmountOut, uint256 amountOut, uint16 referrerBps, address recipient)',
 	'function depositTokenWithPermit(bytes32 quoteHash, address token, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s)',
 	'function depositTokenWithPermit2(bytes32 quoteHash, address token, uint256 amount, uint256 nonce, uint256 deadline, bytes signature)',
-	'function depositWithSwapAndPermit(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address bridgeToken, uint256 minBridgeOut, uint256 deadline, uint8 v, bytes32 r, bytes32 s)',
-	'function depositWithSwapAndPermit2(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address bridgeToken, uint256 minBridgeOut, uint256 nonce, uint256 deadline, bytes signature)',
+	'function depositWithSwapAndPermit(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address lockToken, uint256 minLockAmount, uint256 deadline, uint8 v, bytes32 r, bytes32 s)',
+	'function depositWithSwapAndPermit2(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address lockToken, uint256 minLockAmount, uint256 nonce, uint256 deadline, bytes signature)',
 	'function swapAndForwardWithPermit(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address dstToken, uint256 minAmountOut, uint256 amountOut, uint16 referrerBps, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)',
 	'function swapAndForwardWithPermit2(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address dstToken, uint256 minAmountOut, uint256 amountOut, uint16 referrerBps, address recipient, uint256 nonce, uint256 deadline, bytes signature)',
 ]);
@@ -64,7 +64,7 @@ function referrerTotalBps(referrers: { bps: number }[]): number {
 
 export function buildBlinkEvmDepositCall(order: BlinkOrder, signature?: BlinkEvmDepositSignature): BlinkEvmDepositCall {
 	const { quoteHash, orderParams: params } = order.quote;
-	const amountIn = BigInt(params.amountIn);
+	const amountIn = BigInt(params.expectedAmountIn);
 	const native = isNativeBlinkEvmToken(params.srcToken);
 	if (!signature && usesBlinkDirectTransfer(order)) {
 		return {
@@ -93,7 +93,7 @@ export function buildBlinkEvmDepositCall(order: BlinkOrder, signature?: BlinkEvm
 					swap.evm.swapCalldata,
 					params.dstToken,
 					BigInt(params.minAmountOut),
-					BigInt(params.amountOut),
+					BigInt(params.expectedAmountOut),
 					referrerTotalBps(params.referrers),
 					params.recipient,
 			  ]
@@ -103,8 +103,8 @@ export function buildBlinkEvmDepositCall(order: BlinkOrder, signature?: BlinkEvm
 					BigInt(swap.amountIn),
 					swap.evm.aggregator,
 					swap.evm.swapCalldata,
-					swap.bridgeToken,
-					BigInt(swap.minBridgeOut),
+					swap.lockToken,
+					BigInt(swap.minLockAmount),
 			  ]
 		: null;
 	const swapMethod = sameChain ? 'swapAndForward' : 'depositWithSwap';
@@ -173,7 +173,7 @@ export async function getBlinkFromEvmTxPayload(
 	const chainId = assertSignerChain(quote, signerChainId);
 	const order = await fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses, apiKey);
 	const params = order.quote.orderParams;
-	const usePermit = !!permit && !isNativeBlinkEvmToken(params.srcToken) && permit.value >= BigInt(params.amountIn);
+	const usePermit = !!permit && !isNativeBlinkEvmToken(params.srcToken) && permit.value >= BigInt(params.expectedAmountIn);
 	const call = buildBlinkEvmDepositCall(
 		order,
 		usePermit && permit
@@ -200,14 +200,14 @@ export function blinkPermit2WitnessTypedData(
 	nonce: bigint,
 	deadline: bigint,
 	quoteHash: string,
-	swap?: { bridgeToken: string; minBridgeOut: bigint }
+	swap?: { lockToken: string; minLockAmount: bigint }
 ) {
 	const witnessType = swap ? 'BlinkSwapDeposit' : 'BlinkDeposit';
 	const witnessFields = swap
 		? [
 				{ name: 'quoteHash', type: 'bytes32' },
-				{ name: 'bridgeToken', type: 'address' },
-				{ name: 'minBridgeOut', type: 'uint256' },
+				{ name: 'lockToken', type: 'address' },
+				{ name: 'minLockAmount', type: 'uint256' },
 		  ]
 		: [{ name: 'quoteHash', type: 'bytes32' }];
 	return {
@@ -236,7 +236,7 @@ export function blinkPermit2WitnessTypedData(
 			nonce,
 			deadline,
 			witness: swap
-				? { quoteHash, bridgeToken: swap.bridgeToken, minBridgeOut: swap.minBridgeOut }
+				? { quoteHash, lockToken: swap.lockToken, minLockAmount: swap.minLockAmount }
 				: { quoteHash },
 		},
 	};
@@ -305,7 +305,7 @@ export async function swapBlinkGaslessFromEvm(
 	if (isNativeBlinkEvmToken(params.srcToken)) {
 		throw new Error('Gasless Blink deposits require an ERC20 input token');
 	}
-	const amountIn = BigInt(params.amountIn);
+	const amountIn = BigInt(params.expectedAmountIn);
 	const spender = order.contracts.router;
 	const erc20 = new Contract(params.srcToken, ERC20Artifact.abi, signer.provider);
 	const permit2Allowance: bigint = await erc20.allowance(swapperAddress, addresses.BLINK_PERMIT2_ADDRESS);
@@ -321,7 +321,7 @@ export async function swapBlinkGaslessFromEvm(
 		nonce,
 		deadline,
 		order.quote.quoteHash,
-		isBlinkSourceSwap(params) ? { bridgeToken: params.bridgeTokenSrc, minBridgeOut: BigInt(params.minBridgeOut) } : undefined
+		isBlinkSourceSwap(params) ? { lockToken: params.lockToken, minLockAmount: BigInt(params.minLockAmount) } : undefined
 	);
 	const signature = await signer.signTypedData(typedData.domain, typedData.types, typedData.value);
 	await submitAndTrackBlinkGaslessOrder({

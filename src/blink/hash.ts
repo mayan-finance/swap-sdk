@@ -5,18 +5,11 @@ import type { BlinkOrderParams, BlinkQuote } from './types';
 
 export const BLINK_SUPPORTED_PARAMS_VERSION = 1;
 
-function minimalBigEndian(value: bigint): Buffer {
-	if (value <= BigInt(0)) {
-		return Buffer.alloc(0);
-	}
-	const hex = value.toString(16);
-	return Buffer.from(hex.length % 2 === 0 ? hex : '0' + hex, 'hex');
+function uint256BigEndian(value: bigint): Buffer {
+	return Buffer.from(value.toString(16).padStart(64, '0'), 'hex');
 }
 
 function encodeField(tag: number, value: Buffer): Buffer {
-	if (value.length === 0) {
-		return Buffer.alloc(0);
-	}
 	const header = Buffer.alloc(6);
 	header.writeUInt16BE(tag, 0);
 	header.writeUInt32BE(value.length, 2);
@@ -41,7 +34,7 @@ function encodeReferrers(referrers: Referrer[]): Buffer {
 
 export function encodeBlinkOrderParams(params: BlinkOrderParams): Buffer {
 	const str = (tag: number, value: string) => encodeField(tag, Buffer.from(value, 'utf8'));
-	const int = (tag: number, value: bigint) => encodeField(tag, minimalBigEndian(value));
+	const int = (tag: number, value: string) => encodeField(tag, uint256BigEndian(BigInt(value || '0')));
 	const version = Buffer.alloc(1);
 	version.writeUInt8(params.paramsVersion, 0);
 	return Buffer.concat([
@@ -50,22 +43,19 @@ export function encodeBlinkOrderParams(params: BlinkOrderParams): Buffer {
 		str(2, params.dstChain),
 		str(3, params.srcToken),
 		str(4, params.dstToken),
-		str(5, params.bridgeTokenSrc),
-		str(6, params.bridgeTokenDst),
-		int(7, BigInt(params.amountIn || '0')),
-		int(8, BigInt(params.amountOut || '0')),
-		int(9, BigInt(params.bridgeAmount || '0')),
-		int(10, BigInt(params.bridgeOut || '0')),
-		int(11, BigInt(params.minBridgeOut || '0')),
-		int(12, BigInt(params.minAmountOut || '0')),
-		int(13, BigInt(params.gasDrop || '0')),
-		str(14, params.recipient),
-		str(15, params.refundAddress),
-		str(16, params.refundToken),
-		encodeField(17, encodeReferrers(params.referrers)),
-		str(18, params.routerAddress),
-		int(19, BigInt(params.refundFeeBridge || '0')),
-		encodeField(20, Buffer.from(params.nonce)),
+		str(5, params.lockToken),
+		int(6, params.expectedAmountIn),
+		int(7, params.expectedAmountOut),
+		int(8, params.expectedLockAmount),
+		int(9, params.minLockAmount),
+		int(10, params.minAmountOut),
+		int(11, params.gasDrop),
+		str(12, params.recipient),
+		str(13, params.refundAddress),
+		encodeField(14, encodeReferrers(params.referrers)),
+		str(15, params.routerAddress),
+		int(16, params.refundFeeBridge),
+		encodeField(17, Buffer.from(params.random)),
 	]);
 }
 
