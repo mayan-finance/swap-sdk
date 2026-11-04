@@ -48,22 +48,19 @@ function decodeOrderParams(json: any): BlinkOrderParams {
 		dstChain: text(json.dst_chain),
 		srcToken: text(json.src_token),
 		dstToken: text(json.dst_token),
-		bridgeTokenSrc: text(json.bridge_token_src),
-		bridgeTokenDst: text(json.bridge_token_dst),
-		amountIn: text(json.amount_in),
-		amountOut: text(json.amount_out),
-		bridgeAmount: text(json.bridge_amount),
-		bridgeOut: text(json.bridge_out),
-		minBridgeOut: text(json.min_bridge_out),
+		lockToken: text(json.lock_token),
+		expectedAmountIn: text(json.expected_amount_in),
+		expectedAmountOut: text(json.expected_amount_out),
+		expectedLockAmount: text(json.expected_lock_amount),
+		minLockAmount: text(json.min_lock_amount),
 		minAmountOut: text(json.min_amount_out),
 		gasDrop: text(json.gas_drop),
 		recipient: text(json.recipient),
 		refundAddress: text(json.refund_address),
-		refundToken: text(json.refund_token),
 		referrers: items(json.referrers, decodeReferrer),
 		routerAddress: text(json.router_address),
 		refundFeeBridge: text(json.refund_fee_bridge),
-		nonce: Buffer.from(text(json.nonce), 'base64'),
+		random: Buffer.from(text(json.random), 'base64'),
 		paramsVersion: count(json.params_version),
 	};
 }
@@ -98,7 +95,7 @@ export function decodeBlinkQuote(json: any): BlinkQuote {
 				? count(quote.fulfill_eta_secs)
 				: undefined,
 		directTransfer: crossChain ? flag(quote.direct_transfer) : false,
-		depositDeadline: text(quote.deposit_deadline),
+		expiresAt: text(quote.expires_at),
 		guardianSetIndex: count(quote.guardian_set_index),
 	};
 }
@@ -120,8 +117,8 @@ export function decodeBlinkSwapInstructions(json: any): BlinkSwapInstructions {
 		routerAddress: text(json?.router_address),
 		srcToken: text(json?.src_token),
 		amountIn: text(json?.amount_in),
-		bridgeToken: text(json?.bridge_token),
-		minBridgeOut: text(json?.min_bridge_out),
+		lockToken: text(json?.lock_token),
+		minLockAmount: text(json?.min_lock_amount),
 	};
 	if (json?.evm) {
 		swap.evm = {

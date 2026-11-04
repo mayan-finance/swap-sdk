@@ -46,7 +46,7 @@ async function addDepositCall(
 ): Promise<void> {
 	const params = order.quote.orderParams;
 	const inputCoin = await resolveInputCoin(
-		BigInt(params.amountIn),
+		BigInt(params.expectedAmountIn),
 		swapperAddress,
 		params.srcToken,
 		suiClient,
@@ -77,22 +77,18 @@ async function addSourceSwapOpenCall(
 	options?: ComposableSuiMoveCallsOptions
 ): Promise<void> {
 	const params = order.quote.orderParams;
-	const amountIn = BigInt(params.amountIn);
+	const amountIn = BigInt(params.expectedAmountIn);
 	const [chains, expiresAtMs] = await Promise.all([getBlinkChains(), sourceSwapExpiryMs()]);
 	const swapExecutor = chains.find((c) => c.chain === params.srcChain)?.swapExecutor;
 	if (!swapExecutor) {
 		throw new Error('Blink source swaps are unavailable on sui');
 	}
-	const { balance } = await suiClient.core.getBalance({ owner: swapperAddress, coinType: params.srcToken });
-	const shortfall = amountIn - BigInt(balance.addressBalance);
-	if (shortfall > BigInt(0)) {
-		const payment = await resolveInputCoin(shortfall, swapperAddress, params.srcToken, suiClient, tx, options?.inputCoin);
-		tx.moveCall({
-			target: '0x2::coin::send_funds',
-			typeArguments: [params.srcToken],
-			arguments: [payment as TransactionObjectArgument, tx.pure.address(swapperAddress)],
-		});
-	}
+	const payment = await resolveInputCoin(amountIn, swapperAddress, params.srcToken, suiClient, tx, options?.inputCoin);
+	tx.moveCall({
+		target: '0x2::coin::send_funds',
+		typeArguments: [params.srcToken],
+		arguments: [payment as TransactionObjectArgument, tx.pure.address(swapperAddress)],
+	});
 	const noRateLimit = tx.moveCall({
 		target: '0x1::option::none',
 		typeArguments: ['0x2::allowance::RateLimit'],
@@ -111,12 +107,12 @@ async function addSourceSwapOpenCall(
 	});
 	tx.moveCall({
 		target: `${params.routerAddress}::blink::open_source_swap`,
-		typeArguments: [params.srcToken, params.bridgeTokenSrc],
+		typeArguments: [params.srcToken, params.lockToken],
 		arguments: [
 			tx.object(escrowOf(order)),
 			proposal,
 			tx.pure.vector('u8', hexToUint8Array(order.quote.quoteHash)),
-			tx.pure.u64(BigInt(params.minBridgeOut)),
+			tx.pure.u64(BigInt(params.minLockAmount)),
 			tx.object.clock(),
 		],
 	});

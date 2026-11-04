@@ -152,7 +152,7 @@ async function depositTokenInstruction(
 async function depositInstruction(connection: Connection, order: BlinkOrder, owner: PublicKey): Promise<TransactionInstruction> {
 	const params = order.quote.orderParams;
 	const programId = new PublicKey(params.routerAddress);
-	const amount = BigInt(params.amountIn);
+	const amount = BigInt(params.expectedAmountIn);
 	if (isNativeBlinkSvmToken(params.srcToken)) {
 		return depositNativeInstruction(programId, owner, order.quote.quoteHash, amount);
 	}
@@ -434,7 +434,7 @@ function swapDepositData(
 	quoteHash: string,
 	srcMint: PublicKey,
 	srcAmount: bigint,
-	minBridgeOut: bigint,
+	minLockAmount: bigint,
 	swapData: Buffer
 ): Buffer {
 	const out = Buffer.alloc(92 + swapData.length);
@@ -442,7 +442,7 @@ function swapDepositData(
 	out.set(hexToUint8Array(quoteHash), 8);
 	out.set(srcMint.toBytes(), 40);
 	out.writeBigUInt64LE(srcAmount, 72);
-	out.writeBigUInt64LE(minBridgeOut, 80);
+	out.writeBigUInt64LE(minLockAmount, 80);
 	out.writeUInt32LE(swapData.length, 88);
 	swapData.copy(out, 92);
 	return out;
@@ -478,12 +478,12 @@ async function buildSwapDepositInstructions(
 		throw new Error('Blink returned swap instructions that are not for Solana');
 	}
 	const quoteHash = order.quote.quoteHash;
-	const amount = BigInt(params.amountIn);
+	const amount = BigInt(params.expectedAmountIn);
 	const programId = new PublicKey(order.swap.routerAddress);
 	const authority = blinkSvmSwapAuthority(programId, owner, quoteHash);
-	const bridgeMint = new PublicKey(params.bridgeTokenSrc);
+	const lockMint = new PublicKey(params.lockToken);
 	const escrow = escrowAuthority(programId);
-	const tokenProgram = await tokenProgramOf(connection, bridgeMint);
+	const tokenProgram = await tokenProgramOf(connection, lockMint);
 	const nativeSrc = isNativeBlinkSvmToken(params.srcToken);
 	const source = await loadMint(connection, nativeSrc ? solMint : new PublicKey(params.srcToken));
 	const authorityInput = getAssociatedTokenAddress(source.address, authority, true, source.tokenProgram);
@@ -500,9 +500,9 @@ async function buildSwapDepositInstructions(
 		programId,
 		keys: [
 			{ pubkey: owner, isSigner: true, isWritable: true },
-			{ pubkey: bridgeMint, isSigner: false, isWritable: false },
+			{ pubkey: lockMint, isSigner: false, isWritable: false },
 			{ pubkey: escrow, isSigner: false, isWritable: false },
-			{ pubkey: getAssociatedTokenAddress(bridgeMint, escrow, true, tokenProgram), isSigner: false, isWritable: true },
+			{ pubkey: getAssociatedTokenAddress(lockMint, escrow, true, tokenProgram), isSigner: false, isWritable: true },
 			{ pubkey: authority, isSigner: false, isWritable: false },
 			{ pubkey: new PublicKey(swap.swap.programId), isSigner: false, isWritable: false },
 			{ pubkey: tokenProgram, isSigner: false, isWritable: false },
@@ -520,7 +520,7 @@ async function buildSwapDepositInstructions(
 			quoteHash,
 			new PublicKey(params.srcToken),
 			amount,
-			BigInt(params.minBridgeOut),
+			BigInt(params.minLockAmount),
 			Buffer.from(swap.swap.data, 'base64')
 		),
 	});
