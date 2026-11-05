@@ -1,11 +1,11 @@
 import { toUtf8Bytes, verifyMessage } from 'ethers';
-import { getBlinkContracts } from './api';
+import { getBlinkContracts } from '../api';
 import type {
 	BlinkChainContracts,
 	BlinkContractManifest,
 	BlinkContractsResponse,
 	BlinkGuardianSet,
-} from './types';
+} from '../types';
 
 export const BLINK_GENESIS_GUARDIANS: readonly string[] = [
 	'0x4FbA3CE3CC1eb4297E274f42B1C252Ba42F886a6',
@@ -99,10 +99,16 @@ function parseManifest(raw: string): BlinkContractManifest {
 	}
 	const chains: Record<string, BlinkChainContracts> = {};
 	for (const [chain, entry] of Object.entries(json.chains)) {
-		if (typeof entry?.router !== 'string') {
+		const swapPrograms = entry?.swap_programs ?? [];
+		if (
+			typeof entry?.router !== 'string' ||
+			(entry.escrow !== undefined && typeof entry.escrow !== 'string') ||
+			!Array.isArray(swapPrograms) ||
+			!swapPrograms.every((program) => typeof program === 'string')
+		) {
 			throw new Error(`Blink contract manifest entry for ${chain} is malformed`);
 		}
-		chains[chain] = { router: entry.router, escrow: entry.escrow, swapPrograms: entry.swap_programs ?? [] };
+		chains[chain] = { router: entry.router, escrow: entry.escrow, swapPrograms };
 	}
 	return { guardianSetIndex: json.guardian_set_index, chains };
 }

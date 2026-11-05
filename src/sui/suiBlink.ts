@@ -1,12 +1,9 @@
 import { ClientWithCoreApi } from '@mysten/sui/client';
 import { Transaction, TransactionObjectArgument } from '@mysten/sui/transactions';
-import type { ChainReferrers, ComposableSuiMoveCallsOptions, Quote, ReferrerAddresses } from '../types';
-import { hexToUint8Array } from '../utils';
-import { getCurrentChainTime } from '../api';
-import { getBlinkChains } from '../blink/api';
-import { submitAndTrackBlinkGaslessOrder } from '../blink/gasless';
-import { fetchBlinkOrder, isBlinkSourceSwap } from '../blink/order';
-import type { BlinkOrder } from '../blink/types';
+import type { BlinkOrder, ChainReferrers, ComposableSuiMoveCallsOptions, Quote, ReferrerAddresses } from '../types';
+import { getQuoteRefundAddress, hexToUint8Array } from '../utils';
+import { getBlinkChains, getCurrentChainTime, submitBlinkGaslessOrder } from '../api';
+import { resolveBlinkOrder, needsBlinkSourceSwap } from '../blink/order';
 import { resolveInputCoin } from './utils';
 
 const SOURCE_SWAP_WINDOW_MS = BigInt(300_000);
@@ -27,6 +24,26 @@ function assertBlinkSuiQuote(quote: Quote): void {
 	if (quote.fromChain !== 'sui') {
 		throw new Error('Unsupported source chain for Blink: ' + quote.fromChain);
 	}
+}
+
+/** The prefetched order when one was passed, after checking it refunds where the caller asked. */
+async function orderFor(
+	quote: Quote,
+	swapperAddress: string,
+	destinationAddress: string,
+	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
+	options?: ComposableSuiMoveCallsOptions
+): Promise<BlinkOrder> {
+	const refundAddress = getQuoteRefundAddress(quote, swapperAddress, destinationAddress, options);
+	const order = options?.blinkOrder;
+	if (!order) {
+		return resolveBlinkOrder(quote, refundAddress ?? swapperAddress, destinationAddress, referrerAddresses);
+	}
+	const bound = order.quote.orderParams.refundAddress;
+	if (refundAddress && bound.toLowerCase() !== refundAddress.toLowerCase()) {
+		throw new Error(`The prefetched Blink order refunds to ${bound}, not to refundAddress ${refundAddress}`);
+	}
+	return order;
 }
 
 function escrowOf(order: BlinkOrder): string {
@@ -126,7 +143,7 @@ async function buildDepositTransaction(
 ): Promise<Transaction> {
 	const tx = options?.builtTransaction ?? new Transaction();
 	tx.setSenderIfNotSet(swapperAddress);
-	if (isBlinkSourceSwap(order.quote.orderParams)) {
+	if (needsBlinkSourceSwap(order.quote.orderParams)) {
 		await addSourceSwapOpenCall(tx, order, swapperAddress, suiClient, options);
 	} else {
 		await addDepositCall(tx, order, swapperAddress, suiClient, options);
@@ -146,9 +163,7 @@ export async function createBlinkFromSuiMoveCalls(
 	if (quote.gasless) {
 		throw new Error('Gasless Blink quotes are submitted through swapBlinkGaslessFromSui');
 	}
-	const order =
-		options?.blinkOrder ??
-		(await fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses));
+	const order = await orderFor(quote, swapperAddress, destinationAddress, referrerAddresses, options);
 	return buildDepositTransaction(order, swapperAddress, suiClient, options);
 }
 
@@ -189,9 +204,7 @@ export async function swapBlinkGaslessFromSui(
 	if (!quote.gasless) {
 		throw new Error('Quote is not a gasless BLINK quote');
 	}
-	const order =
-		options?.blinkOrder ??
-		(await fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses));
+	const order = await orderFor(quote, swapperAddress, destinationAddress, referrerAddresses, options);
 	const sponsor = order.quote.sponsorAddress;
 	const gasBudget = order.quote.sponsorGasBudget;
 	if (!sponsor || gasBudget === undefined) {
@@ -200,7 +213,7 @@ export async function swapBlinkGaslessFromSui(
 	const tx = await buildDepositTransaction(order, swapperAddress, suiClient, options);
 	const sponsored = await sponsorTransaction(tx, suiClient, sponsor, gasBudget);
 	const signed = await signTransaction(sponsored);
-	await submitAndTrackBlinkGaslessOrder({
+	await submitBlinkGaslessOrder({
 		quoteHash: order.quote.quoteHash,
 		sui: { txBase64: signed.bytes, signature: signed.signature },
 	});

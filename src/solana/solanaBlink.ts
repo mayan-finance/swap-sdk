@@ -15,6 +15,9 @@ import { blob, struct, u32 } from '@solana/buffer-layout';
 import { Buffer } from 'buffer';
 import addresses from '../addresses';
 import type {
+	BlinkOrder,
+	BlinkSvmInstruction,
+	BlinkSvmSwap,
 	ChainReferrers,
 	Quote,
 	ReferrerAddresses,
@@ -22,10 +25,8 @@ import type {
 	SwapMessageV0Params,
 } from '../types';
 import { getAssociatedTokenAddress, getSafeU64Blob, hexToUint8Array } from '../utils';
-import { getBlinkPriorityFee } from '../blink/api';
-import { submitAndTrackBlinkGaslessOrder } from '../blink/gasless';
-import { fetchBlinkOrder, isBlinkSourceSwap } from '../blink/order';
-import type { BlinkOrder, BlinkSvmInstruction, BlinkSvmSwap } from '../blink/types';
+import { getBlinkPriorityFee, submitBlinkGaslessOrder } from '../api';
+import { resolveBlinkOrder, needsBlinkSourceSwap } from '../blink/order';
 import {
 	createAssociatedTokenAccountInstruction,
 	createSplTransferInstruction,
@@ -582,7 +583,8 @@ export async function createBlinkFromSolanaInstructions(
 	swapperAddress: string,
 	destinationAddress: string,
 	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
-	connection: Connection
+	connection: Connection,
+	refundAddress?: string
 ): Promise<{
 	instructions: TransactionInstruction[];
 	signers: Keypair[];
@@ -594,11 +596,11 @@ export async function createBlinkFromSolanaInstructions(
 		throw new Error('Gasless Blink quotes are submitted through swapFromSolana');
 	}
 	const [order, computeUnitPrice] = await Promise.all([
-		fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses),
+		resolveBlinkOrder(quote, refundAddress ?? swapperAddress, destinationAddress, referrerAddresses),
 		getBlinkPriorityFee(quote.fromChain),
 	]);
 	const owner = new PublicKey(swapperAddress);
-	if (!isBlinkSourceSwap(order.quote.orderParams)) {
+	if (!needsBlinkSourceSwap(order.quote.orderParams)) {
 		const instructions = [
 			...computeBudgetInstructions(DEPOSIT_COMPUTE_UNIT_LIMIT, computeUnitPrice),
 			await depositInstruction(connection, order, owner),
@@ -615,14 +617,15 @@ export async function swapBlinkGaslessFromSolana(
 	destinationAddress: string,
 	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	signTransaction: SolanaTransactionSigner,
-	connection: Connection
+	connection: Connection,
+	refundAddress?: string
 ): Promise<{ signature: string; serializedTrx: Uint8Array | null }> {
 	assertBlinkSolanaQuote(quote);
 	if (!quote.gasless) {
 		throw new Error('Quote is not a gasless BLINK quote');
 	}
-	const order = await fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses);
-	if (isBlinkSourceSwap(order.quote.orderParams)) {
+	const order = await resolveBlinkOrder(quote, refundAddress ?? swapperAddress, destinationAddress, referrerAddresses);
+	if (needsBlinkSourceSwap(order.quote.orderParams)) {
 		throw new Error('Gasless Blink swap deposits are unavailable on solana');
 	}
 	const sponsor = order.quote.sponsorAddress;
@@ -643,6 +646,6 @@ export async function swapBlinkGaslessFromSolana(
 			verifySignatures: false,
 		})
 	).toString('base64');
-	await submitAndTrackBlinkGaslessOrder({ quoteHash: order.quote.quoteHash, svm: { txBase64 } });
+	await submitBlinkGaslessOrder({ quoteHash: order.quote.quoteHash, svm: { txBase64 } });
 	return { signature: order.quote.quoteHash, serializedTrx: null };
 }

@@ -14,10 +14,22 @@ import {
 	EstimateGasEvmParams,
 	GetEvmSwapParams,
 	HyperCoreWithdrawCircleTypedData,
+	BlinkChain,
+	BlinkContractsResponse,
+	BlinkGaslessOrderRequest,
+	BlinkGaslessSubmission,
+	BlinkSwapInstructions,
 } from './types';
 import addresses from './addresses';
 import { checkSdkVersionSupport, getSdkVersion } from './utils';
-import { BLINK_SUPPORTED_PARAMS_VERSION } from './blink/hash';
+import {
+	BLINK_SUPPORTED_PARAMS_VERSION,
+	decodeBlinkChains,
+	decodeBlinkContractsResponse,
+	decodeBlinkGaslessSubmission,
+	decodeBlinkPriorityFee,
+	decodeBlinkSwapInstructions,
+} from './blink/utils';
 import { SwiftEvmGasLessParams } from './evm/evmSwift';
 
 function toQueryString(params: Record<string, any>): string {
@@ -493,4 +505,76 @@ export async function submitHyperCoreWithdraw(value: HyperCoreWithdrawCircleType
 		throw result;
 	}
 	return result.orderId;
+}
+
+export async function getBlinkSwapInstructions(quoteHash: string): Promise<BlinkSwapInstructions> {
+	const res = await fetch(`${addresses.BLINK_API_URL}/v1/quotes/${quoteHash}/instructions`, {
+		method: 'GET',
+		redirect: 'follow',
+	});
+	await check5xxError(res);
+	const result = await res.json();
+	if (res.status !== 200 && res.status !== 201) {
+		throw result;
+	}
+	return decodeBlinkSwapInstructions(result);
+}
+
+export async function getBlinkContracts(): Promise<BlinkContractsResponse> {
+	const res = await fetch(`${addresses.BLINK_API_URL}/v1/contracts`, {
+		method: 'GET',
+		redirect: 'follow',
+	});
+	await check5xxError(res);
+	const result = await res.json();
+	if (res.status !== 200 && res.status !== 201) {
+		throw result;
+	}
+	return decodeBlinkContractsResponse(result);
+}
+
+export async function getBlinkChains(): Promise<BlinkChain[]> {
+	const res = await fetch(`${addresses.BLINK_API_URL}/v1/chains`, {
+		method: 'GET',
+		redirect: 'follow',
+	});
+	await check5xxError(res);
+	const result = await res.json();
+	if (res.status !== 200 && res.status !== 201) {
+		throw result;
+	}
+	return decodeBlinkChains(result);
+}
+
+export async function getBlinkPriorityFee(chain: ChainName): Promise<bigint> {
+	const res = await fetch(`${addresses.BLINK_API_URL}/v1/chains/${chain}/priority-fee`, {
+		method: 'GET',
+		redirect: 'follow',
+	});
+	await check5xxError(res);
+	const result = await res.json();
+	if (res.status !== 200 && res.status !== 201) {
+		throw result;
+	}
+	return decodeBlinkPriorityFee(result);
+}
+
+export async function submitBlinkGaslessOrder(request: BlinkGaslessOrderRequest): Promise<BlinkGaslessSubmission> {
+	const res = await fetch(`${addresses.BLINK_API_URL}/v1/gasless/orders`, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify(request),
+	});
+	await check5xxError(res);
+	const result = await res.json();
+	if (res.status !== 200 && res.status !== 201) {
+		throw result;
+	}
+	const submission = decodeBlinkGaslessSubmission(result);
+	if (submission.status === 'failed' || submission.status === 'rejected') {
+		throw new Error(submission.error ?? 'Blink gasless submission failed');
+	}
+	return submission;
 }

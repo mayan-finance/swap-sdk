@@ -1,23 +1,25 @@
 import { SystemProgram } from '@solana/web3.js';
 import { ZeroAddress } from 'ethers';
-import type { ChainReferrers, Quote, Referrer, ReferrerAddresses } from '../types';
+import type {
+	BlinkOrder,
+	BlinkOrderParams,
+	BlinkQuote,
+	ChainReferrers,
+	Quote,
+	Referrer,
+	ReferrerAddresses,
+} from '../types';
 import { getBlinkReferrers } from '../utils';
-import { getBlinkSwapInstructions } from './api';
+import { getBlinkSwapInstructions } from '../api';
 import { assertBlinkContractRegistered, getBlinkChainContracts } from './contracts';
-import { decodeBlinkQuote } from './decode';
-import { assertBlinkQuoteHash } from './hash';
-import type { BlinkOrder, BlinkOrderParams, BlinkQuote, BlinkSwapInstructions } from './types';
+import { assertBlinkQuoteHash, decodeBlinkQuote } from './utils';
 
-export function isBlinkSourceSwap(params: BlinkOrderParams): boolean {
+export function needsBlinkSourceSwap(params: BlinkOrderParams): boolean {
 	return params.srcToken !== params.lockToken;
 }
 
 export function isBlinkQuoteExpired(quote: BlinkQuote): boolean {
-	if (!quote.expiresAt) {
-		return false;
-	}
-	const expiry = new Date(quote.expiresAt).getTime();
-	return !Number.isNaN(expiry) && expiry <= Date.now();
+	return Date.parse(quote.expiresAt) <= Date.now();
 }
 
 /**
@@ -26,8 +28,8 @@ export function isBlinkQuoteExpired(quote: BlinkQuote): boolean {
  * fetched without them is a price preview and cannot be swapped.
  */
 export function hasBlinkQuoteHash(quote: Quote): boolean {
-	const embedded = quote.blinkQuote?.cross_chain ?? quote.blinkQuote?.same_chain_swap;
-	const hash = embedded?.quote_hash;
+	const embedded = quote.blinkQuote?.crossChain ?? quote.blinkQuote?.sameChainSwap;
+	const hash = embedded?.quoteHash;
 	return typeof hash === 'string' && hash !== '';
 }
 
@@ -93,7 +95,7 @@ function assertOrderMatchesQuote(
  * contracts (and source-swap instructions) the deposit needs. It never requests a quote: the
  * `Quote` must come from `fetchQuote` called with `destinationAddress` and `refundAddress`.
  */
-export async function fetchBlinkOrder(
+export async function resolveBlinkOrder(
 	quote: Quote,
 	refundAddress: string,
 	destinationAddress: string,
@@ -124,10 +126,10 @@ export async function fetchBlinkOrder(
 	const params = order.orderParams;
 	await assertBlinkContractRegistered(params.srcChain, params.routerAddress, order.guardianSetIndex);
 	const contracts = await getBlinkChainContracts(params.srcChain, order.guardianSetIndex);
-	let swap: BlinkSwapInstructions | undefined;
-	if (isBlinkSourceSwap(params) && quote.fromChain !== 'sui') {
-		swap = await getBlinkSwapInstructions(order.quoteHash);
-		await assertBlinkContractRegistered(params.srcChain, swap.routerAddress, order.guardianSetIndex);
+	if (!needsBlinkSourceSwap(params) || quote.fromChain === 'sui') {
+		return { quote: order, contracts };
 	}
+	const swap = await getBlinkSwapInstructions(order.quoteHash);
+	await assertBlinkContractRegistered(params.srcChain, swap.routerAddress, order.guardianSetIndex);
 	return { quote: order, swap, contracts };
 }

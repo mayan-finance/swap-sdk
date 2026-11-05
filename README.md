@@ -192,15 +192,15 @@ Pick one and pass it to the swap function.
 
 `BLINK` quotes are offered by default. Pass `blink: false` in `QuoteOptions` to leave them out.
 
-A `BLINK` quote can only be swapped when `fetchQuote` was called with both `destinationAddress` and `refundAddress` (the swapper's address). The returned quote then carries the Blink order bound to those addresses in `blinkQuote`, and the swap functions use it as is; `hasBlinkQuoteHash(quote)` tells you whether a quote has one. Without them the quote is a price preview and the swap functions throw instead of fetching an order themselves. The SDK verifies the order hash, the amounts, the recipient, the refund address and the referrers against the quote and the swap inputs, and checks every contract it touches against the guardian-signed Blink contract manifest before building the deposit. Quotes expire 30 minutes after issuance; past that the SDK refuses to build the deposit, so request a new quote.
+A `BLINK` quote can only be swapped when `fetchQuote` was called with both `destinationAddress` and `refundAddress` (the swapper's address, or the `refundAddress` you pass in the swap options). The returned quote then carries the Blink order bound to those addresses in `blinkQuote`, and the swap functions use it as is; `hasBlinkQuoteHash(quote)` tells you whether a quote has one. Without them the quote is a price preview and the swap functions throw instead of fetching an order themselves. The SDK verifies the order hash, the amounts, the recipient, the refund address and the referrers against the quote and the swap inputs, and checks every contract it touches against the guardian-signed Blink contract manifest before building the deposit. Quotes expire 30 minutes after issuance; past that the SDK refuses to build the deposit, so request a new quote.
 
 Referrer splits work the same way as for Swift V2: pass `referrers` when fetching the quote and the same object as `referrerAddresses` at swap time. Blink pays every listed wallet on the source chain.
 
-EVM deposits do not go through the Mayan forwarder. Tokens are pulled by the Blink router, so an ERC20 approval must target the deposit contract. Use `includeAllowanceTx` to bundle the approval, or call `fetchBlinkOrder` first and approve `order.quote.routerAddress` (or `order.swap.routerAddress` when the order starts with a source swap). When the order allows a direct transfer the SDK sends a plain ERC20 transfer to the router instead, and no approval is needed. A `permit` is honored only if it was signed for the router as spender.
+EVM deposits do not go through the Mayan forwarder. Tokens are pulled by the Blink router, so an ERC20 approval must target the deposit contract. Use `includeAllowanceTx` to bundle the approval, or call `resolveBlinkOrder` first and approve `order.quote.routerAddress` (or `order.swap.routerAddress` when the order starts with a source swap). When the order allows a direct transfer the SDK sends a plain ERC20 transfer to the router instead, and no approval is needed. A `permit` is honored only if it was signed for the router as spender.
 
 Gasless `BLINK` quotes (`gasless: true` in `QuoteOptions`) are submitted to Blink instead of being sent by the user. On EVM the user signs a Permit2 witness (plus an EIP-2612 permit for Permit2 when the token supports it and no Permit2 allowance exists), on Solana the user signs a transaction whose fee payer is the Blink sponsor, and on Sui use `swapBlinkGaslessFromSui` with a `signTransaction` callback. The swap functions return the Blink quote hash, which is also the explorer order id prefixed with `BLINK_`.
 
-Sui orders that start with a source swap are opened by the user and executed by Blink. Pass a prefetched order through `ComposableSuiMoveCallsOptions.blinkOrder` and track the execution with `trackBlinkSourceSwap(order.quote.quoteHash)`.
+Sui orders that start with a source swap are opened by the user and executed by Blink. Pass a prefetched order through `ComposableSuiMoveCallsOptions.blinkOrder` and track the execution on the Explorer API with the quote hash, as for a gasless order.
 
 ### Slippage
 
@@ -261,7 +261,7 @@ const tx = await swapFromEvm(
   permit,      // optional, EIP-2612
   overrides,   // optional
   payload,     // optional
-  options,     // optional: { apiKey, includeAllowanceTx, swiftRefundAddress }
+  options,     // optional: { apiKey, includeAllowanceTx, refundAddress }
 );
 ```
 
@@ -429,32 +429,45 @@ const tx = await swapFromEvm(
 
 ## Advanced
 
-### Custom refund address (Swift)
+### Custom refund address
 
-A Swift order that cannot be completed refunds to the wallet that started it. Pass `swiftRefundAddress` to redirect it to another source-chain address, for when the initiating wallet cannot receive funds.
+An order that cannot be completed is refunded on the source chain. Pass `refundAddress` in the swap options to choose the wallet that receives the refund, for when the initiating wallet cannot receive funds. It must be a valid wallet on the **source** chain; zero addresses are rejected.
 
 ```typescript
 // EVM: via the options argument
 const tx = await swapFromEvm(
   quote, swapperAddress, destinationWalletAddress, referrerAddresses,
   signer, permit, overrides, payload,
-  { swiftRefundAddress: 'REFUND WALLET ON SOURCE CHAIN' },
+  { refundAddress: 'REFUND WALLET ON SOURCE CHAIN' },
 );
 
 // Solana: via the instructionOptions argument
 const swapTrx = await swapFromSolana(
   quote, originWalletAddress, destinationWalletAddress, referrerAddresses,
   signSolanaTransaction, solanaConnection, extraRpcs, sendOptions, jitoOptions,
-  { swiftRefundAddress: 'REFUND WALLET ON SOURCE CHAIN' },
+  { refundAddress: 'REFUND WALLET ON SOURCE CHAIN' },
+);
+
+// Sui: via the options argument
+const tx = await createSwapFromSuiMoveCalls(
+  quote, originWalletAddress, destinationWalletAddress, referrerAddresses,
+  payload, suiClient,
+  { refundAddress: 'REFUND WALLET ON SOURCE CHAIN' },
 );
 ```
 
-The same option exists on `getSwapFromEvmTxPayload` and `createSwapFromSolanaInstructions`.
+The same option exists on `getSwapFromEvmTxPayload`, `createSwapFromSolanaInstructions` and `swapBlinkGaslessFromSui`.
 
-- **EVM.** Gasless Swift orders always refund to the swapper. A different `swiftRefundAddress` is rejected.
-- **Solana.** Only Swift V2 quotes (`quote.swiftVersion === 'V2'`) support a custom refund address.
-- **Swift quotes only.** Other quote types ignore the option and refund to the swapper wallet. If a separate refund address is critical, filter for `quote.type === 'SWIFT'`.
-- The refund address must be a valid wallet on the **source** chain. Zero addresses are rejected.
+Not every protocol can honor it. The SDK checks the option against the quote type before building anything and throws when the protocol cannot refund to that wallet:
+
+- **Swift.** Honored. Gasless Swift orders on EVM always refund to the swapper, so a different address is rejected there. On Solana only Swift V2 quotes (`quote.swiftVersion === 'V2'`) support it.
+- **Blink.** Honored. The Blink order is bound to its refund address when the quote is issued, so fetch the quote with the same `refundAddress` (see [Blink](#blink)).
+- **MCTP and Fast MCTP.** These protocols refund to the destination address. A `refundAddress` that is not `destinationAddress` is rejected.
+- **Wormhole and mono-chain.** These refund to, or keep the funds in, the swapper wallet. A `refundAddress` that is not `swapperAddress` is rejected.
+
+EVM and Sui addresses are compared case-insensitively, so a checksummed and a lowercase spelling of the same wallet match.
+
+`swiftRefundAddress` is the previous name of this option. It is still accepted, applies to Swift quotes only, and must name the same wallet as `refundAddress` when both are passed.
 
 ### Bundling extra Solana instructions
 

@@ -9,11 +9,10 @@ import {
 	toBeHex,
 	type TransactionRequest,
 } from 'ethers';
-import type { ChainReferrers, Erc20Permit, EvmForwarderParams, Quote, ReferrerAddresses } from '../types';
+import type { BlinkOrder, ChainReferrers, Erc20Permit, EvmForwarderParams, Quote, ReferrerAddresses } from '../types';
 import { getPermitDomain, getWormholeChainIdById, getWormholeChainIdByName } from '../utils';
-import { fetchBlinkOrder, isBlinkSourceSwap } from '../blink/order';
-import { submitAndTrackBlinkGaslessOrder } from '../blink/gasless';
-import type { BlinkOrder } from '../blink/types';
+import { resolveBlinkOrder, needsBlinkSourceSwap } from '../blink/order';
+import { submitBlinkGaslessOrder } from '../api';
 import ERC20Artifact from './ERC20Artifact';
 import addresses from '../addresses';
 
@@ -47,7 +46,7 @@ export function usesBlinkDirectTransfer(order: BlinkOrder): boolean {
 		order.quote.directTransfer &&
 		!isNativeBlinkEvmToken(params.srcToken) &&
 		params.srcChain !== params.dstChain &&
-		!isBlinkSourceSwap(params)
+		!needsBlinkSourceSwap(params)
 	);
 }
 
@@ -147,7 +146,8 @@ export async function getBlinkFromEvmTxPayload(
 	destinationAddress: string,
 	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	signerChainId: number | string,
-	permit: Erc20Permit | null | undefined
+	permit: Erc20Permit | null | undefined,
+	refundAddress?: string
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 	if (quote.type !== 'BLINK') {
 		throw new Error('Quote type is not BLINK');
@@ -156,7 +156,7 @@ export async function getBlinkFromEvmTxPayload(
 		throw new Error('Gasless Blink quotes are submitted through swapFromEvm');
 	}
 	const chainId = assertSignerChain(quote, signerChainId);
-	const order = await fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses);
+	const order = await resolveBlinkOrder(quote, refundAddress ?? swapperAddress, destinationAddress, referrerAddresses);
 	const params = order.quote.orderParams;
 	const permitCoversAmount =
 		!!permit && !isNativeBlinkEvmToken(params.srcToken) && permit.value >= BigInt(params.expectedAmountIn);
@@ -271,7 +271,8 @@ export async function swapBlinkGaslessFromEvm(
 	destinationAddress: string,
 	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	signer: Signer,
-	signerChainId: number | string
+	signerChainId: number | string,
+	refundAddress?: string
 ): Promise<string> {
 	if (quote.type !== 'BLINK' || !quote.gasless) {
 		throw new Error('Quote is not a gasless BLINK quote');
@@ -280,7 +281,7 @@ export async function swapBlinkGaslessFromEvm(
 		throw new Error('No provider found for signer');
 	}
 	const chainId = assertSignerChain(quote, signerChainId);
-	const order = await fetchBlinkOrder(quote, swapperAddress, destinationAddress, referrerAddresses);
+	const order = await resolveBlinkOrder(quote, refundAddress ?? swapperAddress, destinationAddress, referrerAddresses);
 	const params = order.quote.orderParams;
 	if (isNativeBlinkEvmToken(params.srcToken)) {
 		throw new Error('Gasless Blink deposits require an ERC20 input token');
@@ -302,10 +303,10 @@ export async function swapBlinkGaslessFromEvm(
 		nonce,
 		deadline,
 		order.quote.quoteHash,
-		isBlinkSourceSwap(params) ? { lockToken: params.lockToken, minLockAmount: BigInt(params.minLockAmount) } : undefined
+		needsBlinkSourceSwap(params) ? { lockToken: params.lockToken, minLockAmount: BigInt(params.minLockAmount) } : undefined
 	);
 	const signature = await signer.signTypedData(typedData.domain, typedData.types, typedData.value);
-	await submitAndTrackBlinkGaslessOrder({
+	await submitBlinkGaslessOrder({
 		quoteHash: order.quote.quoteHash,
 		evm: {
 			owner: swapperAddress,
