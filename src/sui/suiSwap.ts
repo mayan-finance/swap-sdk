@@ -6,7 +6,7 @@ import {
 } from '../types';
 import { ClientWithCoreApi } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
-import { getQuoteSuitableReferrerAddress } from '../utils';
+import { getQuoteRefundAddress, getQuoteSuitableReferrerAddress } from '../utils';
 import { createMctpFromSuiMoveCalls } from './suiMctp';
 import { createFastMctpFromSuiMoveCalls } from './suiFastMctp';
 import { Buffer } from 'buffer';
@@ -26,6 +26,9 @@ export async function createSwapFromSuiMoveCalls(
 		quote,
 		referrerAddresses
 	);
+
+	// rejects a refundAddress the quote type cannot honour; the Blink builder reads it from options
+	getQuoteRefundAddress(quote, swapperWalletAddress, destinationAddress, options);
 
 	if (quote.toChain === 'hypercore') {
 		throw new Error('HyperCore deposit temporarily not supported from Sui chain');

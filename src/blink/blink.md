@@ -68,17 +68,17 @@ need are listed in §9.
 flowchart LR
     A[fetchQuote<br/>blink: true] --> B{quote.type<br/>== 'BLINK'}
     B --> C[swapFromEvm /<br/>swapFromSolana /<br/>createSwapFromSuiMoveCalls]
-    C --> D[fetchBlinkOrder]
+    C --> D[resolveBlinkOrder]
     D --> D2[verify quote.blinkQuote:<br/>hash, expiry, amounts,<br/>recipient, refund,<br/>referrers]
     D2 --> D3[check router against<br/>guardian-signed<br/>contract manifest]
     D3 --> E{gasless?}
     E -- no --> F[build & send<br/>deposit tx<br/>→ tx hash]
     E -- yes --> G[user signs,<br/>Blink submits<br/>→ quoteHash]
-    F --> H[getBlinkOrder quoteHash<br/>explorer id BLINK_quoteHash]
+    F --> H[Mayan explorer<br/>order id BLINK_quoteHash]
     G --> H
 ```
 
-Everything inside `fetchBlinkOrder` is a safety check on data that came from the
+Everything inside `resolveBlinkOrder` is a safety check on data that came from the
 network. If any check fails the swap throws **before** anything is signed or sent.
 
 ---
@@ -132,7 +132,7 @@ sequenceDiagram
         W-->>I: tx hash
     else gasless
         S->>W: sign Permit2 witness / sponsored tx
-        S->>B: POST /v1/gasless/orders (poll until tx broadcast)
+        S->>B: POST /v1/gasless/orders
         S-->>I: quoteHash
     end
 ```
@@ -147,8 +147,8 @@ sequenceDiagram
 | Solana       | `swapFromSolana` / `createSwapFromSolanaInstructions` | Deposit (or swap+deposit) instructions. Priority fee fetched from Blink.             | User signs a tx whose fee payer is the Blink sponsor. Returns `{ signature: quoteHash, serializedTrx: null }`. No source swap. |
 | Sui          | `createSwapFromSuiMoveCalls`                          | Move call `blink::deposit`, or `blink::open_source_swap` for a source swap (see §6). | **Call `swapBlinkGaslessFromSui` directly** with a `signTransaction` callback. Returns `quoteHash`.                            |
 
-Custom `payload` is rejected for BLINK. `swiftRefundAddress` is ignored. Jito bundles
-are skipped for any gasless quote.
+Custom `payload` is rejected for BLINK. `refundAddress` is honoured (§10); the older
+`swiftRefundAddress` is ignored. Jito bundles are skipped for any gasless quote.
 
 A BLINK quote with `fromChain === toChain` is a **same-chain swap** (EVM only): the
 router swaps and pays the recipient inside the deposit transaction, so there is no
@@ -163,7 +163,7 @@ help. Options, in order of convenience:
 
 1. `swapFromEvm(..., { includeAllowanceTx: true })` — the SDK bundles the approval
    (atomic batch; the wallet must support it).
-2. Call `fetchBlinkOrder(quote, swapper, recipient, referrers)` yourself and approve
+2. Call `resolveBlinkOrder(quote, swapper, recipient, referrers)` yourself and approve
    `order.swap?.routerAddress ?? order.quote.routerAddress` for `expectedAmountIn`.
 3. Pass a `permit` — honoured only if it was signed with the **router** as spender
    and covers the full amount.
@@ -187,14 +187,13 @@ Gas: the `estimateQuoteRequiredGas*` helpers return `0` for gasless BLINK;
 ## 6. Source swaps
 
 If the order's `srcToken` differs from its `lockToken`, the deposit first swaps on the
-source chain through an aggregator. `isBlinkSourceSwap(order.quote.orderParams)` tells
+source chain through an aggregator. `needsBlinkSourceSwap(order.quote.orderParams)` tells
 you. For the integrator this is transparent **except**:
 
 - **Sui**: the user's tx only _opens_ the source swap; Blink executes it afterwards
-  (up to 3 attempts inside a 5-minute window). Track it with
-  `trackBlinkSourceSwap(order.quote.quoteHash)`, which resolves to the execution tx or
-  throws `the funds never left the wallet` if the intent lapsed; the coins stay in the
-  user's own Sui address balance.
+  (up to 3 attempts inside a 5-minute window). Track the execution on the Mayan
+  explorer with the quote hash. If the intent lapses the coins stay in the user's own
+  Sui address balance.
   If you prefetch the order, pass it via `ComposableSuiMoveCallsOptions.blinkOrder`
   so the same order is used for the Move calls.
 - **Solana gasless**: source swaps are rejected (`Gasless Blink swap deposits are
@@ -205,8 +204,8 @@ stateDiagram-v2
     [*] --> opened : user tx (Sui open_source_swap)
     opened --> executed : Blink runs the swap
     opened --> lapsed : deadline passed
-    executed --> [*] : trackBlinkSourceSwap resolves with swapTx
-    lapsed --> [*] : throws, funds still in wallet
+    executed --> [*] : deposit made, order proceeds
+    lapsed --> [*] : funds still in wallet
 ```
 
 ---
@@ -219,14 +218,15 @@ gasless path (EVM, Solana); on Sui call `swapBlinkGaslessFromSui`.
 
 - Only offered for cross-chain orders with a non-native source token, on chains whose
   `getBlinkChains()` entry reports `gasless: true`.
-- The call **blocks** until Blink has broadcast the deposit (polls every 2 s), then
-  returns the **quote hash**, not a tx hash. On EVM the submission sits in `pending`
-  while gas is above what the quote priced and only turns `failed` once the Permit2
-  deadline passes (the SDK signs with a 30-minute deadline), so the call can block for
-  up to 30 minutes. Add your own timeout if that matters.
-- `rejected` means the deposit needed more gas than the quote covered; `failed` is any
-  other failure. Both throw with Blink's `error` message. Request a new quote.
-- Submission is idempotent per quote hash, which is why the SDK polls by re-posting.
+- The call returns as soon as Blink has accepted the submission, with the **quote
+  hash**, not a tx hash. Blink broadcasts the deposit itself: on EVM the submission sits
+  in `pending` while gas is above what the quote priced and only turns `failed` once
+  the Permit2 deadline passes (the SDK signs with a 30-minute deadline).
+- Track the submission on the Mayan explorer by `BLINK_<quoteHash>`, as for a gasless
+  Swift order. `rejected` means the deposit needed more gas than the quote covered;
+  `failed` is any other failure. Request a new quote in both cases.
+- Submission is idempotent per quote hash. Re-submitting a hash that already failed or
+  was rejected throws with Blink's `error` message.
 - The quote hash doubles as the explorer order id: `BLINK_<quoteHash>` on Mayan, or
   `https://hular.dev/explorer/<quoteHash>` on Blink's own explorer.
 
@@ -234,16 +234,9 @@ gasless path (EVM, Solana); on Sui call `swapBlinkGaslessFromSui`.
 
 ## 8. Tracking an order
 
-```ts
-import { getBlinkOrder } from '@mayanfinance/swap-sdk';
-
-const detail = await getBlinkOrder(quoteHash); // null if Blink does not know it yet
-// detail?.state, detail?.srcTx, detail?.dstTxHash
-```
-
-`null` right after the deposit is normal (Blink has not indexed it yet); keep polling
-every couple of seconds. There is no webhook or stream. `state` values, terminal ones
-in bold:
+Track orders through Mayan's explorer API with the order id `BLINK_<quoteHash>`, the
+same way as a gasless Swift order. The SDK has no Blink status endpoints of its own.
+Blink's `state` values, terminal ones in bold:
 
 | `state`                                                          | Meaning                                                                                       |
 | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -261,12 +254,11 @@ in bold:
 - `order.quote.fulfillEtaSecs` (median deposit-to-fill time for the pair) is a good
   ETA to show while pending.
 
-Other read endpoints, all thin wrappers over the Blink API:
+The Blink API calls live in `src/api.ts` next to the other Mayan endpoints and throw
+the API's `{ code, message }` body on a non-2xx status, like those do:
 
 | Function                     | Returns                                                                |
 | ---------------------------- | ---------------------------------------------------------------------- |
-| `getBlinkOrder(hash)`        | `{ state?, srcTx?, dstTxHash? }` or `null`                             |
-| `getBlinkSourceSwap(hash)`   | `{ status, openTx, swapTx?, expiresAt, reason? }` or `null`            |
 | `getBlinkChains()`           | supported chains, native symbol/decimals, `maxGasDrop`, `gasless` flag |
 | `getBlinkContracts()`        | raw guardian-signed manifest (you normally never need it)              |
 | `getBlinkPriorityFee(chain)` | Solana compute-unit price Blink recommends                             |
@@ -278,14 +270,11 @@ Other read endpoints, all thin wrappers over the Blink API:
 | Export                                       | When                                                                               |
 | -------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `hasBlinkQuoteHash(quote)`                   | Is this quote swappable, i.e. fetched with both addresses (§3)?                    |
-| `fetchBlinkOrder(...)`                       | Prefetch the verified `BlinkOrder` (EVM approval target, Sui `blinkOrder` option). |
+| `resolveBlinkOrder(...)`                       | Prefetch the verified `BlinkOrder` (EVM approval target, Sui `blinkOrder` option). |
 | `BlinkOrder`                                 | `{ quote: BlinkQuote, swap?: BlinkSwapInstructions, contracts }`.                  |
 | `isBlinkQuoteExpired(order.quote)`           | Decide whether to re-quote before sending.                                         |
-| `isBlinkSourceSwap(order.quote.orderParams)` | Branch on source-swap behaviour (§6).                                              |
+| `needsBlinkSourceSwap(order.quote.orderParams)` | Branch on source-swap behaviour (§6).                                              |
 | `swapBlinkGaslessFromSui(...)`               | Gasless on Sui (no automatic routing there).                                       |
-| `trackBlinkSourceSwap(hash)`                 | After a Sui source-swap open.                                                      |
-| `getBlinkOrder(hash)`                        | Status polling.                                                                    |
-| `BlinkApiError`                              | `status` (HTTP) + `code` (gRPC) + message, from any Blink API call.                |
 | `BlinkUnregisteredAddressError`              | Router/escrow not in the signed manifest. Treat as "do not proceed".               |
 
 Everything else in `src/blink/` (hash encoding, manifest verification, decoders) is
@@ -298,11 +287,12 @@ internal plumbing that the swap functions run for you.
 - **Same referrers both times.** Pass the same `referrers` to `fetchQuote` and as
   `referrerAddresses` to the swap, keyed by the **source** chain VM. Blink pays referrers
   on the source chain. A bps mismatch throws `Referrer bps mismatch`.
-- **Refund address must be the swapper** on the `swapFrom*` path. The SDK checks the
-  embedded order's refund address against the swapper and throws otherwise, so fetch the
-  quote with `refundAddress` set to the connected wallet. Another refund address only
-  works on Sui: fetch the quote with it, call `fetchBlinkOrder(quote, refund, recipient,
-referrers)` yourself and pass the result via the `blinkOrder` option.
+- **Refund address defaults to the swapper.** The SDK checks the embedded order's refund
+  address against the `refundAddress` swap option, or the swapper when none is passed,
+  and throws otherwise. To refund elsewhere, fetch the quote with that `refundAddress`
+  and pass the same value in the swap options; this works on every chain. On Sui a
+  prefetched order passed via `blinkOrder` is used as is, and must agree with
+  `refundAddress` when both are given.
 - **Zero addresses are rejected** for destination and refund.
 - **Guardian set.** The quote's `guardianSetIndex` must match the current manifest.
   A stale cached manifest is refreshed automatically; a real mismatch throws.
@@ -313,11 +303,10 @@ referrers)` yourself and pass the result via the `blinkOrder` option.
   capped per destination chain (`getBlinkChains()[].maxGasDrop`). It is never delivered
   or charged on a refund.
 - **Keyless Blink API calls.** The SDK's direct calls to Blink (contracts, swap
-  instructions, priority fee, order polling, gasless submit) carry no API key, so they
-  share the keyless budget of 500 points per minute per IP. A server polling many
-  orders from one IP can get `BlinkApiError` with status 429 (gRPC code 8); back off,
-  the budget refills continuously. Quotes themselves go through Mayan's price API, not
-  straight to Blink.
+  instructions, priority fee, gasless submit) carry no API key, so they share the
+  keyless budget of 500 points per minute per IP. A server submitting many orders from
+  one IP can get a 429 with gRPC code 8 thrown; back off, the budget refills
+  continuously. Quotes themselves go through Mayan's price API, not straight to Blink.
 - **Referrer payouts are vouchers, not per-swap transfers.** Blink accrues referrer
   fees off-chain per fulfilled order and pays them as signed vouchers claimed by the
   partner that requested the quote from Blink (Mayan's backend, for this SDK). Confirm

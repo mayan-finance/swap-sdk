@@ -16,6 +16,7 @@ import {
 	getEvmChainIdByName,
 	getGasDecimal,
 	getQuoteSuitableReferrerAddress,
+	getQuoteRefundAddress,
 	getWormholeChainIdById,
 	getWormholeChainIdByName,
 	nativeAddressToHexString,
@@ -195,6 +196,7 @@ export async function getSwapFromEvmTxPayload(
 	options?: {
 		usdcPermitSignature?: string;
 		apiKey?: string;
+		refundAddress?: string;
 		swiftRefundAddress?: string;
 	}
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
@@ -211,9 +213,7 @@ export async function getSwapFromEvmTxPayload(
 	if (destinationAddress === ZeroAddress || destinationAddress === SystemProgram.programId.toString()) {
 		throw new Error(`Invalid destination address: ${destinationAddress}`);
 	}
-	if (options?.swiftRefundAddress && (options.swiftRefundAddress === ZeroAddress || options.swiftRefundAddress === SystemProgram.programId.toString())) {
-		throw new Error(`Invalid swift refund address: ${options.swiftRefundAddress}`);
-	}
+	const refundAddress = getQuoteRefundAddress(quote, swapperAddress, destinationAddress, options);
 
 	const referrerAddress = getQuoteSuitableReferrerAddress(
 		quote,
@@ -229,7 +229,7 @@ export async function getSwapFromEvmTxPayload(
 			signerChainId,
 			permit,
 			payload,
-			options
+			{ apiKey: options?.apiKey, refundAddress }
 		);
 	}
 
@@ -254,7 +254,7 @@ export async function getSwapFromEvmTxPayload(
 			permit,
 			payload,
 			options?.apiKey,
-			options?.swiftRefundAddress,
+			refundAddress,
 		);
 	}
 	if (quote.type === 'SHUTTLE') {
@@ -290,7 +290,8 @@ export async function getSwapFromEvmTxPayload(
 			destinationAddress,
 			referrerAddresses,
 			signerChainId,
-			permit
+			permit,
+			refundAddress
 		);
 	}
 
@@ -390,6 +391,7 @@ export async function swapFromEvm(
 	options?: {
 		apiKey?: string;
 		includeAllowanceTx?: boolean;
+		refundAddress?: string;
 		swiftRefundAddress?: string;
 		evmProvider?: ethers.JsonRpcProvider;
 	}
@@ -400,9 +402,7 @@ export async function swapFromEvm(
 	if (destinationAddress === ZeroAddress || destinationAddress === SystemProgram.programId.toString()) {
 		throw new Error(`Invalid destination address: ${destinationAddress}`);
 	}
-	if (options?.swiftRefundAddress && (options.swiftRefundAddress === ZeroAddress || options.swiftRefundAddress === SystemProgram.programId.toString())) {
-		throw new Error(`Invalid swift refund address: ${options.swiftRefundAddress}`);
-	}
+	const refundAddress = getQuoteRefundAddress(quote, swapperAddress, destinationAddress, options);
 	const signerAddress = await signer.getAddress();
 	if (signerAddress.toLowerCase() !== swapperAddress.toLowerCase()) {
 		throw new Error('Signer address does not match swapper address');
@@ -423,7 +423,7 @@ export async function swapFromEvm(
 		);
 		if (quote.fromChain === 'hypercore') {
 			const hcParams = getHyperCoreWithdrawParams(
-				quote, swapperAddress, destinationAddress, referrerAddress, payload, options?.swiftRefundAddress
+				quote, swapperAddress, destinationAddress, referrerAddress, payload, refundAddress
 			);
 			const signedHcParams = await signer.signTypedData(
 				hcParams.domain,
@@ -437,8 +437,8 @@ export async function swapFromEvm(
 				options?.apiKey
 			);
 		}
-		if (options?.swiftRefundAddress && options.swiftRefundAddress.toLowerCase() !== swapperAddress.toLowerCase()) {
-			throw new Error('Swift refund address must be the same as swapper address for gasless SWIFT');
+		if (refundAddress && refundAddress.toLowerCase() !== swapperAddress.toLowerCase()) {
+			throw new Error(`Gasless SWIFT orders refund to the swapper address ${swapperAddress}, not to ${refundAddress}`);
 		}
 		const gasLessParams = quote.toChain === 'hypercore' ? getHyperCoreSwiftFromEvmGasLessParams(
 			quote,
@@ -448,7 +448,7 @@ export async function swapFromEvm(
 			signerChainId,
 			permit,
 			payload,
-			options?.swiftRefundAddress,
+			refundAddress,
 		) : getSwiftFromEvmGasLessParams(
 			quote,
 			swapperAddress,
@@ -457,7 +457,7 @@ export async function swapFromEvm(
 			signerChainId,
 			permit,
 			payload,
-			options?.swiftRefundAddress,
+			refundAddress,
 		);
 		const signedOrderHash = await signer.signTypedData(
 			gasLessParams.orderTypedData.domain,
@@ -474,7 +474,8 @@ export async function swapFromEvm(
 			destinationAddress,
 			referrerAddresses,
 			signer,
-			signerChainId
+			signerChainId,
+			refundAddress
 		);
 	}
 	const transactionRequest = await getSwapFromEvmTxPayload(
@@ -569,7 +570,7 @@ export async function estimateQuoteRequiredGas(
 		signerChainId,
 		payload,
 		permit,
-		options,
+		{ usdcPermitSignature: options?.usdcPermitSignature, apiKey: options?.apiKey, swiftRefundAddress: options?.swiftRefundAddress },
 	);
 	// @ts-ignore
 	delete transactionRequest._forwarder;
@@ -614,7 +615,7 @@ export async function estimateQuoteRequiredGasAprox(
 		signerChainId,
 		payload,
 		permit,
-		options,
+		{ usdcPermitSignature: options?.usdcPermitSignature, apiKey: options?.apiKey, swiftRefundAddress: options?.swiftRefundAddress },
 	);
 	// @ts-ignore
 	delete transactionRequest._forwarder;

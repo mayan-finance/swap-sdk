@@ -325,6 +325,59 @@ export function isChainReferrers(
 ): referrers is ChainReferrers {
 	return Array.isArray(referrers.solana || referrers.evm || referrers.sui);
 }
+function isSameAddress(a: string, b: string): boolean {
+	// hex addresses (EVM, Sui) compare case-insensitively, base58 ones exactly
+	return a.startsWith('0x') && b.startsWith('0x') ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+/**
+ * The refund address to hand to the order builder. SWIFT and BLINK let the integrator choose
+ * one, so `refundAddress` is returned as is. Every other protocol refunds to a fixed wallet
+ * (the swapper for WH and MONO_CHAIN, the destination for MCTP and FAST_MCTP): a
+ * `refundAddress` that names any other wallet throws, and a matching one returns undefined
+ * since the builder has nothing to set. `swiftRefundAddress` is the older Swift-only spelling.
+ */
+export function getQuoteRefundAddress(
+	quote: Quote,
+	swapperAddress: string,
+	destinationAddress: string,
+	options?: { refundAddress?: string | null; swiftRefundAddress?: string | null }
+): string | undefined {
+	const refundAddress = options?.refundAddress || undefined;
+	const swiftRefundAddress = options?.swiftRefundAddress || undefined;
+	for (const address of [refundAddress, swiftRefundAddress]) {
+		if (address && (address === ZeroAddress || address === SystemProgram.programId.toString())) {
+			throw new Error(`Invalid refund address: ${address}`);
+		}
+	}
+	if (refundAddress && swiftRefundAddress && !isSameAddress(refundAddress, swiftRefundAddress)) {
+		throw new Error(`refundAddress ${refundAddress} and swiftRefundAddress ${swiftRefundAddress} do not match`);
+	}
+	if (!refundAddress) {
+		return quote.type === 'SWIFT' ? swiftRefundAddress : undefined;
+	}
+	switch (quote.type) {
+		case 'SWIFT':
+		case 'BLINK':
+			return refundAddress;
+		case 'MCTP':
+		case 'FAST_MCTP':
+			if (!isSameAddress(refundAddress, destinationAddress)) {
+				throw new Error(
+					`${quote.type} quotes can only refund to the destination address ${destinationAddress}, not to ${refundAddress}`
+				);
+			}
+			return undefined;
+		default:
+			if (!isSameAddress(refundAddress, swapperAddress)) {
+				throw new Error(
+					`${quote.type} quotes can only refund to the swapper address ${swapperAddress}, not to ${refundAddress}`
+				);
+			}
+			return undefined;
+	}
+}
+
 export function getQuoteSuitableReferrerAddress(
 	quote: Quote,
 	referrerAddresses?: ReferrerAddresses | ChainReferrers | null,

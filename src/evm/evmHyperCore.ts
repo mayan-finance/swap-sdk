@@ -35,7 +35,7 @@ export async function getHyperCoreDepositFromEvmTxPayload(
 	signerChainId: number | string, permit: Erc20Permit | null | undefined, payload: Uint8Array | Buffer | null | undefined,
 	options: {
 		apiKey?: string;
-		swiftRefundAddress?: string;
+		refundAddress?: string;
 	} = {}
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 
@@ -100,7 +100,7 @@ export async function getHyperCoreDepositFromEvmTxPayload(
 			permit,
 			getHyperCoreUSDCDepositCustomPayload(clonedQuote, destinationAddress, hcDepositDex),
 			options?.apiKey,
-			options?.swiftRefundAddress
+			options?.refundAddress
 		);
 	} else {
 		throw new Error('Unsupported quote type for HyperCore deposit: ' + quote.type);
