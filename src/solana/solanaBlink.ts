@@ -4,6 +4,7 @@ import {
 	ComputeBudgetProgram,
 	Connection,
 	Keypair,
+	PACKET_DATA_SIZE,
 	PublicKey,
 	SystemProgram,
 	Transaction,
@@ -454,6 +455,22 @@ function uniqueAuthorityAccounts(accounts: AuthorityTokenAccount[]): AuthorityTo
 	return unique;
 }
 
+// a Solana transaction holds at most PACKET_DATA_SIZE (1232) bytes; web3.js fails with
+// "encoding overruns Uint8Array" when the message alone is already bigger than that
+function assertFitsInOneTransaction(transaction: VersionedTransaction): void {
+	let size: number;
+	try {
+		size = transaction.serialize().length;
+	} catch {
+		rejectSwap('route is too large to fit in one Solana transaction, request a new quote');
+	}
+	if (size > PACKET_DATA_SIZE) {
+		rejectSwap(
+			`route is too large to fit in one Solana transaction (${size} bytes, limit ${PACKET_DATA_SIZE}), request a new quote`
+		);
+	}
+}
+
 async function compileSwapDeposit(
 	connection: Connection,
 	owner: PublicKey,
@@ -465,7 +482,9 @@ async function compileSwapDeposit(
 		recentBlockhash: (await connection.getLatestBlockhash()).blockhash,
 		instructions,
 	}).compileToV0Message(lookupTables);
-	return new VersionedTransaction(message);
+	const transaction = new VersionedTransaction(message);
+	assertFitsInOneTransaction(transaction);
+	return transaction;
 }
 
 async function buildSwapDepositInstructions(
@@ -553,10 +572,11 @@ async function buildSwapDepositInstructions(
 	if (lookupTables.length !== tableAddresses.length) {
 		throw new Error('Blink swap lookup table not found');
 	}
+	// same compute budget instructions as the final transaction, so the size check above is exact
 	const probe = await compileSwapDeposit(
 		connection,
 		owner,
-		[ComputeBudgetProgram.setComputeUnitLimit({ units: MAX_COMPUTE_UNIT_LIMIT }), ...body],
+		[...computeBudgetInstructions(MAX_COMPUTE_UNIT_LIMIT, computeUnitPriceMicroLamports), ...body],
 		lookupTables
 	);
 	const simulatedUnits = await simulateSwapDeposit(connection, probe, watched);
