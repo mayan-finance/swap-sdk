@@ -29,7 +29,6 @@ import { getAssociatedTokenAddress, getSafeU64Blob, hexToUint8Array } from '../u
 import { getBlinkPriorityFee, submitBlinkGaslessOrder } from '../api';
 import { resolveBlinkOrder, needsBlinkSourceSwap } from '../blink/order';
 import {
-	createAssociatedTokenAccountInstruction,
 	createSplTransferInstruction,
 	createSyncNativeInstruction,
 	deserializeInstructionInfo,
@@ -96,6 +95,28 @@ function eventCpiAccounts(programId: PublicKey): AccountMeta[] {
 		{ pubkey: eventAuthority(programId), isSigner: false, isWritable: false },
 		{ pubkey: programId, isSigner: false, isWritable: false },
 	];
+}
+
+// the same accounts the Blink API uses when it measures the deposit (no rent sysvar), so the
+// transaction the SDK builds is exactly as large as the one the API checked against the limit
+function createAuthorityTokenAccountInstruction(
+	depositor: PublicKey,
+	authority: PublicKey,
+	mint: PublicKey,
+	tokenProgram: PublicKey
+): TransactionInstruction {
+	return new TransactionInstruction({
+		programId: ASSOCIATED_TOKEN_PROGRAM_ID,
+		keys: [
+			{ pubkey: depositor, isSigner: true, isWritable: true },
+			{ pubkey: getAssociatedTokenAddress(mint, authority, true, tokenProgram), isSigner: false, isWritable: true },
+			{ pubkey: authority, isSigner: false, isWritable: false },
+			{ pubkey: mint, isSigner: false, isWritable: false },
+			{ pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+			{ pubkey: tokenProgram, isSigner: false, isWritable: false },
+		],
+		data: Buffer.from([1]), // create idempotent
+	});
 }
 
 export function blinkSvmSwapAuthority(programId: PublicKey, owner: PublicKey, quoteHash: string): PublicKey {
@@ -571,7 +592,7 @@ async function buildSwapDepositInstructions(
 		),
 	});
 	const body = [
-		createAssociatedTokenAccountInstruction(owner, authorityInput, authority, sourceMint, sourceTokenProgram),
+		createAuthorityTokenAccountInstruction(owner, authority, sourceMint, sourceTokenProgram),
 		...fundingInstructions,
 		...swap.setup.map(deserializeInstructionInfo),
 		depositIx,
