@@ -51,6 +51,8 @@ const DEPOSIT_COMPUTE_UNIT_LIMIT = 50_000;
 const MAX_COMPUTE_UNIT_LIMIT = 1_400_000;
 const SWAP_COMPUTE_UNIT_HEADROOM = 1.3;
 const GASLESS_COMPUTE_UNIT_PRICE_MICRO_LAMPORTS = BigInt(10_000);
+// the most SOL the depositor lends the swap authority for rent a route pays (0.004 SOL)
+const MAX_SWAP_AUTHORITY_LAMPORTS = BigInt(4_000_000);
 
 const JUPITER_SLIPPAGE_EXCEEDED = 6001;
 
@@ -511,6 +513,10 @@ async function buildSwapDepositInstructions(
 	const authorityInput = getAssociatedTokenAddress(sourceMint, authority, true, sourceTokenProgram);
 	const swapPrograms = order.contracts.swapPrograms.map((p) => new PublicKey(p));
 	const created = checkSwapInstructions(owner, authority, swap, swapPrograms);
+	const authorityLamports = BigInt(swap.swapAuthorityLamports);
+	if (authorityLamports > MAX_SWAP_AUTHORITY_LAMPORTS) {
+		rejectSwap(`swap authority asks for ${authorityLamports} lamports, above the ${MAX_SWAP_AUTHORITY_LAMPORTS} cap`);
+	}
 
 	// move the input from the depositor into the swap authority's token account
 	let fundingInstructions: TransactionInstruction[];
@@ -527,6 +533,10 @@ async function buildSwapDepositInstructions(
 		];
 		spend = { account: depositorInput, amount };
 	}
+	// some venues pay rent from the swap authority; deposit_swap returns whatever the route did not spend
+	if (authorityLamports > BigInt(0)) {
+		fundingInstructions.push(SystemProgram.transfer({ fromPubkey: owner, toPubkey: authority, lamports: authorityLamports }));
+	}
 	const authorityAccounts = uniqueAuthorityAccounts([
 		{ address: authorityInput, mint: sourceMint, tokenProgram: sourceTokenProgram },
 		...created,
@@ -538,9 +548,10 @@ async function buildSwapDepositInstructions(
 			{ pubkey: lockMint, isSigner: false, isWritable: false },
 			{ pubkey: escrow, isSigner: false, isWritable: false },
 			{ pubkey: getAssociatedTokenAddress(lockMint, escrow, true, tokenProgram), isSigner: false, isWritable: true },
-			{ pubkey: authority, isSigner: false, isWritable: false },
+			{ pubkey: authority, isSigner: false, isWritable: true },
 			{ pubkey: new PublicKey(swap.swap.programId), isSigner: false, isWritable: false },
 			{ pubkey: tokenProgram, isSigner: false, isWritable: false },
+			{ pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
 			...eventCpiAccounts(programId),
 			...swap.swap.accounts.map((meta) => {
 				const pubkey = new PublicKey(meta.pubkey);
