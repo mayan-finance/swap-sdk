@@ -150,7 +150,6 @@ export function createAssociatedTokenAccountInstruction(
 		{pubkey: mint, isSigner: false, isWritable: false},
 		{pubkey: SystemProgram.programId, isSigner: false, isWritable: false},
 		{pubkey: programId, isSigner: false, isWritable: false},
-		{pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false},
 	];
 
 	return new TransactionInstruction({
