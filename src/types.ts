@@ -569,6 +569,8 @@ export type BlinkSvmSwap = {
 	swap: BlinkSvmInstruction;
 	cleanup: BlinkSvmInstruction[];
 	lookupTables: BlinkSvmLookupTable[];
+	/** lamports the depositor lends the swap authority for rent the route pays; deposit_swap returns the unspent part */
+	swapAuthorityLamports: string;
 };
 
 export type BlinkSwapInstructions = {

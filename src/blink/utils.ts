@@ -171,6 +171,7 @@ export function decodeBlinkSwapInstructions(json: any): BlinkSwapInstructions {
 				address: nonEmptyText(table?.address, `${tableName}.address`),
 				addresses: list(table?.addresses, `${tableName}.addresses`, nonEmptyText),
 			})),
+			swapAuthorityLamports: decimal(json.svm.swapAuthorityLamports, 'svm.swapAuthorityLamports'),
 		};
 	}
 	return swap;
