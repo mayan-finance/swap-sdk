@@ -30,7 +30,7 @@ import { getBlinkPriorityFee, submitBlinkGaslessOrder } from '../api';
 import { resolveBlinkOrder, needsBlinkSourceSwap } from '../blink/order';
 import {
 	createAssociatedTokenAccountInstruction,
-	createSplTransferInstruction,
+	createSplTransferCheckInstruction,
 	createSyncNativeInstruction,
 	deserializeInstructionInfo,
 	getAddressLookupTableAccounts,
@@ -375,13 +375,13 @@ async function simulateSwapDeposit(
 	return sim.value.unitsConsumed;
 }
 
-const CloseSwapAccountLayout = struct<any>([blob(8, 'instruction'), blob(32, 'quoteHash')]);
+const SwapAccountLayout = struct<any>([blob(8, 'instruction'), blob(32, 'quoteHash')]);
 
-function closeSwapAccountData(quoteHash: string): Buffer {
-	const data = Buffer.alloc(CloseSwapAccountLayout.span);
-	CloseSwapAccountLayout.encode(
+function swapAccountData(name: string, quoteHash: string): Buffer {
+	const data = Buffer.alloc(SwapAccountLayout.span);
+	SwapAccountLayout.encode(
 		{
-			instruction: getAnchorInstructionData('close_swap_account'),
+			instruction: getAnchorInstructionData(name),
 			quoteHash: Buffer.from(hexToUint8Array(quoteHash)),
 		},
 		data
@@ -404,14 +404,61 @@ function closeAuthorityAccount(
 			{ pubkey: account.address, isSigner: false, isWritable: true },
 			{ pubkey: account.tokenProgram, isSigner: false, isWritable: false },
 		],
-		data: closeSwapAccountData(quoteHash),
+		data: swapAccountData('close_swap_account', quoteHash),
 	});
+}
+
+function sweepAuthorityAccount(
+	programId: PublicKey,
+	quoteHash: string,
+	depositor: PublicKey,
+	authority: PublicKey,
+	account: AuthorityTokenAccount,
+	depositorAta: PublicKey
+): TransactionInstruction {
+	return new TransactionInstruction({
+		programId,
+		keys: [
+			{ pubkey: depositor, isSigner: true, isWritable: true },
+			{ pubkey: account.mint, isSigner: false, isWritable: true },
+			{ pubkey: authority, isSigner: false, isWritable: false },
+			{ pubkey: account.address, isSigner: false, isWritable: true },
+			{ pubkey: depositorAta, isSigner: false, isWritable: true },
+			{ pubkey: account.tokenProgram, isSigner: false, isWritable: false },
+		],
+		data: swapAccountData('sweep_swap_account', quoteHash),
+	});
+}
+
+// close_swap_account only closes an empty account and fails on a Token-2022 account holding withheld
+// transfer fees, so every mint but WSOL (whose close returns all its lamports) is swept instead: the
+// sweep moves any leftover to the depositor's token account, harvests the fees, then closes
+function releaseAuthorityAccount(
+	programId: PublicKey,
+	quoteHash: string,
+	depositor: PublicKey,
+	authority: PublicKey,
+	account: AuthorityTokenAccount,
+	sourceMint: PublicKey
+): TransactionInstruction[] {
+	if (account.mint.equals(solMint)) {
+		return [closeAuthorityAccount(programId, quoteHash, depositor, authority, account)];
+	}
+	const depositorAta = getAssociatedTokenAddress(account.mint, depositor, true, account.tokenProgram);
+	const sweep = sweepAuthorityAccount(programId, quoteHash, depositor, authority, account, depositorAta);
+	if (account.mint.equals(sourceMint)) {
+		// the depositor funded the swap from this account, so it exists
+		return [sweep];
+	}
+	return [
+		createAssociatedTokenAccountInstruction(depositor, depositorAta, depositor, account.mint, account.tokenProgram),
+		sweep,
+	];
 }
 
 const DepositSwapLayout = struct<any>([
 	blob(8, 'instruction'),
 	blob(32, 'quoteHash'),
-	blob(32, 'srcMint'),
 	blob(8, 'srcAmount'),
 	blob(8, 'minLockAmount'),
 	u32('swapDataLength'),
@@ -419,7 +466,6 @@ const DepositSwapLayout = struct<any>([
 
 function swapDepositData(
 	quoteHash: string,
-	srcMint: PublicKey,
 	srcAmount: bigint,
 	minLockAmount: bigint,
 	swapData: Buffer
@@ -429,7 +475,6 @@ function swapDepositData(
 		{
 			instruction: getAnchorInstructionData('deposit_swap'),
 			quoteHash: Buffer.from(hexToUint8Array(quoteHash)),
-			srcMint: srcMint.toBuffer(),
 			srcAmount: getSafeU64Blob(srcAmount),
 			minLockAmount: getSafeU64Blob(minLockAmount),
 			swapDataLength: swapData.length,
@@ -522,7 +567,15 @@ async function buildSwapDepositInstructions(
 	} else {
 		const depositorInput = getAssociatedTokenAddress(sourceMint, owner, true, sourceTokenProgram);
 		fundingInstructions = [
-			createSplTransferInstruction(depositorInput, authorityInput, owner, amount, sourceTokenProgram),
+			createSplTransferCheckInstruction(
+				depositorInput,
+				sourceMint,
+				authorityInput,
+				owner,
+				amount,
+				quote.fromToken.decimals,
+				sourceTokenProgram
+			),
 		];
 		spend = { account: depositorInput, amount };
 	}
@@ -545,6 +598,8 @@ async function buildSwapDepositInstructions(
 			{ pubkey: new PublicKey(swap.swap.programId), isSigner: false, isWritable: false },
 			{ pubkey: tokenProgram, isSigner: false, isWritable: false },
 			{ pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+			// src_mint, recorded in the deposit event; native sources pass the system program
+			{ pubkey: nativeSrc ? SystemProgram.programId : sourceMint, isSigner: false, isWritable: false },
 			...eventCpiAccounts(programId),
 			...swap.swap.accounts.map((meta) => {
 				const pubkey = new PublicKey(meta.pubkey);
@@ -557,7 +612,6 @@ async function buildSwapDepositInstructions(
 		],
 		data: swapDepositData(
 			quoteHash,
-			new PublicKey(params.srcToken),
 			amount,
 			BigInt(params.minLockAmount),
 			Buffer.from(swap.swap.data, 'base64')
@@ -573,7 +627,9 @@ async function buildSwapDepositInstructions(
 		...fundingInstructions,
 		...setupInstructions,
 		depositIx,
-		...authorityAccounts.map((account) => closeAuthorityAccount(programId, quoteHash, owner, authority, account)),
+		...authorityAccounts.flatMap((account) =>
+			releaseAuthorityAccount(programId, quoteHash, owner, authority, account, sourceMint)
+		),
 	];
 	const watched = await collectDepositorTokenAccounts(connection, body, owner, spend);
 	const tableAddresses = swap.lookupTables.map((table) => table.address);
