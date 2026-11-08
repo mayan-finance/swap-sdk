@@ -50,15 +50,48 @@ export function usesBlinkDirectTransfer(order: BlinkOrder): boolean {
 	);
 }
 
+/**
+ * The contract an EVM Blink deposit is sent to, apart from a direct transfer (the token
+ * itself). Blink runs two deposit contracts per chain: the quote's `routerAddress` is the
+ * escrow (`depositToken`, `depositNative`, plain transfers) and the permit and source-swap
+ * variants live on the router of the guardian-signed manifest (`order.contracts.router`).
+ * The two differ, so a permit must name the manifest router as spender, never
+ * `quote.routerAddress`.
+ */
+function blinkEvmDepositTarget(order: BlinkOrder, permit: boolean): string {
+	if (order.swap) {
+		return order.swap.routerAddress;
+	}
+	return permit ? order.contracts.router : order.quote.orderParams.routerAddress;
+}
+
+/**
+ * The address an ERC20 approval or an EIP-2612 permit for an EVM Blink deposit must name as
+ * spender: the contract that pulls the tokens. `permit` says whether the deposit will carry a
+ * permit (`depositTokenWithPermit` and friends on the manifest router) or rely on an allowance
+ * (`depositToken` on the quote's `routerAddress`, the escrow). Returns `null` when nothing has
+ * to be approved: a native input, or an order the SDK deposits by direct transfer (no permit).
+ */
+export function getBlinkEvmDepositSpender(order: BlinkOrder, permit: boolean): string | null {
+	if (isNativeBlinkEvmToken(order.quote.orderParams.srcToken)) {
+		return null;
+	}
+	if (!permit && usesBlinkDirectTransfer(order)) {
+		return null;
+	}
+	return blinkEvmDepositTarget(order, permit);
+}
+
 function referrerTotalBps(referrers: { bps: number }[]): number {
 	return referrers.reduce((total, r) => total + r.bps, 0);
 }
 
 /**
- * The transaction that deposits the order into the Blink router. A permit signed with the
- * router as spender is appended to the ERC20 variants; without one the router must already be
- * approved. When the quote allows it an ERC20 order becomes a plain transfer to the router with
- * the quote hash appended, which needs no approval at all.
+ * The transaction that deposits the order into Blink. A permit is appended to the ERC20
+ * variants and must have been signed with `getBlinkEvmDepositSpender(order, true)` (the
+ * manifest router) as spender; without one, `getBlinkEvmDepositSpender(order, false)` must
+ * already be approved. When the quote allows it an ERC20 order becomes a plain transfer to the
+ * escrow (`quote.routerAddress`) with the quote hash appended, which needs no approval at all.
  */
 export function buildBlinkEvmDepositCall(order: BlinkOrder, permit?: Erc20Permit | null): BlinkEvmDepositCall {
 	const { quoteHash, orderParams: params } = order.quote;
@@ -122,7 +155,7 @@ export function buildBlinkEvmDepositCall(order: BlinkOrder, permit?: Erc20Permit
 		args.push(BigInt(permit.deadline), permit.v, permit.r, permit.s);
 	}
 
-	const to = swap ? swap.routerAddress : permit ? order.contracts.router : params.routerAddress;
+	const to = blinkEvmDepositTarget(order, !!permit);
 	return { to, data: blinkRouterInterface.encodeFunctionData(method, args), value };
 }
 

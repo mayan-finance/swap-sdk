@@ -143,7 +143,7 @@ sequenceDiagram
 
 | Source chain | Entry point                                           | Normal order                                                                         | Gasless order                                                                                                                  |
 | ------------ | ----------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| EVM          | `swapFromEvm` / `getSwapFromEvmTxPayload`             | Tx **to the Blink router** (not the Mayan forwarder). Native token goes as `value`.  | User signs a Permit2 witness (+ EIP-2612 permit for Permit2 if no allowance). Returns `quoteHash`. ERC20 input only.           |
+| EVM          | `swapFromEvm` / `getSwapFromEvmTxPayload`             | Tx **to the Blink deposit contracts** (escrow or router, §5; not the Mayan forwarder). Native token goes as `value`.  | User signs a Permit2 witness (+ EIP-2612 permit for Permit2 if no allowance). Returns `quoteHash`. ERC20 input only.           |
 | Solana       | `swapFromSolana` / `createSwapFromSolanaInstructions` | Deposit (or swap+deposit) instructions. Priority fee fetched from Blink.             | User signs a tx whose fee payer is the Blink sponsor. Returns `{ signature: quoteHash, serializedTrx: null }`. No source swap. |
 | Sui          | `createSwapFromSuiMoveCalls`                          | Move call `blink::deposit`, or `blink::open_source_swap` for a source swap (see §6). | **Call `swapBlinkGaslessFromSui` directly** with a `signTransaction` callback. Returns `quoteHash`.                            |
 
@@ -159,19 +159,32 @@ gasless path, no gas drop, and the order goes straight to `fulfilled`.
 ## 5. EVM approvals
 
 Blink deposits bypass the Mayan forwarder, so the usual forwarder allowance does not
-help. Options, in order of convenience:
+help. Blink runs **two deposit contracts per chain**, and the quote names only one of them:
+
+- `order.quote.routerAddress` (the same value as `orderParams.routerAddress`) is the
+  **escrow**: it takes plain transfers, `depositToken` and `depositNative`.
+- `order.contracts.router`, from the guardian-signed manifest, is the **router**: it has the
+  permit variants (`depositTokenWithPermit`, …) and the source-swap entry points.
+
+`getBlinkEvmDepositSpender(order, permit)` returns the contract that pulls the tokens for the
+deposit the SDK will build, or `null` when nothing needs approving. Options, in order of
+convenience:
 
 1. `swapFromEvm(..., { includeAllowanceTx: true })` — the SDK bundles the approval
    (atomic batch; the wallet must support it).
 2. Call `resolveBlinkOrder(quote, swapper, recipient, referrers)` yourself and approve
-   `order.swap?.routerAddress ?? order.quote.routerAddress` for `expectedAmountIn`.
-3. Pass a `permit` — honoured only if it was signed with the **router** as spender
-   and covers the full amount.
+   `getBlinkEvmDepositSpender(order, false)` for `expectedAmountIn`. Without a source swap
+   that is the escrow, `order.quote.routerAddress`.
+3. Pass a `permit` signed with `getBlinkEvmDepositSpender(order, true)` as spender, covering
+   the full amount. Without a source swap that is the **manifest router**,
+   `order.contracts.router`, **not** `order.quote.routerAddress`: a permit for the escrow
+   makes `depositTokenWithPermit` revert with `TransferFailed()`, because the router swallows
+   the failed `permit` and the `transferFrom` that follows has no allowance.
 
 Two cases need no approval at all:
 
 - **Direct transfer.** When `order.quote.directTransfer` is set (ERC20, cross-chain,
-  no source swap) the SDK sends a plain `transfer(router, amount)` with the quote hash
+  no source swap) the SDK sends a plain `transfer(escrow, amount)` with the quote hash
   appended to the calldata. `includeAllowanceTx` is skipped automatically. Blink reads
   the hash from the transaction's own calldata, so a **smart-contract wallet or any
   batching layer hides it and the deposit is not attributed**. The SDK takes this path
@@ -271,6 +284,7 @@ the API's `{ code, message }` body on a non-2xx status, like those do:
 | -------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `hasBlinkQuoteHash(quote)`                   | Is this quote swappable, i.e. fetched with both addresses (§3)?                    |
 | `resolveBlinkOrder(...)`                       | Prefetch the verified `BlinkOrder` (EVM approval target, Sui `blinkOrder` option). |
+| `getBlinkEvmDepositSpender(order, permit)`   | The approval or permit spender of the deposit the SDK will build (§5); `null` when none is needed. |
 | `BlinkOrder`                                 | `{ quote: BlinkQuote, swap?: BlinkSwapInstructions, contracts }`.                  |
 | `isBlinkQuoteExpired(order.quote)`           | Decide whether to re-quote before sending.                                         |
 | `needsBlinkSourceSwap(order.quote.orderParams)` | Branch on source-swap behaviour (§6).                                              |
