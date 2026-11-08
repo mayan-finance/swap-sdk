@@ -193,6 +193,8 @@ export type Quote = {
 	 * passed to {@link fetchQuote}. A BLINK quote without it is a price preview and cannot be swapped.
 	 */
 	blinkQuote?: BlinkQuoteJson,
+	blinkInputContract?: string;
+	blinkInputContractStandard?: TokenStandard;
 };
 
 export type QuoteOptions = {
@@ -547,27 +549,15 @@ export type BlinkEvmSwap = {
 	value: string;
 };
 
-export type BlinkSvmAccountMeta = {
-	pubkey: string;
-	isSigner: boolean;
-	isWritable: boolean;
-};
-
-export type BlinkSvmInstruction = {
-	programId: string;
-	accounts: BlinkSvmAccountMeta[];
-	data: string;
-};
-
 export type BlinkSvmLookupTable = {
 	address: string;
 	addresses: string[];
 };
 
 export type BlinkSvmSwap = {
-	setup: BlinkSvmInstruction[];
-	swap: BlinkSvmInstruction;
-	cleanup: BlinkSvmInstruction[];
+	setup: InstructionInfo[];
+	swap: InstructionInfo;
+	cleanup: InstructionInfo[];
 	lookupTables: BlinkSvmLookupTable[];
 	/** lamports the depositor lends the swap authority for rent the route pays; deposit_swap returns the unspent part */
 	swapAuthorityLamports: string;

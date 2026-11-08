@@ -8,8 +8,8 @@ import type {
 	BlinkOrderParamsJson,
 	BlinkQuote,
 	BlinkQuoteJson,
-	BlinkSvmInstruction,
 	BlinkSwapInstructions,
+	InstructionInfo,
 	Referrer,
 } from '../types';
 import { hexToUint8Array } from '../utils';
@@ -135,7 +135,7 @@ export function decodeBlinkQuote(json: BlinkQuoteJson | null | undefined): Blink
 	};
 }
 
-function decodeSvmInstruction(json: any, name: string): BlinkSvmInstruction {
+function decodeSvmInstruction(json: any, name: string): InstructionInfo {
 	return {
 		programId: nonEmptyText(json?.programId, `${name}.programId`),
 		accounts: list(json?.accounts, `${name}.accounts`, (meta, metaName) => ({

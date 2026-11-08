@@ -17,9 +17,9 @@ import { Buffer } from 'buffer';
 import addresses from '../addresses';
 import type {
 	BlinkOrder,
-	BlinkSvmInstruction,
 	BlinkSvmSwap,
 	ChainReferrers,
+	InstructionInfo,
 	Quote,
 	ReferrerAddresses,
 	SolanaTransactionSigner,
@@ -73,14 +73,6 @@ function computeBudgetInstructions(units: number, microLamports: bigint): Transa
 
 function swapComputeUnitLimit(simulatedUnits: number): number {
 	return Math.min(MAX_COMPUTE_UNIT_LIMIT, Math.ceil(simulatedUnits * SWAP_COMPUTE_UNIT_HEADROOM));
-}
-
-async function tokenProgramOf(connection: Connection, mint: PublicKey): Promise<PublicKey> {
-	const info = await connection.getAccountInfo(mint);
-	if (!info) {
-		throw new Error(`mint ${mint.toBase58()} not found`);
-	}
-	return info.owner;
 }
 
 function escrowAuthority(programId: PublicKey): PublicKey {
@@ -139,15 +131,14 @@ function depositNativeInstruction(
 }
 
 async function depositTokenInstruction(
-	connection: Connection,
 	programId: PublicKey,
 	owner: PublicKey,
 	mint: PublicKey,
 	quoteHash: string,
-	amount: bigint
+	amount: bigint,
+	tokenProgram: PublicKey,
 ): Promise<TransactionInstruction> {
 	const escrow = escrowAuthority(programId);
-	const tokenProgram = await tokenProgramOf(connection, mint);
 	return new TransactionInstruction({
 		programId,
 		keys: [
@@ -163,21 +154,22 @@ async function depositTokenInstruction(
 	});
 }
 
-async function depositInstruction(connection: Connection, order: BlinkOrder, owner: PublicKey): Promise<TransactionInstruction> {
+async function depositInstruction(quote: Quote, order: BlinkOrder, owner: PublicKey): Promise<TransactionInstruction> {
 	const params = order.quote.orderParams;
 	const programId = new PublicKey(params.routerAddress);
 	const amount = BigInt(params.expectedAmountIn);
 	if (isNativeBlinkSvmToken(params.srcToken)) {
 		return depositNativeInstruction(programId, owner, order.quote.quoteHash, amount);
 	}
-	return depositTokenInstruction(connection, programId, owner, new PublicKey(params.srcToken), order.quote.quoteHash, amount);
+	const tokenProgram = quote?.blinkInputContractStandard === 'spl2022' ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
+	return depositTokenInstruction(programId, owner, new PublicKey(params.srcToken), order.quote.quoteHash, amount, tokenProgram);
 }
 
 function rejectSwap(reason: string): never {
 	throw new Error(`Blink swap instructions rejected: ${reason}`);
 }
 
-function metaPubkey(ix: BlinkSvmInstruction, index: number): PublicKey {
+function metaPubkey(ix: InstructionInfo, index: number): PublicKey {
 	const meta = ix.accounts[index];
 	if (!meta) {
 		rejectSwap(`instruction is missing account ${index}`);
@@ -194,7 +186,7 @@ type AuthorityTokenAccount = {
 function authorityTokenAccountCreated(
 	depositor: PublicKey,
 	authority: PublicKey,
-	ix: BlinkSvmInstruction
+	ix: InstructionInfo
 ): AuthorityTokenAccount {
 	const program = new PublicKey(ix.programId);
 	if (!program.equals(ASSOCIATED_TOKEN_PROGRAM_ID)) {
@@ -232,7 +224,7 @@ function authorityTokenAccountCreated(
 function checkSwapStep(
 	depositor: PublicKey,
 	authority: PublicKey,
-	swapIx: BlinkSvmInstruction,
+	swapIx: InstructionInfo,
 	allowedSwapPrograms: PublicKey[]
 ): void {
 	const program = new PublicKey(swapIx.programId);
@@ -490,6 +482,7 @@ async function compileSwapDeposit(
 }
 
 async function buildSwapDepositInstructions(
+	quote: Quote,
 	connection: Connection,
 	order: BlinkOrder,
 	owner: PublicKey,
@@ -506,10 +499,10 @@ async function buildSwapDepositInstructions(
 	const authority = blinkSvmSwapAuthority(programId, owner, quoteHash);
 	const lockMint = new PublicKey(params.lockToken);
 	const escrow = escrowAuthority(programId);
-	const tokenProgram = await tokenProgramOf(connection, lockMint);
 	const nativeSrc = isNativeBlinkSvmToken(params.srcToken);
 	const sourceMint = nativeSrc ? solMint : new PublicKey(params.srcToken);
-	const sourceTokenProgram = await tokenProgramOf(connection, sourceMint);
+	const tokenProgram = quote?.blinkInputContractStandard === 'spl2022' ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
+	const sourceTokenProgram = quote.fromToken.standard === 'spl2022' ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
 	const authorityInput = getAssociatedTokenAddress(sourceMint, authority, true, sourceTokenProgram);
 	const swapPrograms = order.contracts.swapPrograms.map((p) => new PublicKey(p));
 	const created = checkSwapInstructions(owner, authority, swap, swapPrograms);
@@ -570,10 +563,15 @@ async function buildSwapDepositInstructions(
 			Buffer.from(swap.swap.data, 'base64')
 		),
 	});
+	// the SDK creates the swap authority's input account itself (first instruction below), so drop the
+	// aggregator's copy of that create, which Jupiter sends for a native SOL input
+	const setupInstructions = swap.setup
+		.map(deserializeInstructionInfo)
+		.filter((ix) => !ix.keys[1].pubkey.equals(authorityInput));
 	const body = [
 		createAssociatedTokenAccountInstruction(owner, authorityInput, authority, sourceMint, sourceTokenProgram),
 		...fundingInstructions,
-		...swap.setup.map(deserializeInstructionInfo),
+		...setupInstructions,
 		depositIx,
 		...authorityAccounts.map((account) => closeAuthorityAccount(programId, quoteHash, owner, authority, account)),
 	];
@@ -634,11 +632,11 @@ export async function createBlinkFromSolanaInstructions(
 	if (!needsBlinkSourceSwap(order.quote.orderParams)) {
 		const instructions = [
 			...computeBudgetInstructions(DEPOSIT_COMPUTE_UNIT_LIMIT, computeUnitPrice),
-			await depositInstruction(connection, order, owner),
+			await depositInstruction(quote, order, owner),
 		];
 		return { instructions, signers: [], lookupTables: [], swapMessageV0Params: null };
 	}
-	const { instructions, lookupTables } = await buildSwapDepositInstructions(connection, order, owner, computeUnitPrice);
+	const { instructions, lookupTables } = await buildSwapDepositInstructions(quote, connection, order, owner, computeUnitPrice);
 	return { instructions, signers: [], lookupTables, swapMessageV0Params: null };
 }
 
@@ -666,7 +664,7 @@ export async function swapBlinkGaslessFromSolana(
 	const owner = new PublicKey(swapperAddress);
 	const transaction = new Transaction().add(
 		...computeBudgetInstructions(DEPOSIT_COMPUTE_UNIT_LIMIT, GASLESS_COMPUTE_UNIT_PRICE_MICRO_LAMPORTS),
-		await depositInstruction(connection, order, owner)
+		await depositInstruction(quote, order, owner)
 	);
 	transaction.feePayer = new PublicKey(sponsor);
 	transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
