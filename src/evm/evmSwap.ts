@@ -38,6 +38,8 @@ import {
 } from './evmHyperCore';
 import { getMonoChainFromEvmTxPayload } from './evmMonoChain';
 import { getBlinkFromEvmTxPayload, swapBlinkGaslessFromEvm } from './evmBlink';
+import { hasBlinkQuoteHash } from '../blink/order';
+import { decodeBlinkQuote } from '../blink/utils';
 
 const SAMPLE_SUI_ADDRESS = '0xcde6dbe01902be1f200ff03dbbd149e586847be8cee15235f82750d9b06c0e04';
 
@@ -647,17 +649,21 @@ export async function estimateQuoteRequiredGasAprox2(
 			requiredNative: BigInt(0),
 		}
 	}
+	// a Blink order is bound to its recipient, refund address and referrers, so the deposit is built
+	// for the ones the embedded order carries instead of the sample addresses
+	const blinkParams = quote.type === 'BLINK' && hasBlinkQuoteHash(quote) ? decodeBlinkQuote(quote.blinkQuote).orderParams : null;
 	const transactionRequest = await getSwapFromEvmTxPayload(
 		quote,
 		signerAddress,
-		sampleDestinationAddress,
-		null,
+		blinkParams ? blinkParams.recipient : sampleDestinationAddress,
+		blinkParams ? { evm: blinkParams.referrers } : null,
 		signerAddress,
 		signerChainId,
 		payload,
 		undefined,
 		{
 			apiKey,
+			refundAddress: blinkParams?.refundAddress,
 		}
 	);
 
