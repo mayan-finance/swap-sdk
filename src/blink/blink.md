@@ -51,7 +51,7 @@ const result = await swapFromEvm(
 	null, // permit
 	null, // overrides
 	null, // payload (not supported for BLINK)
-	{ includeAllowanceTx: true }
+	{ evmProvider, includeAllowanceTx: true, allowBlinkEvmDirectTransfer: true } // evmProvider: a JsonRpcProvider on the source chain (required)
 );
 // result: TransactionResponse for a normal order, quoteHash string for a gasless one
 ```
@@ -187,13 +187,23 @@ convenience:
 
 Two cases need no approval at all:
 
-- **Direct transfer.** When `order.quote.directTransfer` is set (ERC20, cross-chain,
-  no source swap) the SDK sends a plain `transfer(escrow, amount)` with the quote hash
-  appended to the calldata. `includeAllowanceTx` is skipped automatically. Blink reads
-  the hash from the transaction's own calldata, so a **smart-contract wallet or any
-  batching layer hides it and the deposit is not attributed**. The SDK takes this path
-  whenever the quote allows it; the only way to force the router path is to pass a
-  `permit`.
+- **Direct transfer, opt-in.** When `order.quote.directTransfer` is set (ERC20,
+  cross-chain, no source swap) and you pass `allowBlinkEvmDirectTransfer: true`, the SDK
+  sends a plain `transfer(escrow, amount)` with the quote hash appended to the calldata,
+  and `includeAllowanceTx` is skipped. Blink reads the hash from the transaction's own
+  calldata, so a **contract account hides it** (a Safe's `execTransaction`, an ERC-4337
+  user operation, an EIP-7702 batch) and the deposit would never be attributed. The SDK
+  therefore checks the swapper with `getCode` on `options.evmProvider` even with the
+  opt-in (`isContractAccount`, `allowsBlinkDirectTransfer`) and deposits through the
+  escrow's `depositToken` for a contract account, which Blink attributes by its event
+  (a deposit-path check only: an EIP-7702 account still signs permits and gasless
+  orders with its own key, §7). Without the opt-in every ERC20 deposit takes
+  `depositToken`, so an integrator who does
+  not know its users' wallets gets the attributable path by doing nothing. Pass the same
+  option to the approval helpers and the gas estimators so they describe the same
+  deposit; `includeAllowanceTx` batches the approve with it. A smart account that is not
+  deployed yet has no code to detect: leave the opt-in out for it. A `permit` also
+  forces the router path.
 - **Native token.** Sent as `value`.
 
 Gas: the `estimateQuoteRequiredGas*` helpers return `0` for gasless BLINK;
@@ -254,6 +264,13 @@ gasless path (EVM, Solana); on Sui call `swapBlinkGaslessFromSui`.
   whether that step is still needed; without the allowance or the permit the swap throws.
 - The order's Permit2 deadline is the permit's deadline when one is passed, since the
   router runs both with the same one; otherwise 30 minutes from the swap.
+- **Who can sign.** An EIP-7702 delegated EOA (`getCode` returns `0xef0100` followed by
+  the delegator's address, as MetaMask accounts do) signs the token permit and the Permit2
+  message with its own key, and Permit2 and permit-capable tokens such as USDC accept that
+  through EIP-1271 on the delegator, so gasless works for it: do not hide gasless routes
+  from such wallets. A smart-contract wallet (a Safe, an ERC-4337 account) cannot produce
+  the 65-byte permit Blink's router runs; give it the normal path with an approve
+  transaction. `isContractAccount` is a deposit-path check (§5), not a signing one.
 - **Signing elsewhere** (a backend such as tx-builder, a non-ethers wallet): each chain has
   a builder that returns what to sign and a quote hash, and `submitBlinkGaslessOrder` sends
   the signed result. `swapBlinkGaslessFrom*` are these builders plus a signer.
@@ -317,6 +334,7 @@ the API's `{ code, message }` body on a non-2xx status, like those do:
 | `swapBlinkGaslessFromSui(...)`               | Gasless on Sui (no automatic routing there).                                       |
 | `getEvmSwapApproval` / `isEvmSwapAllowanceEnough` / `getEvmSwapPermitParams` / `signEvmSwapPermit` / `getEvmSwapApproveTxs` | The approval step before an EVM swap, for any quote type (§7). |
 | `getBlinkGaslessFromEvmParams` / `getBlinkGaslessFromSolanaTransaction` / `getBlinkGaslessFromSuiTransaction` | Gasless orders signed outside the SDK (§7). |
+| `isContractAccount(address, provider)` / `allowsBlinkDirectTransfer(quote, owner, provider, allow?)` | Whether a deposit goes as a direct transfer (§5): the opt-in `allowBlinkEvmDirectTransfer` and the code check `swapFromEvm` and the approval helpers run on the provider. |
 | `loadBlinkOrder(quote)`                      | `resolveBlinkOrder` without the swap-input checks or the swap route: enough to know what to approve, and calls no Blink endpoint but the cached manifest. |
 | `BlinkUnregisteredAddressError`              | Router/escrow not in the signed manifest. Treat as "do not proceed".               |
 

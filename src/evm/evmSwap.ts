@@ -36,7 +36,7 @@ import {
 	getHyperCoreWithdrawParams
 } from './evmHyperCore';
 import { getMonoChainFromEvmTxPayload } from './evmMonoChain';
-import { getBlinkFromEvmTxPayload, swapBlinkGaslessFromEvm } from './evmBlink';
+import { allowsBlinkDirectTransfer, getBlinkFromEvmTxPayload, swapBlinkGaslessFromEvm } from './evmBlink';
 import { getErc20ApproveTxs } from './evmApproval';
 import { hasBlinkQuoteHash } from '../blink/order';
 import { decodeBlinkQuote } from '../blink/utils';
@@ -195,7 +195,11 @@ export async function getSwapFromEvmTxPayload(
 	signerChainId: number | string,
 	payload: Uint8Array | Buffer | null | undefined,
 	permit: Erc20Permit | null | undefined,
-	options?: {
+	options: {
+		/** A JSON-RPC provider on the signer's chain: the SDK reads the chain through it */
+		evmProvider: ethers.JsonRpcProvider;
+		/** Blink: deposit by a plain transfer when the order allows it and the swapper is an EOA (see `allowsBlinkDirectTransfer`) */
+		allowBlinkEvmDirectTransfer?: boolean;
 		usdcPermitSignature?: string;
 		apiKey?: string;
 		refundAddress?: string;
@@ -211,6 +215,7 @@ export async function getSwapFromEvmTxPayload(
 			)}) and quote from chain are not same! ${fromChainId} !== ${signerWormholeChainId}`
 		);
 	}
+	const provider = await requireEvmProvider(options, signerChainId);
 
 	if (destinationAddress === ZeroAddress || destinationAddress === SystemProgram.programId.toString()) {
 		throw new Error(`Invalid destination address: ${destinationAddress}`);
@@ -295,7 +300,8 @@ export async function getSwapFromEvmTxPayload(
 			referrerAddresses,
 			signerChainId,
 			permit,
-			refundAddress
+			refundAddress,
+			await allowsBlinkDirectTransfer(quote, swapperAddress, provider, options.allowBlinkEvmDirectTransfer)
 		);
 	}
 
@@ -392,12 +398,15 @@ export async function swapFromEvm(
 	permit: Erc20Permit | null | undefined,
 	overrides: Overrides | null | undefined,
 	payload: Uint8Array | Buffer | null | undefined,
-	options?: {
+	options: {
+		/** A JSON-RPC provider on the signer's chain: the SDK reads the chain through it */
+		evmProvider: ethers.JsonRpcProvider;
+		/** Blink: deposit by a plain transfer when the order allows it and the swapper is an EOA (see `allowsBlinkDirectTransfer`) */
+		allowBlinkEvmDirectTransfer?: boolean;
 		apiKey?: string;
 		includeAllowanceTx?: boolean;
 		refundAddress?: string;
 		swiftRefundAddress?: string;
-		evmProvider?: ethers.JsonRpcProvider;
 	}
 ): Promise<TransactionResponse | string> {
 	if (!signer.provider) {
@@ -412,6 +421,7 @@ export async function swapFromEvm(
 		throw new Error('Signer address does not match swapper address');
 	}
 	const signerChainId = Number((await signer.provider.getNetwork()).chainId);
+	const provider = await requireEvmProvider(options, signerChainId);
 
 	if (quote.fromChain === 'hypercore' && (!quote.gasless || quote.type !== 'SWIFT')) {
 		throw new Error('Only SWIFT gasless quotes are supported from hypercore withdraw');
@@ -528,12 +538,7 @@ export async function swapFromEvm(
 	if (overrides?.gasLimit) {
 		transactionRequest.gasLimit = overrides.gasLimit;
 	} else {
-		let estimatedGas: bigint;
-		if (options?.evmProvider) {
-			estimatedGas = await options.evmProvider.estimateGas({ ...transactionRequest, from: signerAddress });
-		} else {
-			estimatedGas = await signer.estimateGas(transactionRequest);
-		}
+		const estimatedGas = await provider.estimateGas({ ...transactionRequest, from: signerAddress });
 		// convert gasLimit to string for support ethers.js v5
 		transactionRequest.gasLimit = String(
 			(BigInt(String(estimatedGas)) * BigInt(110)) / BigInt(100)
@@ -553,6 +558,7 @@ export async function estimateQuoteRequiredGas(
 		usdcPermitSignature?: string;
 		apiKey?: string;
 		swiftRefundAddress?: string;
+		allowBlinkEvmDirectTransfer?: boolean;
 	}
 ): Promise<bigint> {
 	const signerAddress = await signer.getAddress();
@@ -575,7 +581,13 @@ export async function estimateQuoteRequiredGas(
 		signerChainId,
 		payload,
 		permit,
-		{ usdcPermitSignature: options?.usdcPermitSignature, apiKey: options?.apiKey, swiftRefundAddress: options?.swiftRefundAddress },
+		{
+			evmProvider: signer.provider as ethers.JsonRpcProvider,
+			allowBlinkEvmDirectTransfer: options?.allowBlinkEvmDirectTransfer,
+			usdcPermitSignature: options?.usdcPermitSignature,
+			apiKey: options?.apiKey,
+			swiftRefundAddress: options?.swiftRefundAddress,
+		},
 	);
 	// @ts-ignore
 	delete transactionRequest._forwarder;
@@ -598,6 +610,7 @@ export async function estimateQuoteRequiredGasAprox(
 		usdcPermitSignature?: string;
 		apiKey?: string;
 		swiftRefundAddress?: string;
+		allowBlinkEvmDirectTransfer?: boolean;
 	},
 ): Promise<bigint> {
 	const signerAddress = '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
@@ -620,7 +633,13 @@ export async function estimateQuoteRequiredGasAprox(
 		signerChainId,
 		payload,
 		permit,
-		{ usdcPermitSignature: options?.usdcPermitSignature, apiKey: options?.apiKey, swiftRefundAddress: options?.swiftRefundAddress },
+		{
+			evmProvider: provider,
+			allowBlinkEvmDirectTransfer: options?.allowBlinkEvmDirectTransfer,
+			usdcPermitSignature: options?.usdcPermitSignature,
+			apiKey: options?.apiKey,
+			swiftRefundAddress: options?.swiftRefundAddress,
+		},
 	);
 	// @ts-ignore
 	delete transactionRequest._forwarder;
@@ -631,7 +650,9 @@ export async function estimateQuoteRequiredGasAprox(
 export async function estimateQuoteRequiredGasAprox2(
 	quote: Quote,
 	payload: Uint8Array | Buffer | null | undefined,
-	apiKey?: string,
+	apiKey: string | undefined,
+	evmProvider: ethers.JsonRpcProvider,
+	options?: { allowBlinkEvmDirectTransfer?: boolean },
 ): Promise<{
 	estimateGas: bigint;
 	gasPrice: bigint;
@@ -665,6 +686,8 @@ export async function estimateQuoteRequiredGasAprox2(
 		payload,
 		undefined,
 		{
+			evmProvider,
+			allowBlinkEvmDirectTransfer: options?.allowBlinkEvmDirectTransfer,
 			apiKey,
 			refundAddress: blinkParams?.refundAddress,
 		}
@@ -683,6 +706,22 @@ export async function estimateQuoteRequiredGasAprox2(
 		gasPrice: gasPrice,
 		requiredNative: gasPrice * estimatedGas,
 	};
+}
+
+/** The provider the caller passed, checked to be on the signer's chain */
+async function requireEvmProvider(
+	options: { evmProvider?: ethers.JsonRpcProvider } | null | undefined,
+	signerChainId: number | string
+): Promise<ethers.JsonRpcProvider> {
+	const provider = options?.evmProvider;
+	if (!provider) {
+		throw new Error('No evmProvider found in options: pass a JSON-RPC provider on the source chain');
+	}
+	const providerChainId = Number((await provider.getNetwork()).chainId);
+	if (providerChainId !== Number(signerChainId)) {
+		throw new Error(`evmProvider is on chain ${providerChainId}, not on the signer chain ${Number(signerChainId)}`);
+	}
+	return provider;
 }
 
 function findCapsForChain(caps: any, chainId: number | string): any | undefined {

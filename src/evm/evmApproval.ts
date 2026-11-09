@@ -19,6 +19,8 @@ import type {
 import { getEvmChainIdByName, getPermitParams, PermitTypes } from '../utils';
 import { loadBlinkOrder } from '../blink/order';
 import {
+	allowsBlinkDirectTransfer,
+	type BlinkDirectTransferOption,
 	getBlinkEvmDepositSpender,
 	PERMIT_DEADLINE_SECS,
 	PERMIT_MIN_LIFETIME_SECS,
@@ -66,13 +68,16 @@ export type EvmSwapPermitParams = {
 };
 
 /**
- * What the user approves before swapping the quote from an EVM chain, or `null` when the swap
+ * What `owner` approves before swapping the quote from an EVM chain, or `null` when the swap
  * spends no allowance: a native or non-EVM input, a HyperCore withdrawal, or a Blink deposit
- * sent as a plain transfer. `provider` must be on the quote's source chain.
+ * `owner` sends as a direct transfer (with `options.allowBlinkEvmDirectTransfer`, see
+ * `allowsBlinkDirectTransfer`). `provider` must be on the quote's source chain.
  */
 export async function getEvmSwapApproval(
 	quote: Quote,
-	provider: JsonRpcProvider
+	owner: string,
+	provider: JsonRpcProvider,
+	options?: BlinkDirectTransferOption
 ): Promise<EvmSwapApproval | null> {
 	if (
 		NO_ALLOWANCE_CHAINS.includes(quote.fromChain) ||
@@ -97,7 +102,13 @@ export async function getEvmSwapApproval(
 	}
 	if (quote.type === 'BLINK') {
 		const order = await loadBlinkOrder(quote);
-		const spender = getBlinkEvmDepositSpender(order, false);
+		const directTransfer = await allowsBlinkDirectTransfer(
+			quote,
+			owner,
+			provider,
+			options?.allowBlinkEvmDirectTransfer
+		);
+		const spender = getBlinkEvmDepositSpender(order, false, directTransfer);
 		if (!spender) {
 			return null;
 		}
@@ -125,9 +136,10 @@ export async function isEvmSwapAllowanceEnough(
 	quote: Quote,
 	owner: string,
 	provider: JsonRpcProvider,
-	permit?: Erc20Permit | null
+	permit?: Erc20Permit | null,
+	options?: BlinkDirectTransferOption
 ): Promise<boolean> {
-	const approval = await getEvmSwapApproval(quote, provider);
+	const approval = await getEvmSwapApproval(quote, owner, provider, options);
 	if (!approval) {
 		return true;
 	}
@@ -152,9 +164,10 @@ export async function getEvmSwapPermitParams(
 	quote: Quote,
 	owner: string,
 	provider: JsonRpcProvider,
-	deadline: number = nowSecs() + PERMIT_DEADLINE_SECS
+	deadline: number = nowSecs() + PERMIT_DEADLINE_SECS,
+	options?: BlinkDirectTransferOption
 ): Promise<EvmSwapPermitParams | null> {
-	const approval = await getEvmSwapApproval(quote, provider);
+	const approval = await getEvmSwapApproval(quote, owner, provider, options);
 	if (!approval || !quote.fromToken.supportsPermit) {
 		return null;
 	}
@@ -180,7 +193,8 @@ export async function getEvmSwapPermitParams(
  */
 export async function signEvmSwapPermit(
 	quote: Quote,
-	signer: Signer
+	signer: Signer,
+	options?: BlinkDirectTransferOption
 ): Promise<Erc20Permit | null> {
 	const provider = signer.provider as JsonRpcProvider | null;
 	if (!provider) {
@@ -189,7 +203,9 @@ export async function signEvmSwapPermit(
 	const params = await getEvmSwapPermitParams(
 		quote,
 		await signer.getAddress(),
-		provider
+		provider,
+		undefined,
+		options
 	);
 	if (!params) {
 		return null;
@@ -214,9 +230,10 @@ export async function signEvmSwapPermit(
 export async function getEvmSwapApproveTxs(
 	quote: Quote,
 	owner: string,
-	provider: JsonRpcProvider
+	provider: JsonRpcProvider,
+	options?: BlinkDirectTransferOption
 ): Promise<TransactionRequest[]> {
-	const approval = await getEvmSwapApproval(quote, provider);
+	const approval = await getEvmSwapApproval(quote, owner, provider, options);
 	if (!approval) {
 		return [];
 	}

@@ -30,6 +30,17 @@ export const PERMIT_DEADLINE_SECS = 30 * 60;
 /** A permit this close to its deadline is refused: a gasless Blink order expires with it */
 export const PERMIT_MIN_LIFETIME_SECS = 5 * 60;
 
+/** Opt-in to Blink's direct transfer; see {@link allowsBlinkDirectTransfer} */
+export type BlinkDirectTransferOption = {
+	/**
+	 * `true` lets the SDK deposit a Blink order by a plain ERC20 transfer when the order allows it
+	 * and the swapper is an externally owned account, which the SDK checks with `getCode`. Left out
+	 * or `false`, the deposit always goes through the escrow's `depositToken` (or the router with a
+	 * permit), which Blink attributes for any wallet.
+	 */
+	allowBlinkEvmDirectTransfer?: boolean;
+};
+
 const blinkRouterInterface = new Interface([
 	'function depositNative(bytes32 quoteHash)',
 	'function depositToken(bytes32 quoteHash, address token, uint256 amount)',
@@ -52,6 +63,11 @@ export type BlinkEvmDepositCall = {
 	value: bigint;
 };
 
+/**
+ * Whether the order can be deposited by a plain ERC20 transfer: the quote allows it, the input is
+ * an ERC20, the order crosses chains and there is no source swap. Whether the SDK does so for a
+ * given swapper is {@link allowsBlinkDirectTransfer}.
+ */
 export function usesBlinkDirectTransfer(order: BlinkOrder): boolean {
 	const params = order.quote.orderParams;
 	return (
@@ -60,6 +76,36 @@ export function usesBlinkDirectTransfer(order: BlinkOrder): boolean {
 		params.srcChain !== params.dstChain &&
 		!needsBlinkSourceSwap(params)
 	);
+}
+
+/** Whether `address` holds code: a Safe, an ERC-4337 account or an EIP-7702 delegated EOA */
+export async function isContractAccount(address: string, provider: Provider): Promise<boolean> {
+	return (await provider.getCode(address)) !== '0x';
+}
+
+/**
+ * Whether the deposit for `quote` goes as a direct transfer by `owner`: only when the integrator
+ * opted in with `allow` (`allowBlinkEvmDirectTransfer`) and `owner` is an externally owned
+ * account. Blink attributes a direct transfer by the calldata of the transaction itself, which a
+ * contract account wraps (a Safe's execTransaction, an ERC-4337 user operation, an EIP-7702
+ * batch), so its deposit would never be matched to the order; such an owner, and every owner
+ * without the opt-in, deposits through the escrow's `depositToken`, which Blink attributes by
+ * its event and which needs an allowance. The account is looked up only for a Blink quote that
+ * allows a direct transfer.
+ */
+export async function allowsBlinkDirectTransfer(
+	quote: Quote,
+	owner: string,
+	provider: Provider,
+	allow = false
+): Promise<boolean> {
+	if (!allow) {
+		return false;
+	}
+	if (quote.type !== 'BLINK' || quote.gasless || !quote.blinkQuote?.crossChain?.directTransfer) {
+		return true;
+	}
+	return !(await isContractAccount(owner, provider));
 }
 
 /**
@@ -86,14 +132,15 @@ function blinkEvmDepositTarget(order: BlinkOrder, permit: boolean): string {
  * spender: the contract that pulls the tokens. `permit` says whether the deposit will carry a
  * permit (`depositTokenWithPermit` and friends on the manifest router) or rely on an allowance
  * (`depositToken` on the quote's `routerAddress`, the escrow). Returns `null` when nothing has
- * to be approved: a native input, or an order the SDK deposits by direct transfer (no permit).
- * An order from `loadBlinkOrder`, which has no swap route, gives the same answer.
+ * to be approved: a native input, or an order deposited by direct transfer (no permit, and
+ * `directTransfer` from {@link allowsBlinkDirectTransfer}). An order from `loadBlinkOrder`, which
+ * has no swap route, gives the same answer.
  */
-export function getBlinkEvmDepositSpender(order: BlinkOrder, permit: boolean): string | null {
+export function getBlinkEvmDepositSpender(order: BlinkOrder, permit: boolean, directTransfer = false): string | null {
 	if (isNativeBlinkEvmToken(order.quote.orderParams.srcToken)) {
 		return null;
 	}
-	if (!permit && usesBlinkDirectTransfer(order)) {
+	if (!permit && directTransfer && usesBlinkDirectTransfer(order)) {
 		return null;
 	}
 	return blinkEvmDepositTarget(order, permit);
@@ -107,10 +154,15 @@ function referrerTotalBps(referrers: { bps: number }[]): number {
  * The transaction that deposits the order into Blink. A permit is appended to the ERC20
  * variants and must have been signed with `getBlinkEvmDepositSpender(order, true)` (the
  * manifest router) as spender; without one, `getBlinkEvmDepositSpender(order, false)` must
- * already be approved. When the quote allows it an ERC20 order becomes a plain transfer to the
- * escrow (`quote.routerAddress`) with the quote hash appended, which needs no approval at all.
+ * already be approved. With `directTransfer` (from {@link allowsBlinkDirectTransfer}) an ERC20
+ * order the quote allows it for becomes a plain transfer to the escrow (`quote.routerAddress`)
+ * with the quote hash appended, which needs no approval at all.
  */
-export function buildBlinkEvmDepositCall(order: BlinkOrder, permit?: Erc20Permit | null): BlinkEvmDepositCall {
+export function buildBlinkEvmDepositCall(
+	order: BlinkOrder,
+	permit?: Erc20Permit | null,
+	directTransfer = false
+): BlinkEvmDepositCall {
 	const { quoteHash, orderParams: params } = order.quote;
 	const amountIn = BigInt(params.expectedAmountIn);
 	const native = isNativeBlinkEvmToken(params.srcToken);
@@ -126,7 +178,7 @@ export function buildBlinkEvmDepositCall(order: BlinkOrder, permit?: Erc20Permit
 	if (!swap && needsBlinkSourceSwap(params)) {
 		throw new Error('Blink order needs its swap route to build the deposit: resolve it with resolveBlinkOrder');
 	}
-	if (!permit && usesBlinkDirectTransfer(order)) {
+	if (!permit && directTransfer && usesBlinkDirectTransfer(order)) {
 		const transfer = erc20Interface.encodeFunctionData('transfer', [params.routerAddress, amountIn]);
 		return { to: params.srcToken, data: transfer + quoteHash.slice(2), value: BigInt(0) };
 	}
@@ -200,7 +252,8 @@ export async function getBlinkFromEvmTxPayload(
 	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	signerChainId: number | string,
 	permit: Erc20Permit | null | undefined,
-	refundAddress?: string
+	refundAddress?: string,
+	directTransfer = false
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 	if (quote.type !== 'BLINK') {
 		throw new Error('Quote type is not BLINK');
@@ -213,7 +266,7 @@ export async function getBlinkFromEvmTxPayload(
 	const params = order.quote.orderParams;
 	const permitCoversAmount =
 		!!permit && !isNativeBlinkEvmToken(params.srcToken) && permit.value >= BigInt(params.expectedAmountIn);
-	const call = buildBlinkEvmDepositCall(order, permitCoversAmount ? permit : null);
+	const call = buildBlinkEvmDepositCall(order, permitCoversAmount ? permit : null, directTransfer);
 	return {
 		to: call.to,
 		data: call.data,
