@@ -561,8 +561,16 @@ export async function getBlinkPriorityFee(chain: ChainName): Promise<bigint> {
 	return decodeBlinkPriorityFee(result);
 }
 
-export async function submitBlinkGaslessOrder(request: BlinkGaslessOrderRequest): Promise<BlinkGaslessSubmission> {
-	const res = await fetch(`${addresses.BLINK_API_URL}/v1/gasless/orders`, {
+/**
+ * Submits a signed gasless Blink order through Mayan's explorer, which indexes it at once and
+ * hands it to Blink. A refusal is thrown as `{ code, message }`, for example
+ * `BLINK_QUOTE_HASH_MISMATCH` (the order params do not hash to the quote hash),
+ * `BLINK_BAD_PAYLOAD` (the signed payload is malformed), `BLINK_BAD_SIGNATURE` (it does not
+ * recover to the owner) or `BLINK_SUBMIT_THROTTLED` (a submission for this quote is already in
+ * flight; retry shortly).
+ */
+export async function submitBlinkGaslessOrder(request: BlinkGaslessOrderRequest, apiKey?: string): Promise<BlinkGaslessSubmission> {
+	const res = await fetch(`${addresses.EXPLORER_URL}/submit/blink${apiKey ? '?apiKey=' + apiKey : ''}`, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
@@ -572,9 +580,15 @@ export async function submitBlinkGaslessOrder(request: BlinkGaslessOrderRequest)
 	await check5xxError(res);
 	const result = await res.json();
 	if (res.status !== 200 && res.status !== 201) {
-		throw result;
+		// the explorer nests its reason: { statusCode, message: { code, msg } }
+		const reason = result?.message && typeof result.message === 'object' ? result.message : result;
+		throw {
+			code: reason?.code ?? result?.statusCode,
+			message: reason?.msg ?? reason?.message ?? 'Blink gasless submission refused',
+			data: result,
+		} as QuoteError;
 	}
-	const submission = decodeBlinkGaslessSubmission(result);
+	const submission = decodeBlinkGaslessSubmission({ quoteHash: request.quoteHash, status: 'submitted', ...result });
 	if (submission.status === 'failed' || submission.status === 'rejected') {
 		throw new Error(submission.error ?? 'Blink gasless submission failed');
 	}

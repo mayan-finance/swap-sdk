@@ -114,7 +114,7 @@ confirmation screen. Past `expiresAt` the SDK refuses to build the deposit
 sequenceDiagram
     participant I as Integrator
     participant S as SDK
-    participant M as Mayan price API
+    participant M as Mayan API (price, explorer)
     participant B as Blink API
     participant W as Wallet / chain
 
@@ -134,7 +134,7 @@ sequenceDiagram
         W-->>I: tx hash
     else gasless
         S->>W: sign Permit2 witness / sponsored tx
-        S->>B: POST /v1/gasless/orders
+        S->>M: POST explorer /submit/blink (forwarded to Blink)
         S-->>I: quoteHash
     end
 ```
@@ -271,15 +271,25 @@ gasless path (EVM, Solana); on Sui call `swapBlinkGaslessFromSui`.
   from such wallets. A smart-contract wallet (a Safe, an ERC-4337 account) cannot produce
   the 65-byte permit Blink's router runs; give it the normal path with an approve
   transaction. `isContractAccount` is a deposit-path check (§5), not a signing one.
+- **Submission goes through Mayan's explorer**, `POST {EXPLORER_URL}/submit/blink`
+  (`?apiKey=` when you have one), never straight to Blink: the explorer indexes the order
+  at once and forwards it. The body is `{ quoteHash, orderParams, evm | svm | sui }` where
+  `orderParams` are the order params exactly as the quote embeds them
+  (`getBlinkOrderParamsJson(quote)`): the explorer re-hashes them and refuses a mismatch.
+  Refusals are thrown as `{ code, message }`: `BLINK_QUOTE_HASH_MISMATCH`,
+  `BLINK_BAD_PAYLOAD` (malformed signed payload), `BLINK_BAD_SIGNATURE` (it does not
+  recover to the owner) and `BLINK_SUBMIT_THROTTLED` (a submission for this quote is in
+  flight; retry shortly).
 - **Signing elsewhere** (a backend such as tx-builder, a non-ethers wallet): each chain has
-  a builder that returns what to sign and a quote hash, and `submitBlinkGaslessOrder` sends
-  the signed result. `swapBlinkGaslessFrom*` are these builders plus a signer.
+  a builder that returns what to sign, the quote hash and the order params, and
+  `submitBlinkGaslessOrder(request, apiKey?)` sends the signed result. `swapBlinkGaslessFrom*`
+  are these builders plus a signer.
 
   | Chain  | Build                                   | Submit (`submitBlinkGaslessOrder`)                   |
   | ------ | --------------------------------------- | ---------------------------------------------------- |
-  | EVM    | `getBlinkGaslessFromEvmParams` → `typedData` + `order` | `{ quoteHash, evm: { ...order, signature } }` |
-  | Solana | `getBlinkGaslessFromSolanaTransaction` → `transaction` | `{ quoteHash, svm: { txBase64 } }` (signed, sponsor slot empty) |
-  | Sui    | `getBlinkGaslessFromSuiTransaction` → `transaction`    | `{ quoteHash, sui: { txBase64, signature } }`  |
+  | EVM    | `getBlinkGaslessFromEvmParams` → `typedData` + `order` + `orderParams` | `{ quoteHash, orderParams, evm: { ...order, signature } }` |
+  | Solana | `getBlinkGaslessFromSolanaTransaction` → `transaction` + `orderParams` | `{ quoteHash, orderParams, svm: { txBase64 } }` (signed, sponsor slot empty) |
+  | Sui    | `getBlinkGaslessFromSuiTransaction` → `transaction` + `orderParams`    | `{ quoteHash, orderParams, sui: { txBase64, signature } }`  |
 
   The approval step works the same way: `getEvmSwapPermitParams` returns the token permit as
   typed data instead of signing it.
@@ -367,10 +377,11 @@ internal plumbing that the swap functions run for you.
   capped per destination chain (`getBlinkChains()[].maxGasDrop`). It is never delivered
   or charged on a refund.
 - **Keyless Blink API calls.** The SDK's direct calls to Blink (contracts, swap
-  instructions, priority fee, gasless submit) carry no API key, so they share the
-  keyless budget of 500 points per minute per IP. A server submitting many orders from
-  one IP can get a 429 with gRPC code 8 thrown; back off, the budget refills
-  continuously. Quotes themselves go through Mayan's price API, not straight to Blink.
+  instructions, priority fee) carry no API key, so they share the keyless budget of 500
+  points per minute per IP. A server reading routes for many orders from one IP can get a
+  429 with gRPC code 8 thrown; back off, the budget refills continuously. Quotes go
+  through Mayan's price API and gasless submissions through Mayan's explorer (§7), both
+  with your API key, not straight to Blink.
 - **Referrer payouts are vouchers, not per-swap transfers.** Blink accrues referrer
   fees off-chain per fulfilled order and pays them as signed vouchers claimed by the
   partner that requested the quote from Blink (Mayan's backend, for this SDK). Confirm

@@ -635,10 +635,15 @@ export type BlinkEvmGaslessOrder = {
 	permitSignature?: string;
 };
 
+/**
+ * A signed gasless Blink order, as Mayan's explorer takes it (`/submit/blink`): the quote hash,
+ * the order params exactly as the quote embeds them (the explorer re-hashes them and refuses a
+ * mismatch), and the signed payload of one chain.
+ */
 export type BlinkGaslessOrderRequest =
-	| { quoteHash: string; evm: BlinkEvmGaslessOrder }
-	| { quoteHash: string; svm: { txBase64: string } }
-	| { quoteHash: string; sui: { txBase64: string; signature: string } };
+	| { quoteHash: string; orderParams: BlinkOrderParamsJson; evm: BlinkEvmGaslessOrder }
+	| { quoteHash: string; orderParams: BlinkOrderParamsJson; svm: { txBase64: string } }
+	| { quoteHash: string; orderParams: BlinkOrderParamsJson; sui: { txBase64: string; signature: string } };
 
 export type BlinkOrder = {
 	quote: BlinkQuote;

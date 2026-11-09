@@ -1,9 +1,9 @@
 import { ClientWithCoreApi } from '@mysten/sui/client';
 import { Transaction, TransactionObjectArgument } from '@mysten/sui/transactions';
-import type { BlinkOrder, ChainReferrers, ComposableSuiMoveCallsOptions, Quote, ReferrerAddresses } from '../types';
+import type { BlinkOrder, BlinkOrderParamsJson, ChainReferrers, ComposableSuiMoveCallsOptions, Quote, ReferrerAddresses } from '../types';
 import { getQuoteRefundAddress, hexToUint8Array } from '../utils';
 import { getBlinkChains, getCurrentChainTime, submitBlinkGaslessOrder } from '../api';
-import { resolveBlinkOrder, needsBlinkSourceSwap } from '../blink/order';
+import { getBlinkOrderParamsJson, needsBlinkSourceSwap, resolveBlinkOrder } from '../blink/order';
 import { resolveInputCoin } from './utils';
 
 const SOURCE_SWAP_WINDOW_MS = BigInt(300_000);
@@ -194,8 +194,8 @@ async function sponsorTransaction(
 /**
  * Builds the sponsored deposit of a gasless Blink order without signing it, for integrators
  * whose wallet signs elsewhere. Blink's sponsor owns the gas: the user signs `transaction` and it
- * is submitted with `submitBlinkGaslessOrder({ quoteHash, sui: { txBase64, signature } })`, where
- * `txBase64` is the signed transaction bytes.
+ * is submitted with `submitBlinkGaslessOrder({ quoteHash, orderParams, sui: { txBase64, signature } })`,
+ * where `txBase64` is the signed transaction bytes.
  */
 export async function getBlinkGaslessFromSuiTransaction(
 	quote: Quote,
@@ -204,7 +204,7 @@ export async function getBlinkGaslessFromSuiTransaction(
 	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	suiClient: ClientWithCoreApi,
 	options?: ComposableSuiMoveCallsOptions
-): Promise<{ quoteHash: string; transaction: Transaction }> {
+): Promise<{ quoteHash: string; orderParams: BlinkOrderParamsJson; transaction: Transaction }> {
 	assertBlinkSuiQuote(quote);
 	if (!quote.gasless) {
 		throw new Error('Quote is not a gasless BLINK quote');
@@ -216,7 +216,11 @@ export async function getBlinkGaslessFromSuiTransaction(
 		throw new Error('Gasless Blink deposits are unavailable on sui');
 	}
 	const tx = await buildDepositTransaction(order, swapperAddress, suiClient, options);
-	return { quoteHash: order.quote.quoteHash, transaction: await sponsorTransaction(tx, suiClient, sponsor, gasBudget) };
+	return {
+		quoteHash: order.quote.quoteHash,
+		orderParams: getBlinkOrderParamsJson(quote),
+		transaction: await sponsorTransaction(tx, suiClient, sponsor, gasBudget),
+	};
 }
 
 export async function swapBlinkGaslessFromSui(
@@ -228,7 +232,7 @@ export async function swapBlinkGaslessFromSui(
 	signTransaction: SuiTransactionSigner,
 	options?: ComposableSuiMoveCallsOptions
 ): Promise<string> {
-	const { quoteHash, transaction } = await getBlinkGaslessFromSuiTransaction(
+	const { quoteHash, orderParams, transaction } = await getBlinkGaslessFromSuiTransaction(
 		quote,
 		swapperAddress,
 		destinationAddress,
@@ -237,6 +241,9 @@ export async function swapBlinkGaslessFromSui(
 		options
 	);
 	const signed = await signTransaction(transaction);
-	await submitBlinkGaslessOrder({ quoteHash, sui: { txBase64: signed.bytes, signature: signed.signature } });
+	await submitBlinkGaslessOrder(
+		{ quoteHash, orderParams, sui: { txBase64: signed.bytes, signature: signed.signature } },
+		options?.apiKey
+	);
 	return quoteHash;
 }

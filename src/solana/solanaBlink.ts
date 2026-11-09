@@ -17,6 +17,7 @@ import { Buffer } from 'buffer';
 import addresses from '../addresses';
 import type {
 	BlinkOrder,
+	BlinkOrderParamsJson,
 	BlinkSvmSwap,
 	ChainReferrers,
 	InstructionInfo,
@@ -27,7 +28,7 @@ import type {
 } from '../types';
 import { getAssociatedTokenAddress, getSafeU64Blob, hexToUint8Array } from '../utils';
 import { getBlinkPriorityFee, submitBlinkGaslessOrder } from '../api';
-import { resolveBlinkOrder, needsBlinkSourceSwap } from '../blink/order';
+import { getBlinkOrderParamsJson, needsBlinkSourceSwap, resolveBlinkOrder } from '../blink/order';
 import {
 	createAssociatedTokenAccountInstruction,
 	createSplTransferCheckInstruction,
@@ -702,7 +703,7 @@ export async function createBlinkFromSolanaInstructions(
  * Builds the deposit of a gasless Blink order without signing it, for integrators whose wallet
  * signs elsewhere. Blink's sponsor pays the fee: the user signs `transaction` (it keeps a slot
  * for the sponsor's signature) and it is submitted with
- * `submitBlinkGaslessOrder({ quoteHash, svm: { txBase64 } })`.
+ * `submitBlinkGaslessOrder({ quoteHash, orderParams, svm: { txBase64 } })`.
  */
 export async function getBlinkGaslessFromSolanaTransaction(
 	quote: Quote,
@@ -711,7 +712,7 @@ export async function getBlinkGaslessFromSolanaTransaction(
 	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	connection: Connection,
 	refundAddress?: string
-): Promise<{ quoteHash: string; transaction: Transaction }> {
+): Promise<{ quoteHash: string; orderParams: BlinkOrderParamsJson; transaction: Transaction }> {
 	assertBlinkSolanaQuote(quote);
 	if (!quote.gasless) {
 		throw new Error('Quote is not a gasless BLINK quote');
@@ -731,9 +732,10 @@ export async function getBlinkGaslessFromSolanaTransaction(
 	);
 	transaction.feePayer = new PublicKey(sponsor);
 	transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-	return { quoteHash: order.quote.quoteHash, transaction };
+	return { quoteHash: order.quote.quoteHash, orderParams: getBlinkOrderParamsJson(quote), transaction };
 }
 
+/** Signs the sponsored deposit and submits it through Mayan's explorer; returns the quote hash as the signature */
 export async function swapBlinkGaslessFromSolana(
 	quote: Quote,
 	swapperAddress: string,
@@ -741,9 +743,10 @@ export async function swapBlinkGaslessFromSolana(
 	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	signTransaction: SolanaTransactionSigner,
 	connection: Connection,
-	refundAddress?: string
+	refundAddress?: string,
+	apiKey?: string
 ): Promise<{ signature: string; serializedTrx: Uint8Array | null }> {
-	const { quoteHash, transaction } = await getBlinkGaslessFromSolanaTransaction(
+	const { quoteHash, orderParams, transaction } = await getBlinkGaslessFromSolanaTransaction(
 		quote,
 		swapperAddress,
 		destinationAddress,
@@ -758,6 +761,6 @@ export async function swapBlinkGaslessFromSolana(
 			verifySignatures: false,
 		})
 	).toString('base64');
-	await submitBlinkGaslessOrder({ quoteHash, svm: { txBase64 } });
+	await submitBlinkGaslessOrder({ quoteHash, orderParams, svm: { txBase64 } }, apiKey);
 	return { signature: quoteHash, serializedTrx: null };
 }

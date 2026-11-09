@@ -360,7 +360,7 @@ export async function swapFromSolana(
 		}
 		const refundAddress = getQuoteRefundAddress(quote, swapperWalletAddress, destinationAddress, instructionOptions);
 		return swapBlinkGaslessFromSolana(
-			quote, swapperWalletAddress, destinationAddress, referrerAddresses, signTransaction, connection, refundAddress
+			quote, swapperWalletAddress, destinationAddress, referrerAddresses, signTransaction, connection, refundAddress, extraParams?.apiKey
 		);
 	}
 

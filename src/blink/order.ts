@@ -3,6 +3,7 @@ import { ZeroAddress } from 'ethers';
 import type {
 	BlinkOrder,
 	BlinkOrderParams,
+	BlinkOrderParamsJson,
 	BlinkQuote,
 	ChainReferrers,
 	Quote,
@@ -31,6 +32,18 @@ export function hasBlinkQuoteHash(quote: Quote): boolean {
 	const embedded = quote.blinkQuote?.crossChain ?? quote.blinkQuote?.sameChainSwap;
 	const hash = embedded?.quoteHash;
 	return typeof hash === 'string' && hash !== '';
+}
+
+/**
+ * The order params exactly as the quote embeds them (proto JSON), for a gasless submission: the
+ * explorer re-hashes them and must get the quote hash back.
+ */
+export function getBlinkOrderParamsJson(quote: Quote): BlinkOrderParamsJson {
+	const embedded = quote.blinkQuote?.crossChain ?? quote.blinkQuote?.sameChainSwap;
+	if (!hasBlinkQuoteHash(quote) || !embedded?.orderParams) {
+		throw new Error('Blink quote carries no order: fetch the quote with destinationAddress and swapperAddress to get one');
+	}
+	return embedded.orderParams;
 }
 
 function sameAddress(a: string, b: string): boolean {

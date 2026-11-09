@@ -490,7 +490,8 @@ export async function swapFromEvm(
 			signer,
 			signerChainId,
 			permit,
-			refundAddress
+			refundAddress,
+			options.apiKey
 		);
 	}
 	const transactionRequest = await getSwapFromEvmTxPayload(

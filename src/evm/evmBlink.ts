@@ -13,6 +13,7 @@ import {
 import type {
 	BlinkEvmGaslessOrder,
 	BlinkOrder,
+	BlinkOrderParamsJson,
 	ChainReferrers,
 	Erc20Permit,
 	EvmForwarderParams,
@@ -20,7 +21,7 @@ import type {
 	ReferrerAddresses,
 } from '../types';
 import { getWormholeChainIdById, getWormholeChainIdByName } from '../utils';
-import { resolveBlinkOrder, needsBlinkSourceSwap } from '../blink/order';
+import { getBlinkOrderParamsJson, resolveBlinkOrder, needsBlinkSourceSwap } from '../blink/order';
 import { submitBlinkGaslessOrder } from '../api';
 import ERC20Artifact from './ERC20Artifact';
 import addresses from '../addresses';
@@ -356,9 +357,11 @@ function assertPermit2Permit(permit: Erc20Permit | null | undefined, token: stri
 /** A gasless Blink order from EVM, built but not signed */
 export type BlinkGaslessEvmParams = {
 	quoteHash: string;
+	/** The order params as the quote embeds them; the submission carries them as is */
+	orderParams: BlinkOrderParamsJson;
 	/** The Permit2 transfer of the input token, bound to the quote hash: what the user signs (EIP-712) */
 	typedData: ReturnType<typeof blinkPermit2WitnessTypedData>;
-	/** Submit with `submitBlinkGaslessOrder({ quoteHash, evm: { ...order, signature } })` */
+	/** Submit with `submitBlinkGaslessOrder({ quoteHash, orderParams, evm: { ...order, signature } })` */
 	order: Omit<BlinkEvmGaslessOrder, 'signature'>;
 };
 
@@ -406,6 +409,7 @@ export async function getBlinkGaslessFromEvmParams(
 	);
 	return {
 		quoteHash: order.quote.quoteHash,
+		orderParams: getBlinkOrderParamsJson(quote),
 		typedData,
 		order: {
 			owner: swapperAddress,
@@ -419,9 +423,10 @@ export async function getBlinkGaslessFromEvmParams(
 }
 
 /**
- * Submits a gasless Blink order. The user signs one message, the Permit2 transfer of the input
- * token bound to the quote hash, and Blink's relayer makes the deposit. Without a Permit2
- * allowance pass the token permit for Permit2 (`signEvmSwapPermit`), so the user still pays no gas.
+ * Submits a gasless Blink order through Mayan's explorer. The user signs one message, the Permit2
+ * transfer of the input token bound to the quote hash, and Blink's relayer makes the deposit.
+ * Without a Permit2 allowance pass the token permit for Permit2 (`signEvmSwapPermit`), so the
+ * user still pays no gas.
  */
 export async function swapBlinkGaslessFromEvm(
 	quote: Quote,
@@ -431,12 +436,13 @@ export async function swapBlinkGaslessFromEvm(
 	signer: Signer,
 	signerChainId: number | string,
 	permit: Erc20Permit | null | undefined,
-	refundAddress?: string
+	refundAddress?: string,
+	apiKey?: string
 ): Promise<string> {
 	if (!signer.provider) {
 		throw new Error('No provider found for signer');
 	}
-	const { quoteHash, typedData, order } = await getBlinkGaslessFromEvmParams(
+	const { quoteHash, orderParams, typedData, order } = await getBlinkGaslessFromEvmParams(
 		quote,
 		swapperAddress,
 		destinationAddress,
@@ -447,6 +453,6 @@ export async function swapBlinkGaslessFromEvm(
 		refundAddress
 	);
 	const signature = await signer.signTypedData(typedData.domain, typedData.types, typedData.value);
-	await submitBlinkGaslessOrder({ quoteHash, evm: { ...order, signature } });
+	await submitBlinkGaslessOrder({ quoteHash, orderParams, evm: { ...order, signature } }, apiKey);
 	return quoteHash;
 }
