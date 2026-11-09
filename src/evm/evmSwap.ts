@@ -238,6 +238,7 @@ export async function getSwapFromEvmTxPayload(
 	if (quote.type === 'MCTP') {
 		return getMctpFromEvmTxPayload(
 			quote,
+			swapperAddress,
 			destinationAddress,
 			referrerAddress,
 			signerChainId,
@@ -266,12 +267,13 @@ export async function getSwapFromEvmTxPayload(
 	if (quote.type === 'FAST_MCTP') {
 		return getFastMctpFromEvmTxPayload(
 			quote,
+			swapperAddress,
 			destinationAddress,
 			referrerAddress,
 			signerChainId,
 			permit,
 			payload,
-			options?.apiKey
+			options?.apiKey,
 		);
 	}
 
