@@ -30,7 +30,7 @@ export function nativeAddressToHexString(
 		wChainId === chains.avalanche  || wChainId === chains.arbitrum || wChainId === chains.optimism ||
 		wChainId === chains.base || wChainId === chains.unichain || wChainId === chains.linea ||
 		wChainId === chains.sonic || wChainId === chains.hyperevm || wChainId === chains.monad ||
-		wChainId === chains.hypercore
+		wChainId === chains.elysium || wChainId === chains.hypercore
 	) {
 		return zeroPadValue(address, 32);
 	} else if (wChainId === chains.aptos && isValidAptosType(address)) {
@@ -137,6 +137,7 @@ const chains: { [index in ChainName]: number }  = {
 	hyperevm: 47,
 	fogo: 51,
 	monad: 48,
+	elysium: 74,
 };
 
 export function getWormholeChainIdByName(chain: ChainName) : number {
@@ -160,6 +161,7 @@ const evmChainIdMap: { [index: string]: number }  = {
 	[146]: 52,
 	[999]: 47,
 	[143]: 48,
+	[99901]: 74,
 	[65000]: 65000, // HyperCore
 };
 
