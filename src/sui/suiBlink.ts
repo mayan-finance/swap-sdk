@@ -191,15 +191,20 @@ async function sponsorTransaction(
 	return Transaction.from(await tx.build({ client: suiClient }));
 }
 
-export async function swapBlinkGaslessFromSui(
+/**
+ * Builds the sponsored deposit of a gasless Blink order without signing it, for integrators
+ * whose wallet signs elsewhere. Blink's sponsor owns the gas: the user signs `transaction` and it
+ * is submitted with `submitBlinkGaslessOrder({ quoteHash, sui: { txBase64, signature } })`, where
+ * `txBase64` is the signed transaction bytes.
+ */
+export async function getBlinkGaslessFromSuiTransaction(
 	quote: Quote,
 	swapperAddress: string,
 	destinationAddress: string,
 	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	suiClient: ClientWithCoreApi,
-	signTransaction: SuiTransactionSigner,
 	options?: ComposableSuiMoveCallsOptions
-): Promise<string> {
+): Promise<{ quoteHash: string; transaction: Transaction }> {
 	assertBlinkSuiQuote(quote);
 	if (!quote.gasless) {
 		throw new Error('Quote is not a gasless BLINK quote');
@@ -211,11 +216,27 @@ export async function swapBlinkGaslessFromSui(
 		throw new Error('Gasless Blink deposits are unavailable on sui');
 	}
 	const tx = await buildDepositTransaction(order, swapperAddress, suiClient, options);
-	const sponsored = await sponsorTransaction(tx, suiClient, sponsor, gasBudget);
-	const signed = await signTransaction(sponsored);
-	await submitBlinkGaslessOrder({
-		quoteHash: order.quote.quoteHash,
-		sui: { txBase64: signed.bytes, signature: signed.signature },
-	});
-	return order.quote.quoteHash;
+	return { quoteHash: order.quote.quoteHash, transaction: await sponsorTransaction(tx, suiClient, sponsor, gasBudget) };
+}
+
+export async function swapBlinkGaslessFromSui(
+	quote: Quote,
+	swapperAddress: string,
+	destinationAddress: string,
+	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
+	suiClient: ClientWithCoreApi,
+	signTransaction: SuiTransactionSigner,
+	options?: ComposableSuiMoveCallsOptions
+): Promise<string> {
+	const { quoteHash, transaction } = await getBlinkGaslessFromSuiTransaction(
+		quote,
+		swapperAddress,
+		destinationAddress,
+		referrerAddresses,
+		suiClient,
+		options
+	);
+	const signed = await signTransaction(transaction);
+	await submitBlinkGaslessOrder({ quoteHash, sui: { txBase64: signed.bytes, signature: signed.signature } });
+	return quoteHash;
 }

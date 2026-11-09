@@ -24,7 +24,6 @@ import {
 } from '../utils';
 import MayanSwapArtifact from './MayanSwapArtifact';
 import MayanForwarderArtifact from './MayanForwarderArtifact';
-import ERC20Artifact from './ERC20Artifact';
 import addresses from '../addresses';
 import { Buffer } from 'buffer';
 import { getMctpFromEvmTxPayload } from './evmMctp';
@@ -38,6 +37,7 @@ import {
 } from './evmHyperCore';
 import { getMonoChainFromEvmTxPayload } from './evmMonoChain';
 import { getBlinkFromEvmTxPayload, swapBlinkGaslessFromEvm } from './evmBlink';
+import { getErc20ApproveTxs } from './evmApproval';
 import { hasBlinkQuoteHash } from '../blink/order';
 import { decodeBlinkQuote } from '../blink/utils';
 
@@ -479,6 +479,7 @@ export async function swapFromEvm(
 			referrerAddresses,
 			signer,
 			signerChainId,
+			permit,
 			refundAddress
 		);
 	}
@@ -754,34 +755,16 @@ async function handleAtomicBatch(
 			'Wallet does not support atomic batching; cannot include allowance tx'
 		);
 	}
-	const erc20Contract = new Contract(quote.fromToken.contract, ERC20Artifact.abi, signer);
-	const approveCalls: Array<object> = [];
+	// Blink deposits go to the contract the deposit is built for (escrow, router with a permit, or swap router)
 	const spender = quote.type === 'BLINK' ? String(transactionRequest.to) : addresses.MAYAN_FORWARDER_CONTRACT;
-	const USDT_ETHEREUM_ADDRESS = '0xdac17f958d2ee523a2206206994597c13d831ec7';
-	if (quote.fromChain === 'ethereum' && quote.fromToken.contract.toLowerCase() === USDT_ETHEREUM_ADDRESS) {
-		// USDT on Ethereum has a non-standard approve that requires resetting to zero first if the current allowance is non-zero.
-		const currentAllowance: bigint = await erc20Contract.allowance(signerAddress, spender);
-		if (currentAllowance > BigInt(0)) {
-			const resetData = erc20Contract.interface.encodeFunctionData('approve', [
-				spender,
-				BigInt(0),
-			]);
-			approveCalls.push({
-				to: quote.fromToken.contract,
-				data: resetData,
-				value: '0x0',
-			});
-		}
-	}
-	const approveData = erc20Contract.interface.encodeFunctionData('approve', [
+	const approveCalls = await getErc20ApproveTxs(
+		quote.fromChain,
+		quote.fromToken.contract,
+		signerAddress,
 		spender,
 		BigInt(quote.effectiveAmountIn64),
-	]);
-	approveCalls.push({
-		to: quote.fromToken.contract,
-		data: approveData,
-		value: '0x0',
-	});
+		signer.provider as ethers.JsonRpcProvider
+	);
 	const callsParams = {
 		version: '2.0.0',
 		chainId: chainHex,

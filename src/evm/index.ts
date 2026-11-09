@@ -5,3 +5,4 @@ export * from './evmMonoChain';
 export * from './evmSwift';
 export * from './evmFastMctp';
 export * from './evmBlink';
+export * from './evmApproval';

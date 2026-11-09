@@ -1,22 +1,34 @@
 import {
 	Contract,
 	Interface,
-	JsonRpcProvider,
 	MaxUint256,
+	type Provider,
+	Signature,
 	Signer,
 	hexlify,
 	randomBytes,
 	toBeHex,
 	type TransactionRequest,
 } from 'ethers';
-import type { BlinkOrder, ChainReferrers, Erc20Permit, EvmForwarderParams, Quote, ReferrerAddresses } from '../types';
-import { getPermitDomain, getWormholeChainIdById, getWormholeChainIdByName } from '../utils';
+import type {
+	BlinkEvmGaslessOrder,
+	BlinkOrder,
+	ChainReferrers,
+	Erc20Permit,
+	EvmForwarderParams,
+	Quote,
+	ReferrerAddresses,
+} from '../types';
+import { getWormholeChainIdById, getWormholeChainIdByName } from '../utils';
 import { resolveBlinkOrder, needsBlinkSourceSwap } from '../blink/order';
 import { submitBlinkGaslessOrder } from '../api';
 import ERC20Artifact from './ERC20Artifact';
 import addresses from '../addresses';
 
-const PERMIT_DEADLINE_SECS = 1800;
+/** How long a permit or a Permit2 transfer signed by the SDK stays valid */
+export const PERMIT_DEADLINE_SECS = 30 * 60;
+/** A permit this close to its deadline is refused: a gasless Blink order expires with it */
+export const PERMIT_MIN_LIFETIME_SECS = 5 * 60;
 
 const blinkRouterInterface = new Interface([
 	'function depositNative(bytes32 quoteHash)',
@@ -62,6 +74,10 @@ function blinkEvmDepositTarget(order: BlinkOrder, permit: boolean): string {
 	if (order.swap) {
 		return order.swap.routerAddress;
 	}
+	// A source swap runs on the manifest router, which Blink's swap route names as well
+	if (needsBlinkSourceSwap(order.quote.orderParams)) {
+		return order.contracts.router;
+	}
 	return permit ? order.contracts.router : order.quote.orderParams.routerAddress;
 }
 
@@ -71,6 +87,7 @@ function blinkEvmDepositTarget(order: BlinkOrder, permit: boolean): string {
  * permit (`depositTokenWithPermit` and friends on the manifest router) or rely on an allowance
  * (`depositToken` on the quote's `routerAddress`, the escrow). Returns `null` when nothing has
  * to be approved: a native input, or an order the SDK deposits by direct transfer (no permit).
+ * An order from `loadBlinkOrder`, which has no swap route, gives the same answer.
  */
 export function getBlinkEvmDepositSpender(order: BlinkOrder, permit: boolean): string | null {
 	if (isNativeBlinkEvmToken(order.quote.orderParams.srcToken)) {
@@ -106,6 +123,9 @@ export function buildBlinkEvmDepositCall(order: BlinkOrder, permit?: Erc20Permit
 		throw new Error('Blink returned swap instructions that are not for EVM');
 	}
 
+	if (!swap && needsBlinkSourceSwap(params)) {
+		throw new Error('Blink order needs its swap route to build the deposit: resolve it with resolveBlinkOrder');
+	}
 	if (!permit && usesBlinkDirectTransfer(order)) {
 		const transfer = erc20Interface.encodeFunctionData('transfer', [params.routerAddress, amountIn]);
 		return { to: params.srcToken, data: transfer + quoteHash.slice(2), value: BigInt(0) };
@@ -260,58 +280,53 @@ function permitDeadline(): bigint {
 	return BigInt(Math.floor(Date.now() / 1000) + PERMIT_DEADLINE_SECS);
 }
 
-async function signPermit2Approval(
-	quote: Quote,
-	signer: Signer,
-	owner: string,
-	deadline: bigint
-): Promise<string> {
-	const provider = signer.provider as JsonRpcProvider;
-	let domain;
-	try {
-		domain = await getPermitDomain(quote.fromToken, provider);
-	} catch (err) {
+/**
+ * The token permit that gives Permit2 its allowance. Blink's router submits it for the maximum
+ * amount and with the order's deadline, so a permit for another amount would fail on-chain after
+ * Blink accepted the order, and one about to expire would leave the relayer no time to deposit.
+ */
+function assertPermit2Permit(permit: Erc20Permit | null | undefined, token: string): Erc20Permit {
+	if (!permit) {
 		throw new Error(
-			`Gasless Blink deposits need a Permit2 allowance or an EIP-2612 permit for ${quote.fromToken.contract}`
+			`Permit2 has no allowance for ${token}: pass the permit from signEvmSwapPermit, or approve Permit2 first`
 		);
 	}
-	const erc20 = new Contract(quote.fromToken.contract, ERC20Artifact.abi, provider);
-	const nonce: bigint = await erc20.nonces(owner);
-	return signer.signTypedData(
-		domain,
-		{
-			Permit: [
-				{ name: 'owner', type: 'address' },
-				{ name: 'spender', type: 'address' },
-				{ name: 'value', type: 'uint256' },
-				{ name: 'nonce', type: 'uint256' },
-				{ name: 'deadline', type: 'uint256' },
-			],
-		},
-		{
-			owner,
-			spender: addresses.BLINK_PERMIT2_ADDRESS,
-			value: MaxUint256,
-			nonce,
-			deadline,
-		}
-	);
+	if (permit.value !== MaxUint256) {
+		throw new Error('A permit for Permit2 must grant the maximum amount: sign it with signEvmSwapPermit');
+	}
+	if (permit.deadline < Math.floor(Date.now() / 1000) + PERMIT_MIN_LIFETIME_SECS) {
+		throw new Error(`The permit for Permit2 expires in less than ${PERMIT_MIN_LIFETIME_SECS / 60} minutes: sign a new one`);
+	}
+	return permit;
 }
 
-export async function swapBlinkGaslessFromEvm(
+/** A gasless Blink order from EVM, built but not signed */
+export type BlinkGaslessEvmParams = {
+	quoteHash: string;
+	/** The Permit2 transfer of the input token, bound to the quote hash: what the user signs (EIP-712) */
+	typedData: ReturnType<typeof blinkPermit2WitnessTypedData>;
+	/** Submit with `submitBlinkGaslessOrder({ quoteHash, evm: { ...order, signature } })` */
+	order: Omit<BlinkEvmGaslessOrder, 'signature'>;
+};
+
+/**
+ * Builds a gasless Blink order without signing it, for integrators whose wallet signs
+ * elsewhere. Permit2 needs an allowance on the token: without one, `permit` must be the token
+ * permit for Permit2 (from `getEvmSwapPermitParams`), which Blink's relayer runs with the
+ * deposit. `provider` must be on the quote's source chain.
+ */
+export async function getBlinkGaslessFromEvmParams(
 	quote: Quote,
 	swapperAddress: string,
 	destinationAddress: string,
 	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
-	signer: Signer,
 	signerChainId: number | string,
+	permit: Erc20Permit | null | undefined,
+	provider: Provider,
 	refundAddress?: string
-): Promise<string> {
+): Promise<BlinkGaslessEvmParams> {
 	if (quote.type !== 'BLINK' || !quote.gasless) {
 		throw new Error('Quote is not a gasless BLINK quote');
-	}
-	if (!signer.provider) {
-		throw new Error('No provider found for signer');
 	}
 	const chainId = assertSignerChain(quote, signerChainId);
 	const order = await resolveBlinkOrder(quote, refundAddress ?? swapperAddress, destinationAddress, referrerAddresses);
@@ -320,34 +335,65 @@ export async function swapBlinkGaslessFromEvm(
 		throw new Error('Gasless Blink deposits require an ERC20 input token');
 	}
 	const amountIn = BigInt(params.expectedAmountIn);
-	const spender = order.contracts.router;
-	const erc20 = new Contract(params.srcToken, ERC20Artifact.abi, signer.provider);
+	const erc20 = new Contract(params.srcToken, ERC20Artifact.abi, provider);
 	const permit2Allowance: bigint = await erc20.allowance(swapperAddress, addresses.BLINK_PERMIT2_ADDRESS);
-	const deadline = permitDeadline();
-	// Permit2 needs an allowance on the token; sign an EIP-2612 permit for it when there is none
-	const permitSignature =
-		permit2Allowance < amountIn ? await signPermit2Approval(quote, signer, swapperAddress, deadline) : undefined;
+	const tokenPermit = permit2Allowance < amountIn ? assertPermit2Permit(permit, params.srcToken) : null;
+	// Blink's router runs the token permit with the Permit2 deadline, so the order takes its deadline
+	const deadline = tokenPermit ? BigInt(tokenPermit.deadline) : permitDeadline();
 	const nonce = BigInt(hexlify(randomBytes(32)));
 	const typedData = blinkPermit2WitnessTypedData(
 		chainId,
 		params.srcToken,
 		amountIn,
-		spender,
+		order.contracts.router,
 		nonce,
 		deadline,
 		order.quote.quoteHash,
 		needsBlinkSourceSwap(params) ? { lockToken: params.lockToken, minLockAmount: BigInt(params.minLockAmount) } : undefined
 	);
-	const signature = await signer.signTypedData(typedData.domain, typedData.types, typedData.value);
-	await submitBlinkGaslessOrder({
+	return {
 		quoteHash: order.quote.quoteHash,
-		evm: {
+		typedData,
+		order: {
 			owner: swapperAddress,
 			permit2Nonce: nonce.toString(),
 			deadline: deadline.toString(),
-			signature,
-			permitSignature,
+			permitSignature: tokenPermit
+				? Signature.from({ v: tokenPermit.v, r: tokenPermit.r, s: tokenPermit.s }).serialized
+				: undefined,
 		},
-	});
-	return order.quote.quoteHash;
+	};
+}
+
+/**
+ * Submits a gasless Blink order. The user signs one message, the Permit2 transfer of the input
+ * token bound to the quote hash, and Blink's relayer makes the deposit. Without a Permit2
+ * allowance pass the token permit for Permit2 (`signEvmSwapPermit`), so the user still pays no gas.
+ */
+export async function swapBlinkGaslessFromEvm(
+	quote: Quote,
+	swapperAddress: string,
+	destinationAddress: string,
+	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
+	signer: Signer,
+	signerChainId: number | string,
+	permit: Erc20Permit | null | undefined,
+	refundAddress?: string
+): Promise<string> {
+	if (!signer.provider) {
+		throw new Error('No provider found for signer');
+	}
+	const { quoteHash, typedData, order } = await getBlinkGaslessFromEvmParams(
+		quote,
+		swapperAddress,
+		destinationAddress,
+		referrerAddresses,
+		signerChainId,
+		permit,
+		signer.provider,
+		refundAddress
+	);
+	const signature = await signer.signTypedData(typedData.domain, typedData.types, typedData.value);
+	await submitBlinkGaslessOrder({ quoteHash, evm: { ...order, signature } });
+	return quoteHash;
 }

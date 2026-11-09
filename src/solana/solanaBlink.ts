@@ -698,15 +698,20 @@ export async function createBlinkFromSolanaInstructions(
 	return { instructions, signers: [], lookupTables, swapMessageV0Params: null };
 }
 
-export async function swapBlinkGaslessFromSolana(
+/**
+ * Builds the deposit of a gasless Blink order without signing it, for integrators whose wallet
+ * signs elsewhere. Blink's sponsor pays the fee: the user signs `transaction` (it keeps a slot
+ * for the sponsor's signature) and it is submitted with
+ * `submitBlinkGaslessOrder({ quoteHash, svm: { txBase64 } })`.
+ */
+export async function getBlinkGaslessFromSolanaTransaction(
 	quote: Quote,
 	swapperAddress: string,
 	destinationAddress: string,
 	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
-	signTransaction: SolanaTransactionSigner,
 	connection: Connection,
 	refundAddress?: string
-): Promise<{ signature: string; serializedTrx: Uint8Array | null }> {
+): Promise<{ quoteHash: string; transaction: Transaction }> {
 	assertBlinkSolanaQuote(quote);
 	if (!quote.gasless) {
 		throw new Error('Quote is not a gasless BLINK quote');
@@ -726,6 +731,26 @@ export async function swapBlinkGaslessFromSolana(
 	);
 	transaction.feePayer = new PublicKey(sponsor);
 	transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+	return { quoteHash: order.quote.quoteHash, transaction };
+}
+
+export async function swapBlinkGaslessFromSolana(
+	quote: Quote,
+	swapperAddress: string,
+	destinationAddress: string,
+	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
+	signTransaction: SolanaTransactionSigner,
+	connection: Connection,
+	refundAddress?: string
+): Promise<{ signature: string; serializedTrx: Uint8Array | null }> {
+	const { quoteHash, transaction } = await getBlinkGaslessFromSolanaTransaction(
+		quote,
+		swapperAddress,
+		destinationAddress,
+		referrerAddresses,
+		connection,
+		refundAddress
+	);
 	const signed = await signTransaction(transaction);
 	const txBase64 = Buffer.from(
 		signed.serialize({
@@ -733,6 +758,6 @@ export async function swapBlinkGaslessFromSolana(
 			verifySignatures: false,
 		})
 	).toString('base64');
-	await submitBlinkGaslessOrder({ quoteHash: order.quote.quoteHash, svm: { txBase64 } });
-	return { signature: order.quote.quoteHash, serializedTrx: null };
+	await submitBlinkGaslessOrder({ quoteHash, svm: { txBase64 } });
+	return { signature: quoteHash, serializedTrx: null };
 }

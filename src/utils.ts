@@ -679,7 +679,14 @@ export async function getPermitParams(
 		throw new Error('Token does not support permit');
 	}
 	const contract = new ethers.Contract(token.contract, ERC20Artifact.abi, provider);
-	const [domain, nonce] = await Promise.all([getPermitDomain(token, provider), contract.nonces(walletAddress)]);
+	// A token without nonces() cannot sign a permit either; report it like an unrecognised domain
+	const nonces = contract.nonces(walletAddress).catch((err) => {
+		if (err?.code === 'BAD_DATA' || err?.code === 'CALL_EXCEPTION') {
+			throw { mayanError: { permitIssue: true } };
+		}
+		throw err;
+	});
+	const [domain, nonce] = await Promise.all([getPermitDomain(token, provider), nonces]);
 	return {
 		domain,
 		types: PermitTypes,

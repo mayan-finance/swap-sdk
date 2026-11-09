@@ -128,7 +128,7 @@ const res = await fetch(`https://explorer-api.mayan.finance/v3/swap/trx/${txHash
 const { clientStatus } = await res.json(); // INPROGRESS | COMPLETED | REFUNDED
 ```
 
-ERC20 inputs need an allowance for the Mayan Forwarder first. See [ERC20 allowance](#erc20-allowance).
+ERC20 inputs need an allowance first. See [ERC20 allowance](#erc20-allowance).
 
 Full runnable examples for EVM, Solana and Sui live in [`mayan-finance/sdk-example`](https://github.com/mayan-finance/sdk-example).
 
@@ -196,9 +196,9 @@ A `BLINK` quote can only be swapped when `fetchQuote` was called with both `dest
 
 Referrer splits work the same way as for Swift V2: pass `referrers` when fetching the quote and the same object as `referrerAddresses` at swap time. Blink pays every listed wallet on the source chain.
 
-EVM deposits do not go through the Mayan forwarder, and Blink has two deposit contracts per chain: the escrow the quote calls `routerAddress` (plain transfers, `depositToken`, `depositNative`) and the router of the signed manifest, `order.contracts.router` (the permit and source-swap variants). Use `includeAllowanceTx` to bundle the approval, or call `resolveBlinkOrder` first and approve `getBlinkEvmDepositSpender(order, false)` for the amount. A `permit` is honored only if it was signed for `getBlinkEvmDepositSpender(order, true)` as spender; without a source swap that is the manifest router, not `order.quote.routerAddress`, and a permit for the escrow makes the deposit revert with `TransferFailed()`. When the order allows a direct transfer the SDK sends a plain ERC20 transfer to the escrow instead, and no approval is needed.
+EVM deposits do not go through the Mayan forwarder. The [ERC20 allowance](#erc20-allowance) helpers know which contract to approve, so the rest of this paragraph only matters if you approve by hand. Blink has two deposit contracts per chain: the escrow the quote calls `routerAddress` (plain transfers, `depositToken`, `depositNative`) and the router of the signed manifest, `order.contracts.router` (the permit and source-swap variants). Use `includeAllowanceTx` to bundle the approval, or call `resolveBlinkOrder` first and approve `getBlinkEvmDepositSpender(order, false)` for the amount. A `permit` is honored only if it was signed for `getBlinkEvmDepositSpender(order, true)` as spender; without a source swap that is the manifest router, not `order.quote.routerAddress`, and a permit for the escrow makes the deposit revert with `TransferFailed()`. When the order allows a direct transfer the SDK sends a plain ERC20 transfer to the escrow instead, and no approval is needed.
 
-Gasless `BLINK` quotes (`gasless: true` in `QuoteOptions`) are submitted to Blink instead of being sent by the user. On EVM the user signs a Permit2 witness (plus an EIP-2612 permit for Permit2 when the token supports it and no Permit2 allowance exists), on Solana the user signs a transaction whose fee payer is the Blink sponsor, and on Sui use `swapBlinkGaslessFromSui` with a `signTransaction` callback. The swap functions return the Blink quote hash, which is also the explorer order id prefixed with `BLINK_`.
+Gasless `BLINK` quotes (`gasless: true` in `QuoteOptions`) are submitted to Blink instead of being sent by the user. On EVM the swap signs one Permit2 message; Permit2 itself needs an allowance on the token once, which the [ERC20 allowance](#erc20-allowance) helpers give with a gasless permit, passed to `swapFromEvm` as `permit`. On Solana the user signs a transaction whose fee payer is the Blink sponsor, and on Sui use `swapBlinkGaslessFromSui` with a `signTransaction` callback. The swap functions return the Blink quote hash, which is also the explorer order id prefixed with `BLINK_`. To sign elsewhere, build the order with `getBlinkGaslessFromEvmParams` (typed data to sign), `getBlinkGaslessFromSolanaTransaction` or `getBlinkGaslessFromSuiTransaction` (a sponsored transaction to sign), and send the signed result with `submitBlinkGaslessOrder`.
 
 Sui orders that start with a source swap are opened by the user and executed by Blink. Pass a prefetched order through `ComposableSuiMoveCallsOptions.blinkOrder` and track the execution on the Explorer API with the quote hash, as for a gasless order.
 
@@ -271,9 +271,32 @@ To build the payload and send it yourself, use `getSwapFromEvmTxPayload`.
 
 #### ERC20 allowance
 
-To swap from an ERC20 token, approve enough allowance for the Mayan Forwarder contract first. Its address is `addresses.MAYAN_FORWARDER_CONTRACT`.
+To swap from an ERC20 token, the contract that pulls it needs an allowance first. Which contract that is depends on the route (the Mayan Forwarder, a gasless Swift contract, Blink's deposit contracts or Permit2), so let the SDK work it out:
 
-Or pass a signed [EIP-2612](https://eips.ethereum.org/EIPS/eip-2612) permit:
+```typescript
+import {
+  isEvmSwapAllowanceEnough, signEvmSwapPermit, getEvmSwapApproveTxs, swapFromEvm,
+} from '@mayanfinance/swap-sdk';
+
+let permit = null;
+if (!(await isEvmSwapAllowanceEnough(quote, swapperAddress, provider))) {
+  // One wallet pop-up, no gas: an EIP-2612 permit, or null if the token has none
+  permit = await signEvmSwapPermit(quote, signer);
+  if (!permit) {
+    // Fall back to approve transactions (usually one)
+    for (const tx of await getEvmSwapApproveTxs(quote, swapperAddress, provider)) {
+      await (await signer.sendTransaction(tx)).wait();
+    }
+  }
+}
+await swapFromEvm(quote, swapperAddress, destination, referrerAddresses, signer, permit, null, null);
+```
+
+- `isEvmSwapAllowanceEnough(quote, owner, provider, permit?)` is `true` when the swap spends no allowance (a native input, a Blink direct transfer), when the current allowance covers it, or when `permit` is still good for this quote. Keep the permit across quote refreshes and pass it here to know whether to ask again.
+- Signing outside the SDK (a backend that returns what to sign, a non-ethers wallet): `getEvmSwapPermitParams(quote, owner, provider)` returns the permit as EIP-712 typed data, and its signature's `v`, `r`, `s` with `value.value` and `value.deadline` make the `permit` below. `getEvmSwapApproveTxs` already returns plain transactions, and `getEvmSwapApproval(quote, provider)` the spender and amounts behind all of these.
+- `provider` must be on the quote's source chain. With `includeAllowanceTx` a wallet that supports atomic batches bundles the approval into the swap instead.
+
+The permit passed to `swapFromEvm` has this shape:
 
 ```typescript
 {

@@ -145,7 +145,7 @@ sequenceDiagram
 
 | Source chain | Entry point                                           | Normal order                                                                         | Gasless order                                                                                                                  |
 | ------------ | ----------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| EVM          | `swapFromEvm` / `getSwapFromEvmTxPayload`             | Tx **to the Blink deposit contracts** (escrow or router, §5; not the Mayan forwarder). Native token goes as `value`.  | User signs a Permit2 witness (+ EIP-2612 permit for Permit2 if no allowance). Returns `quoteHash`. ERC20 input only.           |
+| EVM          | `swapFromEvm` / `getSwapFromEvmTxPayload`             | Tx **to the Blink deposit contracts** (escrow or router, §5; not the Mayan forwarder). Native token goes as `value`.  | User signs one Permit2 witness; without a Permit2 allowance pass the token permit from `signEvmSwapPermit` (§7). Returns `quoteHash`. ERC20 input only. |
 | Solana       | `swapFromSolana` / `createSwapFromSolanaInstructions` | Deposit (or swap+deposit) instructions. Priority fee fetched from Blink.             | User signs a tx whose fee payer is the Blink sponsor. Returns `{ signature: quoteHash, serializedTrx: null }`. No source swap. |
 | Sui          | `createSwapFromSuiMoveCalls`                          | Move call `blink::deposit`, or `blink::open_source_swap` for a source swap (see §6). | **Call `swapBlinkGaslessFromSui` directly** with a `signTransaction` callback. Returns `quoteHash`.                            |
 
@@ -168,6 +168,8 @@ help. Blink runs **two deposit contracts per chain**, and the quote names only o
 - `order.contracts.router`, from the guardian-signed manifest, is the **router**: it has the
   permit variants (`depositTokenWithPermit`, …) and the source-swap entry points.
 
+The approval helpers in `src/evm/evmApproval.ts` (§7) know all of this and work for every
+quote type, so a UI can use them without branching on Blink. Underneath,
 `getBlinkEvmDepositSpender(order, permit)` returns the contract that pulls the tokens for the
 deposit the SDK will build, or `null` when nothing needs approving. Options, in order of
 convenience:
@@ -236,12 +238,34 @@ gasless path (EVM, Solana); on Sui call `swapBlinkGaslessFromSui`.
 - The call returns as soon as Blink has accepted the submission, with the **quote
   hash**, not a tx hash. Blink broadcasts the deposit itself: on EVM the submission sits
   in `pending` while gas is above what the quote priced and only turns `failed` once
-  the Permit2 deadline passes (the SDK signs with a 30-minute deadline).
+  the Permit2 deadline passes (see below).
 - Track the submission on the Mayan explorer by `BLINK_<quoteHash>`, as for a gasless
   Swift order. `rejected` means the deposit needed more gas than the quote covered;
   `failed` is any other failure. Request a new quote in both cases.
 - Submission is idempotent per quote hash. Re-submitting a hash that already failed or
   was rejected throws with Blink's `error` message.
+- **Two wallet pop-ups at most, never in the same step.** The swap signs one message,
+  the Permit2 transfer bound to the quote hash. Permit2 itself needs an allowance on the
+  token, given once per token and wallet: `signEvmSwapPermit(quote, signer)` signs the
+  token's EIP-2612 permit for Permit2 (unlimited, no gas), which you pass to `swapFromEvm`
+  as `permit`; Blink's router runs it with the deposit. A token without a permit (USDT on
+  Ethereum) needs one approve transaction from `getEvmSwapApproveTxs` instead, the only
+  gas the user pays. `isEvmSwapAllowanceEnough(quote, owner, provider, permit)` tells
+  whether that step is still needed; without the allowance or the permit the swap throws.
+- The order's Permit2 deadline is the permit's deadline when one is passed, since the
+  router runs both with the same one; otherwise 30 minutes from the swap.
+- **Signing elsewhere** (a backend such as tx-builder, a non-ethers wallet): each chain has
+  a builder that returns what to sign and a quote hash, and `submitBlinkGaslessOrder` sends
+  the signed result. `swapBlinkGaslessFrom*` are these builders plus a signer.
+
+  | Chain  | Build                                   | Submit (`submitBlinkGaslessOrder`)                   |
+  | ------ | --------------------------------------- | ---------------------------------------------------- |
+  | EVM    | `getBlinkGaslessFromEvmParams` → `typedData` + `order` | `{ quoteHash, evm: { ...order, signature } }` |
+  | Solana | `getBlinkGaslessFromSolanaTransaction` → `transaction` | `{ quoteHash, svm: { txBase64 } }` (signed, sponsor slot empty) |
+  | Sui    | `getBlinkGaslessFromSuiTransaction` → `transaction`    | `{ quoteHash, sui: { txBase64, signature } }`  |
+
+  The approval step works the same way: `getEvmSwapPermitParams` returns the token permit as
+  typed data instead of signing it.
 - The quote hash doubles as the explorer order id: `BLINK_<quoteHash>` on Mayan, or
   `https://hular.dev/explorer/<quoteHash>` on Blink's own explorer.
 
@@ -291,6 +315,9 @@ the API's `{ code, message }` body on a non-2xx status, like those do:
 | `isBlinkQuoteExpired(order.quote)`           | Decide whether to re-quote before sending.                                         |
 | `needsBlinkSourceSwap(order.quote.orderParams)` | Branch on source-swap behaviour (§6).                                              |
 | `swapBlinkGaslessFromSui(...)`               | Gasless on Sui (no automatic routing there).                                       |
+| `getEvmSwapApproval` / `isEvmSwapAllowanceEnough` / `getEvmSwapPermitParams` / `signEvmSwapPermit` / `getEvmSwapApproveTxs` | The approval step before an EVM swap, for any quote type (§7). |
+| `getBlinkGaslessFromEvmParams` / `getBlinkGaslessFromSolanaTransaction` / `getBlinkGaslessFromSuiTransaction` | Gasless orders signed outside the SDK (§7). |
+| `loadBlinkOrder(quote)`                      | `resolveBlinkOrder` without the swap-input checks or the swap route: enough to know what to approve, and calls no Blink endpoint but the cached manifest. |
 | `BlinkUnregisteredAddressError`              | Router/escrow not in the signed manifest. Treat as "do not proceed".               |
 
 Everything else in `src/blink/` (hash encoding, manifest verification, decoders) is
