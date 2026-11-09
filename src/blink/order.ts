@@ -24,8 +24,8 @@ export function isBlinkQuoteExpired(quote: BlinkQuote): boolean {
 
 /**
  * True when the quote carries a Blink order, i.e. `blinkQuote` with a quote hash. Mayan embeds
- * it only when `fetchQuote` was called with `destinationAddress` and `refundAddress`; a quote
- * fetched without them is a price preview and cannot be swapped.
+ * it only when `fetchQuote` was called with `destinationAddress` and `swapperAddress` or
+ * `refundAddress`; a quote fetched without them is a price preview and cannot be swapped.
  */
 export function hasBlinkQuoteHash(quote: Quote): boolean {
 	const embedded = quote.blinkQuote?.crossChain ?? quote.blinkQuote?.sameChainSwap;
@@ -93,7 +93,8 @@ function assertOrderMatchesQuote(
 /**
  * Verifies the Blink order embedded in a quote against the swap inputs and resolves the
  * contracts (and source-swap instructions) the deposit needs. It never requests a quote: the
- * `Quote` must come from `fetchQuote` called with `destinationAddress` and `refundAddress`.
+ * `Quote` must come from `fetchQuote` called with `destinationAddress` and `swapperAddress` or
+ * `refundAddress`.
  */
 export async function resolveBlinkOrder(
 	quote: Quote,
@@ -106,7 +107,7 @@ export async function resolveBlinkOrder(
 	}
 	if (!hasBlinkQuoteHash(quote)) {
 		throw new Error(
-			'Blink quote carries no order: fetch the quote with destinationAddress and refundAddress to get one'
+			'Blink quote carries no order: fetch the quote with destinationAddress and swapperAddress to get one'
 		);
 	}
 	if (isZeroAddress(destinationAddress)) {

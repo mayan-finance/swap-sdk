@@ -154,6 +154,7 @@ export function generateFetchQuoteUrl(params: QuoteParams, quoteOptions: QuoteOp
 		gasDrop: Number.isFinite(gasDrop) ? gasDrop : undefined,
 		destinationAddress: params.destinationAddress ?? undefined,
 		refundAddress: params.refundAddress ?? undefined,
+		swapperAddress: params.swapperAddress ?? undefined,
 		sdkVersion: getSdkVersion(),
 		blinkParamsVersion: BLINK_SUPPORTED_PARAMS_VERSION,
 	};
@@ -247,6 +248,7 @@ export function generateFetchQuoteUrlAndBody(
 		gasDrop: Number.isFinite(gasDrop) ? gasDrop : undefined,
 		destinationAddress: params.destinationAddress ?? undefined,
 		refundAddress: params.refundAddress ?? undefined,
+		swapperAddress: params.swapperAddress ?? undefined,
 		sdkVersion: getSdkVersion(),
 		blinkParamsVersion: BLINK_SUPPORTED_PARAMS_VERSION,
 		mpsUserId: quoteOptions.mpsUserId ?? undefined,

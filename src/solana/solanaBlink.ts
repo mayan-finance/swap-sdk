@@ -207,7 +207,9 @@ function authorityTokenAccountCreated(
 	const mint = metaPubkey(ix, 3);
 	const tokenProgram = metaPubkey(ix, 5);
 	if (!funder.equals(depositor)) {
-		rejectSwap(`token account rent is paid by ${funder.toBase58()}, not the depositor`);
+		rejectSwap(
+			`token account rent is paid by ${funder.toBase58()}, not the depositor ${depositor.toBase58()}: fetch the quote with swapperAddress set to the depositor`
+		);
 	}
 	if (!wallet.equals(authority)) {
 		rejectSwap(`setup creates a token account for ${wallet.toBase58()}, not the swap authority`);

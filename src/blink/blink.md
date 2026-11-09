@@ -35,7 +35,7 @@ const quotes = await fetchQuote(
 		toChain: 'arbitrum',
 		slippageBps: 'auto',
 		destinationAddress: recipient, // required for BLINK, see §3
-		refundAddress: swapper, // required for BLINK, see §3
+		swapperAddress: swapper, // required for BLINK, see §3
 	},
 	{ referrers } // blink: true is the default; pass blink: false to opt out
 );
@@ -86,17 +86,19 @@ network. If any check fails the swap throws **before** anything is signed or sen
 ## 3. The quote must carry the order
 
 A BLINK order is bound to a recipient and a refund address, and Mayan only issues one
-when `fetchQuote` gets both. The SDK never fetches a quote on its own:
+when `fetchQuote` gets the recipient and the wallet that signs the swap. The SDK never
+fetches a quote on its own:
 
-| You pass to `fetchQuote`                     | What you get                                                      | What happens at swap time                                                               |
-| -------------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `destinationAddress` **and** `refundAddress` | `quote.blinkQuote` holds the Blink order bound to those addresses | SDK verifies it and builds the deposit from it. No extra round trip.                    |
-| neither (or only one)                        | A price preview. `quote.blinkQuote` is absent                     | The swap throws `Blink quote carries no order`. Re-fetch the quote with both addresses. |
+| You pass to `fetchQuote`                      | What you get                                                                                                        | What happens at swap time                                                                               |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `destinationAddress` **and** `swapperAddress` | `quote.blinkQuote` holds the Blink order; the refund address is `refundAddress`, or the swapper when it is left out | SDK verifies it and builds the deposit from it. No extra round trip.                                    |
+| `destinationAddress` and only `refundAddress` | The order, built for the refund address as the swapper                                                              | Fine when the refund address is the swapper; a Solana source swap refunding elsewhere is refused (§10). |
+| neither                                       | A price preview. `quote.blinkQuote` is absent                                                                       | The swap throws `Blink quote carries no order`. Re-fetch the quote with the addresses.                  |
 
 So in a UI funnel, fetch the quote you show on the confirmation screen with the connected
-wallet as `refundAddress` and the recipient as `destinationAddress`, and hand that exact
-`Quote` object to the swap. `hasBlinkQuoteHash(quote)` tells you whether a quote is
-swappable.
+wallet as `swapperAddress` and the recipient as `destinationAddress` (plus `refundAddress`
+to refund elsewhere), and hand that exact `Quote` object to the swap.
+`hasBlinkQuoteHash(quote)` tells you whether a quote is swappable.
 
 The SDK validates the embedded order against the `Quote` and the swap inputs (chains,
 `effectiveAmountIn64`, recipient = `destinationAddress`, refund = swapper, `gasless`
@@ -282,7 +284,7 @@ the API's `{ code, message }` body on a non-2xx status, like those do:
 
 | Export                                       | When                                                                               |
 | -------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `hasBlinkQuoteHash(quote)`                   | Is this quote swappable, i.e. fetched with both addresses (§3)?                    |
+| `hasBlinkQuoteHash(quote)`                   | Is this quote swappable, i.e. fetched with the addresses of §3?                    |
 | `resolveBlinkOrder(...)`                       | Prefetch the verified `BlinkOrder` (EVM approval target, Sui `blinkOrder` option). |
 | `getBlinkEvmDepositSpender(order, permit)`   | The approval or permit spender of the deposit the SDK will build (§5); `null` when none is needed. |
 | `BlinkOrder`                                 | `{ quote: BlinkQuote, swap?: BlinkSwapInstructions, contracts }`.                  |
@@ -304,7 +306,10 @@ internal plumbing that the swap functions run for you.
 - **Refund address defaults to the swapper.** The SDK checks the embedded order's refund
   address against the `refundAddress` swap option, or the swapper when none is passed,
   and throws otherwise. To refund elsewhere, fetch the quote with that `refundAddress`
-  and pass the same value in the swap options; this works on every chain. On Sui a
+  and the signing wallet as `swapperAddress`, and pass the same `refundAddress` in the swap
+  options; this works on every chain. Without `swapperAddress` Blink builds a Solana source
+  swap for the refund address, and the SDK refuses it (`token account rent is paid by …,
+  not the depositor`). On Sui a
   prefetched order passed via `blinkOrder` is used as is, and must agree with
   `refundAddress` when both are given.
 - **Zero addresses are rejected** for destination and refund.

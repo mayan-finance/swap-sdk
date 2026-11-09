@@ -67,6 +67,11 @@ export type QuoteParams = {
 	referrerBps?: number;
 	destinationAddress?: string;
 	refundAddress?: string;
+	/**
+	 * The wallet that signs the swap. Blink binds a Solana source swap to it, and uses it as the
+	 * refund address when {@link refundAddress} is not given.
+	 */
+	swapperAddress?: string;
 };
 
 export type QuoteError = {
@@ -189,8 +194,9 @@ export type Quote = {
 	mpsIntegratorId?: string,
 	mixedRefAddress?: string,
 	/**
-	 * Blink order bound to `destinationAddress` and `refundAddress`, embedded only when both were
-	 * passed to {@link fetchQuote}. A BLINK quote without it is a price preview and cannot be swapped.
+	 * Blink order bound to `destinationAddress` and the refund address, embedded only when
+	 * {@link fetchQuote} got `destinationAddress` and `swapperAddress` or `refundAddress`. A BLINK
+	 * quote without it is a price preview and cannot be swapped.
 	 */
 	blinkQuote?: BlinkQuoteJson,
 	blinkInputContract?: string;
