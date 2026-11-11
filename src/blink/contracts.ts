@@ -25,8 +25,16 @@ export class BlinkUnregisteredAddressError extends Error {
 	}
 }
 
+/**
+ * `address` as compared across Blink: hex addresses (EVM, Sui) ignore case, base58 addresses
+ * (Solana) keep it, since a base58 key spelled in another case is a different key.
+ */
+export function blinkAddressKey(address: string): string {
+	return address.startsWith('0x') ? address.toLowerCase() : address;
+}
+
 export function sameBlinkAddress(a: string, b: string): boolean {
-	return a.startsWith('0x') ? a.toLowerCase() === b.toLowerCase() : a === b;
+	return blinkAddressKey(a) === blinkAddressKey(b);
 }
 
 export function blinkGuardianMessage(index: number, members: string[]): string {

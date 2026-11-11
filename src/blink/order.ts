@@ -12,7 +12,12 @@ import type {
 } from '../types';
 import { getBlinkReferrers } from '../utils';
 import { getBlinkSwapInstructions } from '../api';
-import { assertBlinkContractRegistered, getBlinkChainContracts } from './contracts';
+import {
+	assertBlinkContractRegistered,
+	blinkAddressKey,
+	getBlinkChainContracts,
+	sameBlinkAddress,
+} from './contracts';
 import { assertBlinkQuoteHash, decodeBlinkQuote } from './utils';
 
 export function needsBlinkSourceSwap(params: BlinkOrderParams): boolean {
@@ -46,16 +51,13 @@ export function getBlinkOrderParamsJson(quote: Quote): BlinkOrderParamsJson {
 	return embedded.orderParams;
 }
 
-function sameAddress(a: string, b: string): boolean {
-	return a.toLowerCase() === b.toLowerCase();
-}
 
 function isZeroAddress(address: string): boolean {
 	return address === ZeroAddress || address === SystemProgram.programId.toBase58();
 }
 
 function referrerKey(referrer: Referrer): string {
-	return `${referrer.address.toLowerCase()}:${referrer.bps}`;
+	return `${blinkAddressKey(referrer.address)}:${referrer.bps}`;
 }
 
 function sameReferrers(a: Referrer[], b: Referrer[]): boolean {
@@ -80,12 +82,12 @@ function assertOrderMatchesQuote(
 	if (BigInt(params.expectedAmountIn) !== BigInt(quote.effectiveAmountIn64)) {
 		throw new Error('Blink order amount does not match the quote');
 	}
-	if (!sameAddress(params.recipient, destinationAddress)) {
+	if (!sameBlinkAddress(params.recipient, destinationAddress)) {
 		throw new Error(
 			`Blink order is bound to recipient ${params.recipient}, not ${destinationAddress}: fetch the quote with this destinationAddress`
 		);
 	}
-	if (!sameAddress(params.refundAddress, refundAddress)) {
+	if (!sameBlinkAddress(params.refundAddress, refundAddress)) {
 		throw new Error(
 			`Blink order is bound to refund address ${params.refundAddress}, not ${refundAddress}: fetch the quote with this refundAddress`
 		);
