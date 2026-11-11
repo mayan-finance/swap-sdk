@@ -179,8 +179,9 @@ convenience:
 2. Call `resolveBlinkOrder(quote, swapper, recipient, referrers)` yourself and approve
    `getBlinkEvmDepositSpender(order, false)` for `expectedAmountIn`. Without a source swap
    that is the escrow, `order.quote.routerAddress`.
-3. Pass a `permit` signed with `getBlinkEvmDepositSpender(order, true)` as spender, covering
-   the full amount. Without a source swap that is the **manifest router**,
+3. Pass a `permit` signed with `getBlinkEvmDepositSpender(order, true)` as spender, for at
+   least the amount: the router runs the permit for the value it was signed with, so one for
+   more, or unlimited, works too. Without a source swap that is the **manifest router**,
    `order.contracts.router`, **not** `order.quote.routerAddress`: a permit for the escrow
    makes `depositTokenWithPermit` revert with `TransferFailed()`, because the router swallows
    the failed `permit` and the `transferFrom` that follows has no allowance.
@@ -206,7 +207,8 @@ Two cases need no approval at all:
   forces the router path.
 - **Native token.** Sent as `value`.
 
-Gas: the `estimateQuoteRequiredGas*` helpers return `0` for gasless BLINK;
+Gas: `estimateQuoteRequiredGas` and `estimateQuoteRequiredGasAprox2` build the deposit for the order's own
+recipient, refund address and referrers, and return `0` for gasless BLINK;
 `estimateQuoteRequiredGas` adds a 10% margin for normal BLINK orders.
 
 ---
@@ -218,9 +220,13 @@ source chain through an aggregator. `needsBlinkSourceSwap(order.quote.orderParam
 you. For the integrator this is transparent **except**:
 
 - **Sui**: the user's tx only _opens_ the source swap; Blink executes it afterwards
-  (up to 3 attempts inside a 5-minute window). Track the execution on the Mayan
-  explorer with the quote hash. If the intent lapses the coins stay in the user's own
-  Sui address balance.
+  (up to 3 attempts inside a 5-minute window) from the user's Sui address balance, which
+  the opening tops up with whatever it lacks of `expectedAmountIn`, taken from the
+  wallet's coin objects; an address balance already holding the amount needs no funding.
+  A gasless opening may not withdraw from the address balance, so the coin objects must
+  cover that shortfall (a gasless plain deposit may take the amount from the address
+  balance). Track the execution on the Mayan explorer with the quote hash. If the intent
+  lapses the coins stay in the user's own Sui address balance.
   If you prefetch the order, pass it via `ComposableSuiMoveCallsOptions.blinkOrder`
   so the same order is used for the Move calls.
 - **Solana gasless**: source swaps are rejected (`Gasless Blink swap deposits are
