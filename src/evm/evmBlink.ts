@@ -45,11 +45,11 @@ export type BlinkDirectTransferOption = {
 const blinkRouterInterface = new Interface([
 	'function depositNative(bytes32 quoteHash)',
 	'function depositToken(bytes32 quoteHash, address token, uint256 amount)',
-	'function depositTokenWithPermit(bytes32 quoteHash, address token, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s)',
+	'function depositTokenWithPermit(bytes32 quoteHash, address token, uint256 amount, uint256 permitValue, uint256 deadline, uint8 v, bytes32 r, bytes32 s)',
 	'function depositWithSwap(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address lockToken, uint256 minLockAmount)',
-	'function depositWithSwapAndPermit(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address lockToken, uint256 minLockAmount, uint256 deadline, uint8 v, bytes32 r, bytes32 s)',
+	'function depositWithSwapAndPermit(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address lockToken, uint256 minLockAmount, uint256 permitValue, uint256 deadline, uint8 v, bytes32 r, bytes32 s)',
 	'function swapAndForward(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address dstToken, uint256 minAmountOut, uint256 amountOut, uint16 referrerBps, address recipient)',
-	'function swapAndForwardWithPermit(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address dstToken, uint256 minAmountOut, uint256 amountOut, uint16 referrerBps, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)',
+	'function swapAndForwardWithPermit(bytes32 quoteHash, address srcToken, uint256 amountIn, address aggregator, bytes swapData, address dstToken, uint256 minAmountOut, uint256 amountOut, uint16 referrerBps, address recipient, uint256 permitValue, uint256 deadline, uint8 v, bytes32 r, bytes32 s)',
 ]);
 
 const erc20Interface = new Interface(ERC20Artifact.abi);
@@ -153,9 +153,10 @@ function referrerTotalBps(referrers: { bps: number }[]): number {
 
 /**
  * The transaction that deposits the order into Blink. A permit is appended to the ERC20
- * variants and must have been signed with `getBlinkEvmDepositSpender(order, true)` (the
- * manifest router) as spender; without one, `getBlinkEvmDepositSpender(order, false)` must
- * already be approved. With `directTransfer` (from {@link allowsBlinkDirectTransfer}) an ERC20
+ * variants with the value it was signed for, which must be at least the amount the deposit
+ * pulls (the router runs the permit as signed, so one for more, or unlimited, works), and must
+ * have been signed with `getBlinkEvmDepositSpender(order, true)` (the manifest router) as
+ * spender; without one, `getBlinkEvmDepositSpender(order, false)` must already be approved. With `directTransfer` (from {@link allowsBlinkDirectTransfer}) an ERC20
  * order the quote allows it for becomes a plain transfer to the escrow (`quote.routerAddress`)
  * with the quote hash appended, which needs no approval at all.
  */
@@ -187,6 +188,7 @@ export function buildBlinkEvmDepositCall(
 	let method: string;
 	let args: any[];
 	let value = BigInt(0);
+	let pulled = amountIn;
 	if (!swap || !swap.evm) {
 		if (native) {
 			method = 'depositNative';
@@ -213,10 +215,11 @@ export function buildBlinkEvmDepositCall(
 		value = BigInt(swap.evm.value);
 	} else {
 		method = permit ? 'depositWithSwapAndPermit' : 'depositWithSwap';
+		pulled = BigInt(swap.amountIn);
 		args = [
 			quoteHash,
 			swap.srcToken,
-			BigInt(swap.amountIn),
+			pulled,
 			swap.evm.aggregator,
 			swap.evm.swapCalldata,
 			swap.lockToken,
@@ -225,7 +228,10 @@ export function buildBlinkEvmDepositCall(
 		value = BigInt(swap.evm.value);
 	}
 	if (permit) {
-		args.push(BigInt(permit.deadline), permit.v, permit.r, permit.s);
+		if (permit.value < pulled) {
+			throw new Error(`The permit grants ${permit.value} of ${params.srcToken}, less than the ${pulled} the deposit pulls`);
+		}
+		args.push(permit.value, BigInt(permit.deadline), permit.v, permit.r, permit.s);
 	}
 
 	const to = blinkEvmDepositTarget(order, !!permit);
