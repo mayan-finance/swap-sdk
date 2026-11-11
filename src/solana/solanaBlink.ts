@@ -36,6 +36,8 @@ import {
 	deserializeInstructionInfo,
 	getAddressLookupTableAccounts,
 	getAnchorInstructionData,
+	getLookupTableAddress,
+	sandwichInstructionInCpiProxy,
 	solMint,
 	TOKEN_ACCOUNT_LEN,
 } from './utils';
@@ -625,17 +627,24 @@ async function buildSwapDepositInstructions(
 	const setupInstructions = swap.setup
 		.map(deserializeInstructionInfo)
 		.filter((ix) => !ix.keys[1].pubkey.equals(authorityInput));
+	// everything around deposit_swap goes through the CPI proxy, as the other Solana swaps do; the
+	// deposit itself stays direct, since it already calls the aggregator and one more CPI level
+	// would exceed the depth limit
+	const releaseInstructions = authorityAccounts.flatMap((account) =>
+		releaseAuthorityAccount(programId, quoteHash, owner, authority, account, sourceMint)
+	);
 	const body = [
-		createAssociatedTokenAccountInstruction(owner, authorityInput, authority, sourceMint, sourceTokenProgram),
-		...fundingInstructions,
-		...setupInstructions,
+		...[
+			createAssociatedTokenAccountInstruction(owner, authorityInput, authority, sourceMint, sourceTokenProgram),
+			...fundingInstructions,
+			...setupInstructions,
+		].map((ix) => sandwichInstructionInCpiProxy(ix)),
 		depositIx,
-		...authorityAccounts.flatMap((account) =>
-			releaseAuthorityAccount(programId, quoteHash, owner, authority, account, sourceMint)
-		),
+		...releaseInstructions.map((ix) => sandwichInstructionInCpiProxy(ix)),
 	];
 	const watched = await collectDepositorTokenAccounts(connection, body, owner, spend);
-	const tableAddresses = swap.lookupTables.map((table) => table.address);
+	// Blink sizes the route with its own deposit table, which Mayan's table contains
+	const tableAddresses = [...swap.lookupTables.map((table) => table.address), getLookupTableAddress(quote.fromChain)];
 	const lookupTables = await getAddressLookupTableAccounts(tableAddresses, connection);
 	if (lookupTables.length !== tableAddresses.length) {
 		throw new Error('Blink swap lookup table not found');
