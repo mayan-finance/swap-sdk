@@ -549,6 +549,35 @@ export async function swapFromEvm(
 	return signer.sendTransaction(transactionRequest);
 }
 
+/**
+ * What an estimate builds the swap for. A Blink order is bound to its recipient, refund address
+ * and referrers, so the deposit is built for the ones the embedded order carries; any other quote
+ * takes a sample destination, since its gas does not depend on it.
+ */
+function estimateInputs(quote: Quote): {
+	destinationAddress: string;
+	referrerAddresses: ChainReferrers | null;
+	refundAddress?: string;
+} {
+	if (quote.type === 'BLINK' && hasBlinkQuoteHash(quote)) {
+		const params = decodeBlinkQuote(quote.blinkQuote).orderParams;
+		return {
+			destinationAddress: params.recipient,
+			referrerAddresses: { evm: params.referrers },
+			refundAddress: params.refundAddress,
+		};
+	}
+	return {
+		destinationAddress:
+			quote.toChain === 'solana'
+				? 'ENsytooJVSZyNHbxvueUeX8Am8gcNqPivVVE8USCBiy5'
+				: quote.toChain === 'sui'
+				? SAMPLE_SUI_ADDRESS
+				: '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a',
+		referrerAddresses: null,
+	};
+}
+
 export async function estimateQuoteRequiredGas(
 	quote: Quote,
 	swapperAddress: string,
@@ -563,12 +592,7 @@ export async function estimateQuoteRequiredGas(
 	}
 ): Promise<bigint> {
 	const signerAddress = await signer.getAddress();
-	const sampleDestinationAddress: string =
-		quote.toChain === 'solana'
-			? 'ENsytooJVSZyNHbxvueUeX8Am8gcNqPivVVE8USCBiy5'
-			: quote.toChain === 'sui'
-			? SAMPLE_SUI_ADDRESS
-			: '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
+	const inputs = estimateInputs(quote);
 	const signerChainId = Number((await signer.provider!.getNetwork()).chainId);
 	if ((quote.type === 'SWIFT' || quote.type === 'BLINK') && quote.gasless) {
 		return BigInt(0);
@@ -576,8 +600,8 @@ export async function estimateQuoteRequiredGas(
 	const transactionRequest = await getSwapFromEvmTxPayload(
 		quote,
 		swapperAddress,
-		sampleDestinationAddress,
-		null,
+		inputs.destinationAddress,
+		inputs.referrerAddresses,
 		signerAddress,
 		signerChainId,
 		payload,
@@ -587,6 +611,7 @@ export async function estimateQuoteRequiredGas(
 			allowBlinkEvmDirectTransfer: options?.allowBlinkEvmDirectTransfer,
 			usdcPermitSignature: options?.usdcPermitSignature,
 			apiKey: options?.apiKey,
+			refundAddress: inputs.refundAddress,
 			swiftRefundAddress: options?.swiftRefundAddress,
 		},
 	);
@@ -602,6 +627,10 @@ export async function estimateQuoteRequiredGas(
 	return baseGas;
 }
 
+/**
+ * @deprecated Use {@link estimateQuoteRequiredGasAprox2}, which builds the swap for the quote's
+ * own inputs and prices it with Mayan's estimator. This function throws.
+ */
 export async function estimateQuoteRequiredGasAprox(
 	quote: Quote,
 	provider: ethers.JsonRpcProvider,
@@ -614,38 +643,7 @@ export async function estimateQuoteRequiredGasAprox(
 		allowBlinkEvmDirectTransfer?: boolean;
 	},
 ): Promise<bigint> {
-	const signerAddress = '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
-	const sampleDestinationAddress: string =
-		quote.toChain === 'solana'
-			? 'ENsytooJVSZyNHbxvueUeX8Am8gcNqPivVVE8USCBiy5'
-			: quote.toChain === 'sui'
-			? SAMPLE_SUI_ADDRESS
-			: '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
-	const signerChainId = quote?.fromToken?.chainId;
-	if ((quote.type === 'SWIFT' || quote.type === 'BLINK') && quote.gasless) {
-		return BigInt(0);
-	}
-	const transactionRequest = await getSwapFromEvmTxPayload(
-		quote,
-		signerAddress,
-		sampleDestinationAddress,
-		null,
-		signerAddress,
-		signerChainId,
-		payload,
-		permit,
-		{
-			evmProvider: provider,
-			allowBlinkEvmDirectTransfer: options?.allowBlinkEvmDirectTransfer,
-			usdcPermitSignature: options?.usdcPermitSignature,
-			apiKey: options?.apiKey,
-			swiftRefundAddress: options?.swiftRefundAddress,
-		},
-	);
-	// @ts-ignore
-	delete transactionRequest._forwarder;
-
-	return provider.estimateGas(transactionRequest);
+	throw new Error('estimateQuoteRequiredGasAprox is deprecated: use estimateQuoteRequiredGasAprox2');
 }
 
 export async function estimateQuoteRequiredGasAprox2(
@@ -660,12 +658,7 @@ export async function estimateQuoteRequiredGasAprox2(
 	requiredNative: bigint;
 }> {
 	const signerAddress = '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
-	const sampleDestinationAddress: string =
-		quote.toChain === 'solana'
-			? 'ENsytooJVSZyNHbxvueUeX8Am8gcNqPivVVE8USCBiy5'
-			: quote.toChain === 'sui'
-			? SAMPLE_SUI_ADDRESS
-			: '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
+	const inputs = estimateInputs(quote);
 	const signerChainId = getEvmChainIdByName(quote.fromChain);
 	if ((quote.type === 'SWIFT' || quote.type === 'BLINK') && quote.gasless) {
 		return {
@@ -674,14 +667,11 @@ export async function estimateQuoteRequiredGasAprox2(
 			requiredNative: BigInt(0),
 		}
 	}
-	// a Blink order is bound to its recipient, refund address and referrers, so the deposit is built
-	// for the ones the embedded order carries instead of the sample addresses
-	const blinkParams = quote.type === 'BLINK' && hasBlinkQuoteHash(quote) ? decodeBlinkQuote(quote.blinkQuote).orderParams : null;
 	const transactionRequest = await getSwapFromEvmTxPayload(
 		quote,
 		signerAddress,
-		blinkParams ? blinkParams.recipient : sampleDestinationAddress,
-		blinkParams ? { evm: blinkParams.referrers } : null,
+		inputs.destinationAddress,
+		inputs.referrerAddresses,
 		signerAddress,
 		signerChainId,
 		payload,
@@ -690,7 +680,7 @@ export async function estimateQuoteRequiredGasAprox2(
 			evmProvider,
 			allowBlinkEvmDirectTransfer: options?.allowBlinkEvmDirectTransfer,
 			apiKey,
-			refundAddress: blinkParams?.refundAddress,
+			refundAddress: inputs.refundAddress,
 		}
 	);
 
