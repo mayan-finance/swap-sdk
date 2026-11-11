@@ -4,7 +4,8 @@ import type { BlinkOrder, BlinkOrderParamsJson, ChainReferrers, ComposableSuiMov
 import { getQuoteRefundAddress, hexToUint8Array } from '../utils';
 import { getBlinkChains, getCurrentChainTime, submitBlinkGaslessOrder } from '../api';
 import { getBlinkOrderParamsJson, needsBlinkSourceSwap, resolveBlinkOrder } from '../blink/order';
-import { resolveInputCoin } from './utils';
+import { sameBlinkAddress } from '../blink/contracts';
+import { resolveAddressBalanceTopUp, resolveInputCoin } from './utils';
 
 const SOURCE_SWAP_WINDOW_MS = BigInt(300_000);
 const SOURCE_SWAP_ALLOWANCE_NAME = 'blink source swap';
@@ -40,7 +41,7 @@ async function orderFor(
 		return resolveBlinkOrder(quote, refundAddress ?? swapperAddress, destinationAddress, referrerAddresses);
 	}
 	const bound = order.quote.orderParams.refundAddress;
-	if (refundAddress && bound.toLowerCase() !== refundAddress.toLowerCase()) {
+	if (refundAddress && !sameBlinkAddress(bound, refundAddress)) {
 		throw new Error(`The prefetched Blink order refunds to ${bound}, not to refundAddress ${refundAddress}`);
 	}
 	return order;
@@ -100,12 +101,21 @@ async function addSourceSwapOpenCall(
 	if (!swapExecutor) {
 		throw new Error('Blink source swaps are unavailable on sui');
 	}
-	const payment = await resolveInputCoin(amountIn, swapperAddress, params.srcToken, suiClient, tx, options?.inputCoin);
-	tx.moveCall({
-		target: '0x2::coin::send_funds',
-		typeArguments: [params.srcToken],
-		arguments: [payment as TransactionObjectArgument, tx.pure.address(swapperAddress)],
-	});
+	// Blink draws the swap from the swapper's address balance, so the opening funds it with what
+	// it lacks, from the wallet's coin objects: a sponsored opening may not withdraw from the
+	// address balance, and one already holding the amount needs no funding
+	const prepared = options?.inputCoin;
+	const funding =
+		prepared?.result || prepared?.objectId
+			? await resolveInputCoin(amountIn, swapperAddress, params.srcToken, suiClient, tx, prepared)
+			: await resolveAddressBalanceTopUp(amountIn, swapperAddress, params.srcToken, suiClient, tx);
+	if (funding) {
+		tx.moveCall({
+			target: '0x2::coin::send_funds',
+			typeArguments: [params.srcToken],
+			arguments: [funding as TransactionObjectArgument, tx.pure.address(swapperAddress)],
+		});
+	}
 	const noRateLimit = tx.moveCall({
 		target: '0x1::option::none',
 		typeArguments: ['0x2::allowance::RateLimit'],
@@ -139,10 +149,16 @@ async function buildDepositTransaction(
 	order: BlinkOrder,
 	swapperAddress: string,
 	suiClient: ClientWithCoreApi,
-	options?: ComposableSuiMoveCallsOptions
+	options?: ComposableSuiMoveCallsOptions,
+	gasOwner?: string
 ): Promise<Transaction> {
 	const tx = options?.builtTransaction ?? new Transaction();
 	tx.setSenderIfNotSet(swapperAddress);
+	if (gasOwner) {
+		// Set before the input is resolved: a sponsored deposit takes it from the swapper's own
+		// coins, not from the sponsor's gas coin
+		tx.setGasOwner(gasOwner);
+	}
 	if (needsBlinkSourceSwap(order.quote.orderParams)) {
 		await addSourceSwapOpenCall(tx, order, swapperAddress, suiClient, options);
 	} else {
@@ -215,7 +231,7 @@ export async function getBlinkGaslessFromSuiTransaction(
 	if (!sponsor || gasBudget === undefined) {
 		throw new Error('Gasless Blink deposits are unavailable on sui');
 	}
-	const tx = await buildDepositTransaction(order, swapperAddress, suiClient, options);
+	const tx = await buildDepositTransaction(order, swapperAddress, suiClient, options, sponsor);
 	return {
 		quoteHash: order.quote.quoteHash,
 		orderParams: getBlinkOrderParamsJson(quote),
