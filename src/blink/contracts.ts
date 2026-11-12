@@ -8,9 +8,9 @@ import type {
 } from '../types';
 
 export const BLINK_GENESIS_GUARDIANS: readonly string[] = [
-	'0x4FbA3CE3CC1eb4297E274f42B1C252Ba42F886a6',
-	'0x024721C2d41739BCdE70EEc65e73E2B27726dDA9',
-	'0x9E497d060D1543Bd360db003Da7a13924a2dB8cb',
+	'0xF869Bc2d6035cD59cC9FA6ac308bf0B861D20AAd',
+	'0xFe2e316A1B0a500eF6bda77688807c684B5Fb6BF',
+	'0x8B7E718D94c24678E05F36a6Ba0a54efaFC636de',
 ];
 
 const CONTRACTS_REFRESH_MS = 2 * 60 * 60 * 1000;
@@ -89,9 +89,12 @@ export function verifyBlinkGuardianSets(
 
 export function verifyBlinkManifestSignatures(manifest: string, signatures: string[], members: string[]): void {
 	const signers = recoveredSigners(toUtf8Bytes(manifest), signatures);
-	const missing = members.find((m) => !signers.has(m.toLowerCase()));
-	if (missing) {
-		throw new Error(`Blink guardian ${missing} has not signed the contract manifest`);
+	const approvals = members.filter((m) => signers.has(m.toLowerCase())).length;
+	const quorum = Math.floor(members.length / 2) + 1;
+	if (approvals < quorum) {
+		throw new Error(
+			`Blink contract manifest has ${approvals} of ${members.length} guardian signatures, quorum is ${quorum}`
+		);
 	}
 }
 
