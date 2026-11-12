@@ -101,9 +101,10 @@ async function addSourceSwapOpenCall(
 	if (!swapExecutor) {
 		throw new Error('Blink source swaps are unavailable on sui');
 	}
-	// Blink draws the swap from the swapper's address balance, so the opening funds it with what
-	// it lacks, from the wallet's coin objects: a sponsored opening may not withdraw from the
-	// address balance, and one already holding the amount needs no funding
+	// Blink draws the swap from the swapper's address balance, so the opening funds it: a token
+	// with what it lacks, from the wallet's coin objects (a sponsored opening may not withdraw from
+	// the address balance); native SUI paid for by the swapper with the full amount from the gas
+	// coin, so the gas never leaves the address balance short
 	const prepared = options?.inputCoin;
 	const funding =
 		prepared?.result || prepared?.objectId

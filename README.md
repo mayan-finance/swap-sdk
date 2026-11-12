@@ -27,7 +27,7 @@ TypeScript client for Mayan, an intent-based cross-chain swap protocol. Fetch a 
 - **`estimateQuoteRequiredGasAprox2(quote, payload, apiKey, evmProvider)`** takes the provider as a fourth, required argument.
 - `estimateQuoteRequiredGasAprox` is deprecated and throws; `estimateQuoteRequiredGasAprox2` replaces it.
 - Blink permit deposits hand the router the value the permit was signed for, so a permit for more than the amount, or an unlimited one, is used as it is.
-- A Blink source swap from Sui funds the swapper's address balance only with what it lacks of the input amount, from the wallet's coin objects.
+- A Blink source swap from Sui funds the swapper's address balance with what it lacks of a token input, from the wallet's coin objects; a native SUI input paid for by the swapper is sent in full from the gas coin.
 - **Blink deposits go through the escrow unless you opt in to the direct transfer.** A Blink order that allows it is deposited by a plain ERC20 transfer only with `allowBlinkEvmDirectTransfer: true` in the options of `swapFromEvm` / `getSwapFromEvmTxPayload` (and of the allowance helpers and gas estimators), and only for an externally owned swapper, which the SDK checks with `getCode`. Without it every ERC20 Blink deposit is a `depositToken` call that needs an allowance. See [Blink](#blink).
 - **`BLINK` quotes are returned by default.** `quote.type` can now be `'BLINK'`, Mayan's inventory-backed route. Pass `blink: false` in `QuoteOptions` to leave them out until you handle them; see [Blink](#blink).
 - **`swiftRefundAddress` is now `refundAddress`** in the swap options on every chain, and it applies to every quote type. The old name is still accepted for Swift quotes; see [Custom refund address](#custom-refund-address).

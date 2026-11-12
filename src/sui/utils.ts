@@ -256,10 +256,13 @@ export async function resolveInputCoin(
 }
 
 /**
- * The coin that tops `owner`'s address balance of `coinType` up to `amount`, or `null` when the
- * address balance already holds it. The shortfall is split from `owner`'s coin objects (from the
- * gas coin for native SUI when `owner` pays the gas, as in {@link resolveInputCoin}) and never
- * withdrawn from the address balance, which a sponsored Blink source swap may not draw on.
+ * The coin that funds `owner`'s address balance of `coinType` for `amount`, or `null` when nothing
+ * needs to move. A token is topped up with what the address balance lacks, split from `owner`'s
+ * coin objects and never withdrawn from the address balance, which a sponsored Blink source swap
+ * may not draw on. Native SUI whose gas `owner` pays is sent in full from the gas coin: Sui builds
+ * that coin from the address balance and the coin objects together and credits what remains to
+ * the address balance, so it ends at the wallet's SUI less the gas whatever it held before,
+ * instead of one gas fee short when it already held the amount and the gas was charged to it.
  */
 export async function resolveAddressBalanceTopUp(
 	amount: bigint,
@@ -269,17 +272,18 @@ export async function resolveAddressBalanceTopUp(
 	tx: Transaction
 ): Promise<TransactionObjectArgument | null> {
 	const { balance } = await suiClient.core.getBalance({ owner, coinType });
+	if (isSuiCoinType(coinType) && paysGas(tx, owner)) {
+		if (BigInt(balance.coinBalance) + BigInt(balance.addressBalance) < amount) {
+			throw new Error(
+				`Insufficient funds for ${amount} of ${coinType}: the address balance holds ${balance.addressBalance} and the coin objects ${balance.coinBalance}`
+			);
+		}
+		const [splitCoin] = tx.splitCoins(tx.gas, [amount]);
+		return splitCoin;
+	}
 	const shortfall = amount - BigInt(balance.addressBalance);
 	if (shortfall <= BigInt(0)) {
 		return null;
-	}
-	if (
-		isSuiCoinType(coinType) &&
-		paysGas(tx, owner) &&
-		BigInt(balance.coinBalance) >= shortfall
-	) {
-		const [splitCoin] = tx.splitCoins(tx.gas, [shortfall]);
-		return splitCoin;
 	}
 	const { coins, sum } = await fetchAllCoins(
 		{ walletAddress: owner, coinType, coinAmount: shortfall },

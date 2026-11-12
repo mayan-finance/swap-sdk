@@ -221,11 +221,16 @@ you. For the integrator this is transparent **except**:
 
 - **Sui**: the user's tx only _opens_ the source swap; Blink executes it afterwards
   (up to 3 attempts inside a 5-minute window) from the user's Sui address balance, which
-  the opening tops up with whatever it lacks of `expectedAmountIn`, taken from the
-  wallet's coin objects; an address balance already holding the amount needs no funding.
-  A gasless opening may not withdraw from the address balance, so the coin objects must
-  cover that shortfall (a gasless plain deposit may take the amount from the address
-  balance). Track the execution on the Mayan explorer with the quote hash. If the intent
+  the opening funds first. A token input is topped up with whatever the address balance
+  lacks of `expectedAmountIn`, taken from the wallet's coin objects; an address balance
+  already holding the amount needs no funding. A gasless opening may not withdraw from
+  the address balance, so the coin objects must cover that shortfall (a gasless plain
+  deposit may take the amount from the address balance). A native SUI input whose gas the
+  user pays is sent in full from the gas coin: Sui builds that coin from the address
+  balance and the coin objects and credits the remainder to the address balance, which
+  then holds the wallet's SUI less the gas, so an address balance that already held the
+  amount is not left one gas fee short. Track the execution on the Mayan explorer with
+  the quote hash. If the intent
   lapses the coins stay in the user's own Sui address balance.
   If you prefetch the order, pass it via `ComposableSuiMoveCallsOptions.blinkOrder`
   so the same order is used for the Move calls.
