@@ -13,7 +13,7 @@ import { Buffer } from 'buffer';
 
 export type ChainName = 'solana'
 	| 'ethereum' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism' |
-	'base' | 'aptos' | 'sui' | 'unichain' | 'linea' | 'hypercore' | 'sonic' | 'hyperevm' | 'fogo' |  'ton' | 'monad';
+	'base' | 'aptos' | 'sui' | 'unichain' | 'linea' | 'hypercore' | 'sonic' | 'hyperevm' | 'fogo' |  'ton' | 'monad' | 'elysium';
 
 export type TokenStandard = 'native' | 'erc20' | 'spl' | 'spl2022' | 'suicoin' | 'hypertoken';
 
@@ -66,6 +66,12 @@ export type QuoteParams = {
 	referrer?: string;
 	referrerBps?: number;
 	destinationAddress?: string;
+	refundAddress?: string;
+	/**
+	 * The wallet that signs the swap. Blink binds a Solana source swap to it, and uses it as the
+	 * refund address when {@link refundAddress} is not given.
+	 */
+	swapperAddress?: string;
 };
 
 export type QuoteError = {
@@ -74,7 +80,7 @@ export type QuoteError = {
 	data: any,
 }
 
-export type QuoteType = 'WH' | 'SWIFT' | 'MCTP' | 'SHUTTLE' | 'FAST_MCTP' | 'MONO_CHAIN';
+export type QuoteType = 'WH' | 'SWIFT' | 'MCTP' | 'SHUTTLE' | 'FAST_MCTP' | 'MONO_CHAIN' | 'BLINK';
 export type Quote = {
 	type: QuoteType;
 	/**
@@ -187,6 +193,14 @@ export type Quote = {
 	mpsUserId?: string,
 	mpsIntegratorId?: string,
 	mixedRefAddress?: string,
+	/**
+	 * Blink order bound to `destinationAddress` and the refund address, embedded only when
+	 * {@link fetchQuote} got `destinationAddress` and `swapperAddress` or `refundAddress`. A BLINK
+	 * quote without it is a price preview and cannot be swapped.
+	 */
+	blinkQuote?: BlinkQuoteJson,
+	blinkInputContract?: string;
+	blinkInputContractStandard?: TokenStandard;
 };
 
 export type QuoteOptions = {
@@ -201,6 +215,7 @@ export type QuoteOptions = {
 	guaranteedOutput?: boolean;
 	payload?: string;
 	monoChain?: boolean;
+	blink?: boolean;
 	apiKey?: string;
 	memoHex?: string,
 	extraInstructions?: {
@@ -232,6 +247,7 @@ type BaseGetSolanaSwapParams = {
 	minMiddleAmount: number,
 	middleToken: string,
 	userWallet: string,
+	destinationWallet: string,
 	slippageBps: number,
 	referrerAddress?: string | null,
 	fillMaxAccounts?: boolean,
@@ -286,6 +302,7 @@ type BaseGetSuiSwapParams = {
 	inputCoinType: string,
 	middleCoinType: string,
 	userWallet: string,
+	destinationWallet: string,
 	referrerAddress?: string | null,
 	inputCoin?: SuiFunctionParameter | null,
 	transaction?: string | null,
@@ -303,6 +320,8 @@ type BaseGetEvmSwapParams = {
 	referrerAddress?: string | null,
 	slippageBps: number,
 	apiKey?: string,
+	userWallet: string,
+	destinationWallet: string,
 }
 
 export type GetEvmSwapParams = BaseGetEvmSwapParams;
@@ -413,6 +432,8 @@ export type ComposableSuiMoveCallsOptions = {
 	whFeeCoin?: SuiFunctionParameter | null;
 	usdcPermitSignature?: string | null;
 	apiKey?: string;
+	blinkOrder?: BlinkOrder | null;
+	refundAddress?: string | null;
 };
 
 export type SwapMessageV0Params = {
@@ -444,6 +465,7 @@ export type SolanaBridgeOptions = {
 	skipProxyMayanInstructions?: boolean;
 	customPayload?: Buffer | Uint8Array | null;
 	apiKey?: string;
+	refundAddress?: string | null;
 	swiftRefundAddress?: string | null;
 }
 
@@ -490,3 +512,236 @@ export type HyperCoreWithdrawCircleTypedData = {
 		nonce: number,
 	}
 }
+
+export type BlinkOrderParams = {
+	srcChain: string;
+	dstChain: string;
+	srcToken: string;
+	dstToken: string;
+	lockToken: string;
+	expectedAmountIn: string;
+	expectedAmountOut: string;
+	expectedLockAmount: string;
+	minLockAmount: string;
+	minAmountOut: string;
+	gasDrop: string;
+	recipient: string;
+	refundAddress: string;
+	referrers: Referrer[];
+	routerAddress: string;
+	refundFeeBridge: string;
+	random: Uint8Array;
+	paramsVersion: number;
+};
+
+export type BlinkQuote = {
+	quoteHash: string;
+	amountIn: string;
+	amountOut: string;
+	minAmountOut: string;
+	slippageBps: number;
+	routerAddress: string;
+	orderParams: BlinkOrderParams;
+	gasless: boolean;
+	sponsorFees: boolean;
+	gaslessRouterAddress?: string;
+	sponsorAddress?: string;
+	sponsorGasBudget?: bigint;
+	fulfillEtaSecs?: number;
+	directTransfer: boolean;
+	expiresAt: string;
+	guardianSetIndex: number;
+};
+
+export type BlinkEvmSwap = {
+	aggregator: string;
+	swapCalldata: string;
+	value: string;
+};
+
+export type BlinkSvmLookupTable = {
+	address: string;
+	addresses: string[];
+};
+
+export type BlinkSvmSwap = {
+	setup: InstructionInfo[];
+	swap: InstructionInfo;
+	cleanup: InstructionInfo[];
+	lookupTables: BlinkSvmLookupTable[];
+	/** lamports the depositor lends the swap authority for rent the route pays; deposit_swap returns the unspent part */
+	swapAuthorityLamports: string;
+};
+
+export type BlinkSwapInstructions = {
+	routerAddress: string;
+	srcToken: string;
+	amountIn: string;
+	lockToken: string;
+	minLockAmount: string;
+	evm?: BlinkEvmSwap;
+	svm?: BlinkSvmSwap;
+};
+
+export type BlinkChain = {
+	chain: string;
+	vm: string;
+	rpcUrl?: string;
+	router?: string;
+	escrow?: string;
+	treasury?: string;
+	swapExecutor?: string;
+	maxGasDrop: string;
+	nativeSymbol: string;
+	nativeDecimals: number;
+	gasless: boolean;
+};
+
+export type BlinkGuardianSet = {
+	index: number;
+	members: string[];
+	signatures: string[];
+};
+
+export type BlinkContractsResponse = {
+	manifest: string;
+	signatures: string[];
+	guardianSets: BlinkGuardianSet[];
+};
+
+export type BlinkChainContracts = {
+	router: string;
+	escrow?: string;
+	swapPrograms: string[];
+};
+
+export type BlinkContractManifest = {
+	guardianSetIndex: number;
+	chains: Record<string, BlinkChainContracts>;
+};
+
+export type BlinkGaslessSubmission = {
+	quoteHash: string;
+	status: string;
+	txHash?: string;
+	error?: string;
+};
+
+export type BlinkEvmGaslessOrder = {
+	owner: string;
+	permit2Nonce: string;
+	deadline: string;
+	signature: string;
+	permitSignature?: string;
+};
+
+/**
+ * A signed gasless Blink order, as Mayan's explorer takes it (`/submit/blink`): the quote hash,
+ * the order params exactly as the quote embeds them (the explorer re-hashes them and refuses a
+ * mismatch), and the signed payload of one chain.
+ */
+export type BlinkGaslessOrderRequest =
+	| { quoteHash: string; orderParams: BlinkOrderParamsJson; evm: BlinkEvmGaslessOrder }
+	| { quoteHash: string; orderParams: BlinkOrderParamsJson; svm: { txBase64: string } }
+	| { quoteHash: string; orderParams: BlinkOrderParamsJson; sui: { txBase64: string; signature: string } };
+
+export type BlinkOrder = {
+	quote: BlinkQuote;
+	swap?: BlinkSwapInstructions;
+	contracts: BlinkChainContracts;
+};
+
+// Proto JSON (lowerCamelCase, as Mayan's quote API embeds it in `Quote.blinkQuote`) of Blink's
+// `QuoteResponse`. Fields at their proto default (0, false, "", empty list) are omitted, and
+// 64-bit integers are decimal strings. `decodeBlinkQuote` turns this into a `BlinkQuote`.
+
+export type BlinkReferrerJson = {
+	address?: string;
+	bps?: number;
+};
+
+/** The fields the quote hash commits to; see `encodeBlinkOrderParams`. */
+export type BlinkOrderParamsJson = {
+	srcChain?: string;
+	dstChain?: string;
+	srcToken?: string;
+	dstToken?: string;
+	lockToken?: string;
+	expectedAmountIn?: string;
+	expectedAmountOut?: string;
+	expectedLockAmount?: string;
+	minLockAmount?: string;
+	minAmountOut?: string;
+	gasDrop?: string;
+	recipient?: string;
+	refundAddress?: string;
+	referrers?: BlinkReferrerJson[];
+	routerAddress?: string;
+	refundFeeBridge?: string;
+	/** base64 */
+	random?: string;
+	paramsVersion?: number;
+};
+
+export type BlinkFeeComponentJson = {
+	name?: string;
+	side?: string;
+	usdMicros?: string;
+	native?: string;
+};
+
+export type BlinkFeeBreakdownJson = {
+	components?: BlinkFeeComponentJson[];
+	dstTotalUsdMicros?: string;
+	srcTotalUsdMicros?: string;
+	dstGasNative?: string;
+	srcGasNative?: string;
+};
+
+export type BlinkCrossChainQuoteJson = {
+	quoteHash?: string;
+	amountIn?: string;
+	amountOut?: string;
+	minAmountOut?: string;
+	amountInUsdMicros?: string;
+	amountOutUsdMicros?: string;
+	slippageBps?: number;
+	feeBreakdown?: BlinkFeeBreakdownJson;
+	routerAddress?: string;
+	orderParams?: BlinkOrderParamsJson;
+	gasless?: boolean;
+	sponsorFees?: boolean;
+	gaslessRouterAddress?: string;
+	sponsorAddress?: string;
+	fulfillEtaSecs?: string;
+	directTransfer?: boolean;
+	/** RFC 3339 */
+	expiresAt?: string;
+	sponsorGasBudget?: string;
+	guardianSetIndex?: number;
+	isGuaranteed?: boolean;
+	sponsorGasMax?: string;
+};
+
+export type BlinkSameChainSwapQuoteJson = {
+	quoteHash?: string;
+	amountIn?: string;
+	amountOut?: string;
+	minAmountOut?: string;
+	amountInUsdMicros?: string;
+	amountOutUsdMicros?: string;
+	slippageBps?: number;
+	feeBreakdown?: BlinkFeeBreakdownJson;
+	routerAddress?: string;
+	orderParams?: BlinkOrderParamsJson;
+	fulfillEtaSecs?: string;
+	/** RFC 3339 */
+	expiresAt?: string;
+	guardianSetIndex?: number;
+};
+
+/** Exactly one of the two variants is set. */
+export type BlinkQuoteJson = {
+	crossChain?: BlinkCrossChainQuoteJson;
+	sameChainSwap?: BlinkSameChainSwapQuoteJson;
+};

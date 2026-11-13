@@ -150,7 +150,6 @@ export function createAssociatedTokenAccountInstruction(
 		{pubkey: mint, isSigner: false, isWritable: false},
 		{pubkey: SystemProgram.programId, isSigner: false, isWritable: false},
 		{pubkey: programId, isSigner: false, isWritable: false},
-		{pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false},
 	];
 
 	return new TransactionInstruction({
@@ -160,7 +159,7 @@ export function createAssociatedTokenAccountInstruction(
 	});
 }
 
-const TOKEN_ACCOUNT_LEN = 165;
+export const TOKEN_ACCOUNT_LEN = 165;
 export async function createInitializeRandomTokenAccountInstructions(
 	connection: Connection,
 	payer: PublicKey,
@@ -284,6 +283,39 @@ export function createSplTransferInstruction(
 		{
 			instruction: 3,
 			amount: getSafeU64Blob(amount),
+		},
+		data
+	);
+	return new TransactionInstruction({keys, programId, data});
+}
+
+const SplTransferCheckedInstructionData = struct<any>([
+	u8('instruction'), blob(8, 'amount'), u8('decimals')
+]);
+
+// transfer_checked: Token-2022 refuses the plain transfer for a mint with extensions such as transfer fees
+export function createSplTransferCheckInstruction(
+	source: PublicKey,
+	mint: PublicKey,
+	destination: PublicKey,
+	owner: PublicKey,
+	amount: bigint,
+	decimals: number,
+	programId = new PublicKey(addresses.TOKEN_PROGRAM_ID)
+): TransactionInstruction {
+	const keys: Array<AccountMeta> = [
+		{pubkey: source, isSigner: false, isWritable: true},
+		{pubkey: mint, isSigner: false, isWritable: false},
+		{pubkey: destination, isSigner: false, isWritable: true},
+		{pubkey: owner, isSigner: true, isWritable: false},
+	];
+
+	const data = Buffer.alloc(SplTransferCheckedInstructionData.span);
+	SplTransferCheckedInstructionData.encode(
+		{
+			instruction: 12,
+			amount: getSafeU64Blob(amount),
+			decimals,
 		},
 		data
 	);

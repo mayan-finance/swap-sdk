@@ -29,6 +29,7 @@ import {
 	nativeAddressToHexString,
 	getSafeU64Blob,
 	getQuoteSuitableReferrerAddress,
+	getQuoteRefundAddress,
 } from '../utils';
 import {Buffer} from 'buffer';
 import addresses from '../addresses'
@@ -51,6 +52,7 @@ import bs58 from 'bs58';
 import { createHyperCoreDepositFromSolanaInstructions } from './solanaHyperCore';
 import { createMonoChainFromSolanaInstructions } from './solanaMonoChain';
 import { createFastMctpFromSolanaInstructions } from './solanaFastMctp';
+import { createBlinkFromSolanaInstructions, swapBlinkGaslessFromSolana } from './solanaBlink';
 
 
 const STATE_SIZE = 420;
@@ -93,32 +95,39 @@ export async function createSwapFromSolanaInstructions(
 	if (destinationAddress === ZeroAddress || destinationAddress === SystemProgram.programId.toString()) {
 		throw new Error(`Invalid destination address: ${destinationAddress}`);
 	}
-	if (options?.swiftRefundAddress && (options.swiftRefundAddress === ZeroAddress || options.swiftRefundAddress === SystemProgram.programId.toString())) {
-		throw new Error(`Invalid swift refund address: ${options.swiftRefundAddress}`);
-	}
+	const refundAddress = getQuoteRefundAddress(quote, swapperWalletAddress, destinationAddress, options);
+	// the builders read the refund address from swiftRefundAddress; the caller's object is left as is
+	const bridgeOptions: SolanaBridgeOptions = { ...options, swiftRefundAddress: refundAddress };
 
 	if (quote.toChain === 'hypercore') {
 		if (options.customPayload) {
 			throw new Error('Custom payload is not supported for HyperCore');
 		}
-		return createHyperCoreDepositFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
+		return createHyperCoreDepositFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, bridgeOptions);
 	}
 
 	if (quote.type === 'MCTP') {
-		return createMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
+		return createMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, bridgeOptions);
 	}
 	if (quote.type === 'SWIFT') {
-		return createSwiftFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
+		return createSwiftFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, bridgeOptions);
 	}
 	if (quote.type === 'MONO_CHAIN') {
 		if (options.customPayload) {
 			throw new Error('Custom payload is not supported for MONO_CHAIN yet');
 		}
-		return createMonoChainFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
+		return createMonoChainFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, bridgeOptions);
 	}
 
 	if (quote.type === 'FAST_MCTP') {
-		return createFastMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, options);
+		return createFastMctpFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddress, connection, bridgeOptions);
+	}
+
+	if (quote.type === 'BLINK') {
+		if (options.customPayload) {
+			throw new Error('Custom payload is not supported for BLINK');
+		}
+		return createBlinkFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddresses, connection, refundAddress);
 	}
 
 	if (options.customPayload) {
@@ -334,6 +343,7 @@ export async function swapFromSolana(
 		forceSkipCctpInstructions?: boolean,
 		skipProxyMayanInstructions?: boolean,
 		customPayload?: Buffer | Uint8Array | null,
+		refundAddress?: string,
 		swiftRefundAddress?: string,
 	},
 	extraParams?: {
@@ -344,6 +354,15 @@ export async function swapFromSolana(
 	signature: string,
 	serializedTrx: Uint8Array | null,
 }> {
+	if (quote.type === 'BLINK' && quote.gasless) {
+		if (instructionOptions?.customPayload) {
+			throw new Error('Custom payload is not supported for BLINK');
+		}
+		const refundAddress = getQuoteRefundAddress(quote, swapperWalletAddress, destinationAddress, instructionOptions);
+		return swapBlinkGaslessFromSolana(
+			quote, swapperWalletAddress, destinationAddress, referrerAddresses, signTransaction, connection, refundAddress, extraParams?.apiKey
+		);
+	}
 
 	const jitoEnabled = !!(
 		!quote.gasless &&
@@ -370,6 +389,7 @@ export async function swapFromSolana(
 			skipProxyMayanInstructions: instructionOptions?.skipProxyMayanInstructions === true, // default is false
 			customPayload: instructionOptions?.customPayload,
 			apiKey: extraParams?.apiKey,
+			refundAddress: instructionOptions?.refundAddress,
 			swiftRefundAddress: instructionOptions?.swiftRefundAddress,
 		}
 	);

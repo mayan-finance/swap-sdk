@@ -67,6 +67,7 @@ export async function createFastMctpFromSuiMoveCalls(
 			inputCoinType: quote.fromToken.contract,
 			middleCoinType: quote.fastMctpInputContract,
 			userWallet: swapperAddress,
+			destinationWallet: destinationAddress,
 			withWhFee: false,
 			referrerAddress,
 			inputCoin: options?.inputCoin,

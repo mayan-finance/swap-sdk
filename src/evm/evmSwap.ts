@@ -16,6 +16,7 @@ import {
 	getEvmChainIdByName,
 	getGasDecimal,
 	getQuoteSuitableReferrerAddress,
+	getQuoteRefundAddress,
 	getWormholeChainIdById,
 	getWormholeChainIdByName,
 	nativeAddressToHexString,
@@ -23,7 +24,6 @@ import {
 } from '../utils';
 import MayanSwapArtifact from './MayanSwapArtifact';
 import MayanForwarderArtifact from './MayanForwarderArtifact';
-import ERC20Artifact from './ERC20Artifact';
 import addresses from '../addresses';
 import { Buffer } from 'buffer';
 import { getMctpFromEvmTxPayload } from './evmMctp';
@@ -36,6 +36,12 @@ import {
 	getHyperCoreWithdrawParams
 } from './evmHyperCore';
 import { getMonoChainFromEvmTxPayload } from './evmMonoChain';
+import { allowsBlinkDirectTransfer, getBlinkFromEvmTxPayload, swapBlinkGaslessFromEvm } from './evmBlink';
+import { getErc20ApproveTxs } from './evmApproval';
+import { hasBlinkQuoteHash } from '../blink/order';
+import { decodeBlinkQuote } from '../blink/utils';
+
+const SAMPLE_SUI_ADDRESS = '0xcde6dbe01902be1f200ff03dbbd149e586847be8cee15235f82750d9b06c0e04';
 
 export type ContractRelayerFees = {
 	swapFee: bigint;
@@ -189,9 +195,14 @@ export async function getSwapFromEvmTxPayload(
 	signerChainId: number | string,
 	payload: Uint8Array | Buffer | null | undefined,
 	permit: Erc20Permit | null | undefined,
-	options?: {
+	options: {
+		/** A JSON-RPC provider on the signer's chain: the SDK reads the chain through it */
+		evmProvider: ethers.JsonRpcProvider;
+		/** Blink: deposit by a plain transfer when the order allows it and the swapper is an EOA (see `allowsBlinkDirectTransfer`) */
+		allowBlinkEvmDirectTransfer?: boolean;
 		usdcPermitSignature?: string;
 		apiKey?: string;
+		refundAddress?: string;
 		swiftRefundAddress?: string;
 	}
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
@@ -204,13 +215,12 @@ export async function getSwapFromEvmTxPayload(
 			)}) and quote from chain are not same! ${fromChainId} !== ${signerWormholeChainId}`
 		);
 	}
+	const provider = await requireEvmProvider(options, signerChainId);
 
 	if (destinationAddress === ZeroAddress || destinationAddress === SystemProgram.programId.toString()) {
 		throw new Error(`Invalid destination address: ${destinationAddress}`);
 	}
-	if (options?.swiftRefundAddress && (options.swiftRefundAddress === ZeroAddress || options.swiftRefundAddress === SystemProgram.programId.toString())) {
-		throw new Error(`Invalid swift refund address: ${options.swiftRefundAddress}`);
-	}
+	const refundAddress = getQuoteRefundAddress(quote, swapperAddress, destinationAddress, options);
 
 	const referrerAddress = getQuoteSuitableReferrerAddress(
 		quote,
@@ -226,13 +236,14 @@ export async function getSwapFromEvmTxPayload(
 			signerChainId,
 			permit,
 			payload,
-			options
+			{ apiKey: options?.apiKey, refundAddress }
 		);
 	}
 
 	if (quote.type === 'MCTP') {
 		return getMctpFromEvmTxPayload(
 			quote,
+			swapperAddress,
 			destinationAddress,
 			referrerAddress,
 			signerChainId,
@@ -251,7 +262,7 @@ export async function getSwapFromEvmTxPayload(
 			permit,
 			payload,
 			options?.apiKey,
-			options?.swiftRefundAddress,
+			refundAddress,
 		);
 	}
 	if (quote.type === 'SHUTTLE') {
@@ -261,12 +272,13 @@ export async function getSwapFromEvmTxPayload(
 	if (quote.type === 'FAST_MCTP') {
 		return getFastMctpFromEvmTxPayload(
 			quote,
+			swapperAddress,
 			destinationAddress,
 			referrerAddress,
 			signerChainId,
 			permit,
 			payload,
-			options?.apiKey
+			options?.apiKey,
 		);
 	}
 
@@ -277,6 +289,19 @@ export async function getSwapFromEvmTxPayload(
 			referrerAddress,
 			signerChainId,
 			permit
+		);
+	}
+
+	if (quote.type === 'BLINK') {
+		return getBlinkFromEvmTxPayload(
+			quote,
+			swapperAddress,
+			destinationAddress,
+			referrerAddresses,
+			signerChainId,
+			permit,
+			refundAddress,
+			await allowsBlinkDirectTransfer(quote, swapperAddress, provider, options.allowBlinkEvmDirectTransfer)
 		);
 	}
 
@@ -373,11 +398,15 @@ export async function swapFromEvm(
 	permit: Erc20Permit | null | undefined,
 	overrides: Overrides | null | undefined,
 	payload: Uint8Array | Buffer | null | undefined,
-	options?: {
+	options: {
+		/** A JSON-RPC provider on the signer's chain: the SDK reads the chain through it */
+		evmProvider: ethers.JsonRpcProvider;
+		/** Blink: deposit by a plain transfer when the order allows it and the swapper is an EOA (see `allowsBlinkDirectTransfer`) */
+		allowBlinkEvmDirectTransfer?: boolean;
 		apiKey?: string;
 		includeAllowanceTx?: boolean;
+		refundAddress?: string;
 		swiftRefundAddress?: string;
-		evmProvider?: ethers.JsonRpcProvider;
 	}
 ): Promise<TransactionResponse | string> {
 	if (!signer.provider) {
@@ -386,14 +415,13 @@ export async function swapFromEvm(
 	if (destinationAddress === ZeroAddress || destinationAddress === SystemProgram.programId.toString()) {
 		throw new Error(`Invalid destination address: ${destinationAddress}`);
 	}
-	if (options?.swiftRefundAddress && (options.swiftRefundAddress === ZeroAddress || options.swiftRefundAddress === SystemProgram.programId.toString())) {
-		throw new Error(`Invalid swift refund address: ${options.swiftRefundAddress}`);
-	}
+	const refundAddress = getQuoteRefundAddress(quote, swapperAddress, destinationAddress, options);
 	const signerAddress = await signer.getAddress();
 	if (signerAddress.toLowerCase() !== swapperAddress.toLowerCase()) {
 		throw new Error('Signer address does not match swapper address');
 	}
 	const signerChainId = Number((await signer.provider.getNetwork()).chainId);
+	const provider = await requireEvmProvider(options, signerChainId);
 
 	if (quote.fromChain === 'hypercore' && (!quote.gasless || quote.type !== 'SWIFT')) {
 		throw new Error('Only SWIFT gasless quotes are supported from hypercore withdraw');
@@ -409,7 +437,7 @@ export async function swapFromEvm(
 		);
 		if (quote.fromChain === 'hypercore') {
 			const hcParams = getHyperCoreWithdrawParams(
-				quote, swapperAddress, destinationAddress, referrerAddress, payload, options?.swiftRefundAddress
+				quote, swapperAddress, destinationAddress, referrerAddress, payload, refundAddress
 			);
 			const signedHcParams = await signer.signTypedData(
 				hcParams.domain,
@@ -423,8 +451,8 @@ export async function swapFromEvm(
 				options?.apiKey
 			);
 		}
-		if (options?.swiftRefundAddress && options.swiftRefundAddress.toLowerCase() !== swapperAddress.toLowerCase()) {
-			throw new Error('Swift refund address must be the same as swapper address for gasless SWIFT');
+		if (refundAddress && refundAddress.toLowerCase() !== swapperAddress.toLowerCase()) {
+			throw new Error(`Gasless SWIFT orders refund to the swapper address ${swapperAddress}, not to ${refundAddress}`);
 		}
 		const gasLessParams = quote.toChain === 'hypercore' ? getHyperCoreSwiftFromEvmGasLessParams(
 			quote,
@@ -434,7 +462,7 @@ export async function swapFromEvm(
 			signerChainId,
 			permit,
 			payload,
-			options?.swiftRefundAddress,
+			refundAddress,
 		) : getSwiftFromEvmGasLessParams(
 			quote,
 			swapperAddress,
@@ -443,7 +471,7 @@ export async function swapFromEvm(
 			signerChainId,
 			permit,
 			payload,
-			options?.swiftRefundAddress,
+			refundAddress,
 		);
 		const signedOrderHash = await signer.signTypedData(
 			gasLessParams.orderTypedData.domain,
@@ -452,6 +480,19 @@ export async function swapFromEvm(
 		);
 		await submitSwiftEvmSwap(gasLessParams, signedOrderHash, options?.apiKey);
 		return gasLessParams.orderHash;
+	}
+	if (quote.type === 'BLINK' && quote.gasless) {
+		return swapBlinkGaslessFromEvm(
+			quote,
+			swapperAddress,
+			destinationAddress,
+			referrerAddresses,
+			signer,
+			signerChainId,
+			permit,
+			refundAddress,
+			options.apiKey
+		);
 	}
 	const transactionRequest = await getSwapFromEvmTxPayload(
 		quote,
@@ -467,10 +508,14 @@ export async function swapFromEvm(
 	// @ts-ignore
 	delete transactionRequest._forwarder;
 
+	const blinkDirectTransfer =
+		quote.type === 'BLINK' &&
+		String(transactionRequest.to).toLowerCase() === quote.fromToken.contract.toLowerCase();
 	if (
 		options?.includeAllowanceTx &&
 		!quote.gasless &&
-		quote.fromToken.contract !== ZeroAddress
+		quote.fromToken.contract !== ZeroAddress &&
+		!blinkDirectTransfer
 	) {
 		return handleAtomicBatch(
 			quote,
@@ -494,12 +539,7 @@ export async function swapFromEvm(
 	if (overrides?.gasLimit) {
 		transactionRequest.gasLimit = overrides.gasLimit;
 	} else {
-		let estimatedGas: bigint;
-		if (options?.evmProvider) {
-			estimatedGas = await options.evmProvider.estimateGas({ ...transactionRequest, from: signerAddress });
-		} else {
-			estimatedGas = await signer.estimateGas(transactionRequest);
-		}
+		const estimatedGas = await provider.estimateGas({ ...transactionRequest, from: signerAddress });
 		// convert gasLimit to string for support ethers.js v5
 		transactionRequest.gasLimit = String(
 			(BigInt(String(estimatedGas)) * BigInt(110)) / BigInt(100)
@@ -507,6 +547,35 @@ export async function swapFromEvm(
 	}
 	transactionRequest.chainId = getEvmChainIdByName(quote.fromChain);
 	return signer.sendTransaction(transactionRequest);
+}
+
+/**
+ * What an estimate builds the swap for. A Blink order is bound to its recipient, refund address
+ * and referrers, so the deposit is built for the ones the embedded order carries; any other quote
+ * takes a sample destination, since its gas does not depend on it.
+ */
+function estimateInputs(quote: Quote): {
+	destinationAddress: string;
+	referrerAddresses: ChainReferrers | null;
+	refundAddress?: string;
+} {
+	if (quote.type === 'BLINK' && hasBlinkQuoteHash(quote)) {
+		const params = decodeBlinkQuote(quote.blinkQuote).orderParams;
+		return {
+			destinationAddress: params.recipient,
+			referrerAddresses: { evm: params.referrers },
+			refundAddress: params.refundAddress,
+		};
+	}
+	return {
+		destinationAddress:
+			quote.toChain === 'solana'
+				? 'ENsytooJVSZyNHbxvueUeX8Am8gcNqPivVVE8USCBiy5'
+				: quote.toChain === 'sui'
+				? SAMPLE_SUI_ADDRESS
+				: '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a',
+		referrerAddresses: null,
+	};
 }
 
 export async function estimateQuoteRequiredGas(
@@ -519,27 +588,32 @@ export async function estimateQuoteRequiredGas(
 		usdcPermitSignature?: string;
 		apiKey?: string;
 		swiftRefundAddress?: string;
+		allowBlinkEvmDirectTransfer?: boolean;
 	}
 ): Promise<bigint> {
 	const signerAddress = await signer.getAddress();
-	const sampleDestinationAddress: string =
-		quote.toChain === 'solana'
-			? 'ENsytooJVSZyNHbxvueUeX8Am8gcNqPivVVE8USCBiy5'
-			: '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
+	const inputs = estimateInputs(quote);
 	const signerChainId = Number((await signer.provider!.getNetwork()).chainId);
-	if (quote.type === 'SWIFT' && quote.gasless) {
+	if ((quote.type === 'SWIFT' || quote.type === 'BLINK') && quote.gasless) {
 		return BigInt(0);
 	}
 	const transactionRequest = await getSwapFromEvmTxPayload(
 		quote,
 		swapperAddress,
-		sampleDestinationAddress,
-		null,
+		inputs.destinationAddress,
+		inputs.referrerAddresses,
 		signerAddress,
 		signerChainId,
 		payload,
 		permit,
-		options,
+		{
+			evmProvider: signer.provider as ethers.JsonRpcProvider,
+			allowBlinkEvmDirectTransfer: options?.allowBlinkEvmDirectTransfer,
+			usdcPermitSignature: options?.usdcPermitSignature,
+			apiKey: options?.apiKey,
+			refundAddress: inputs.refundAddress,
+			swiftRefundAddress: options?.swiftRefundAddress,
+		},
 	);
 	// @ts-ignore
 	delete transactionRequest._forwarder;
@@ -547,12 +621,16 @@ export async function estimateQuoteRequiredGas(
 	let baseGas = await signer.estimateGas(transactionRequest);
 	// make sure about baseGas type (ethers 5)
 	baseGas = BigInt(String(baseGas));
-	if (quote.type === 'MCTP' || quote.type === 'SWIFT') {
+	if (quote.type === 'MCTP' || quote.type === 'SWIFT' || quote.type === 'BLINK') {
 		return (baseGas * BigInt(110)) / BigInt(100);
 	}
 	return baseGas;
 }
 
+/**
+ * @deprecated Use {@link estimateQuoteRequiredGasAprox2}, which builds the swap for the quote's
+ * own inputs and prices it with Mayan's estimator. This function throws.
+ */
 export async function estimateQuoteRequiredGasAprox(
 	quote: Quote,
 	provider: ethers.JsonRpcProvider,
@@ -562,52 +640,27 @@ export async function estimateQuoteRequiredGasAprox(
 		usdcPermitSignature?: string;
 		apiKey?: string;
 		swiftRefundAddress?: string;
+		allowBlinkEvmDirectTransfer?: boolean;
 	},
 ): Promise<bigint> {
-	const signerAddress = '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
-	const sampleDestinationAddress: string =
-		quote.toChain === 'solana'
-			? 'ENsytooJVSZyNHbxvueUeX8Am8gcNqPivVVE8USCBiy5'
-			: '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
-	const signerChainId = quote?.fromToken?.chainId;
-	if (quote.type === 'SWIFT' && quote.gasless) {
-		return BigInt(0);
-	}
-	const transactionRequest = await getSwapFromEvmTxPayload(
-		quote,
-		signerAddress,
-		sampleDestinationAddress,
-		null,
-		signerAddress,
-		signerChainId,
-		payload,
-		permit,
-		options,
-	);
-	// @ts-ignore
-	delete transactionRequest._forwarder;
-
-	return provider.estimateGas(transactionRequest);
+	throw new Error('estimateQuoteRequiredGasAprox is deprecated: use estimateQuoteRequiredGasAprox2');
 }
 
 export async function estimateQuoteRequiredGasAprox2(
 	quote: Quote,
 	payload: Uint8Array | Buffer | null | undefined,
-	apiKey?: string,
+	apiKey: string | undefined,
+	evmProvider: ethers.JsonRpcProvider,
+	options?: { allowBlinkEvmDirectTransfer?: boolean },
 ): Promise<{
 	estimateGas: bigint;
 	gasPrice: bigint;
 	requiredNative: bigint;
 }> {
 	const signerAddress = '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
-	const sampleDestinationAddress: string =
-		quote.toChain === 'solana'
-			? 'ENsytooJVSZyNHbxvueUeX8Am8gcNqPivVVE8USCBiy5'
-			: quote.toChain === 'sui'
-			? '0xcde6dbe01902be1f200ff03dbbd149e586847be8cee15235f82750d9b06c0e04'
-			: '0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
+	const inputs = estimateInputs(quote);
 	const signerChainId = getEvmChainIdByName(quote.fromChain);
-	if (quote.type === 'SWIFT' && quote.gasless) {
+	if ((quote.type === 'SWIFT' || quote.type === 'BLINK') && quote.gasless) {
 		return {
 			estimateGas: BigInt(0),
 			gasPrice: BigInt(0),
@@ -617,14 +670,17 @@ export async function estimateQuoteRequiredGasAprox2(
 	const transactionRequest = await getSwapFromEvmTxPayload(
 		quote,
 		signerAddress,
-		sampleDestinationAddress,
-		null,
+		inputs.destinationAddress,
+		inputs.referrerAddresses,
 		signerAddress,
 		signerChainId,
 		payload,
 		undefined,
 		{
+			evmProvider,
+			allowBlinkEvmDirectTransfer: options?.allowBlinkEvmDirectTransfer,
 			apiKey,
+			refundAddress: inputs.refundAddress,
 		}
 	);
 
@@ -641,6 +697,22 @@ export async function estimateQuoteRequiredGasAprox2(
 		gasPrice: gasPrice,
 		requiredNative: gasPrice * estimatedGas,
 	};
+}
+
+/** The provider the caller passed, checked to be on the signer's chain */
+async function requireEvmProvider(
+	options: { evmProvider?: ethers.JsonRpcProvider } | null | undefined,
+	signerChainId: number | string
+): Promise<ethers.JsonRpcProvider> {
+	const provider = options?.evmProvider;
+	if (!provider) {
+		throw new Error('No evmProvider found in options: pass a JSON-RPC provider on the source chain');
+	}
+	const providerChainId = Number((await provider.getNetwork()).chainId);
+	if (providerChainId !== Number(signerChainId)) {
+		throw new Error(`evmProvider is on chain ${providerChainId}, not on the signer chain ${Number(signerChainId)}`);
+	}
+	return provider;
 }
 
 function findCapsForChain(caps: any, chainId: number | string): any | undefined {
@@ -713,33 +785,16 @@ async function handleAtomicBatch(
 			'Wallet does not support atomic batching; cannot include allowance tx'
 		);
 	}
-	const erc20Contract = new Contract(quote.fromToken.contract, ERC20Artifact.abi, signer);
-	const approveCalls: Array<object> = [];
-	const USDT_ETHEREUM_ADDRESS = '0xdac17f958d2ee523a2206206994597c13d831ec7';
-	if (quote.fromChain === 'ethereum' && quote.fromToken.contract.toLowerCase() === USDT_ETHEREUM_ADDRESS) {
-		// USDT on Ethereum has a non-standard approve that requires resetting to zero first if the current allowance is non-zero.
-		const currentAllowance: bigint = await erc20Contract.allowance(signerAddress, addresses.MAYAN_FORWARDER_CONTRACT);
-		if (currentAllowance > BigInt(0)) {
-			const resetData = erc20Contract.interface.encodeFunctionData('approve', [
-				addresses.MAYAN_FORWARDER_CONTRACT,
-				BigInt(0),
-			]);
-			approveCalls.push({
-				to: quote.fromToken.contract,
-				data: resetData,
-				value: '0x0',
-			});
-		}
-	}
-	const approveData = erc20Contract.interface.encodeFunctionData('approve', [
-		addresses.MAYAN_FORWARDER_CONTRACT,
+	// Blink deposits go to the contract the deposit is built for (escrow, router with a permit, or swap router)
+	const spender = quote.type === 'BLINK' ? String(transactionRequest.to) : addresses.MAYAN_FORWARDER_CONTRACT;
+	const approveCalls = await getErc20ApproveTxs(
+		quote.fromChain,
+		quote.fromToken.contract,
+		signerAddress,
+		spender,
 		BigInt(quote.effectiveAmountIn64),
-	]);
-	approveCalls.push({
-		to: quote.fromToken.contract,
-		data: approveData,
-		value: '0x0',
-	});
+		signer.provider as ethers.JsonRpcProvider
+	);
 	const callsParams = {
 		version: '2.0.0',
 		chainId: chainHex,

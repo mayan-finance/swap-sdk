@@ -1,6 +1,11 @@
 import { ClientWithCoreApi } from '@mysten/sui/client';
 import { SuiFunctionNestedResult, SuiFunctionParameter } from '../types';
-import { Transaction, TransactionResult } from '@mysten/sui/transactions';
+import {
+	Transaction,
+	TransactionObjectArgument,
+	TransactionResult,
+} from '@mysten/sui/transactions';
+import { normalizeStructTag, SUI_TYPE_ARG } from '@mysten/sui/utils';
 
 type SuiCoinRef = { objectId: string; balance: string };
 
@@ -166,6 +171,25 @@ export async function fetchMayanSuiPackageId(
 	throw new Error('latest_package_id not found in Mayan Sui state object');
 }
 
+/** Whether `coinType` is the native SUI coin, in any of its spellings */
+function isSuiCoinType(coinType: string): boolean {
+	return normalizeStructTag(coinType) === normalizeStructTag(SUI_TYPE_ARG);
+}
+
+/** Whether `address` pays the gas of `tx`: its gas owner when one is set, otherwise its sender */
+function paysGas(tx: Transaction, address: string): boolean {
+	const { gasData, sender } = tx.getData();
+	const payer = gasData.owner ?? sender;
+	return !!payer && payer.toLowerCase() === address.toLowerCase();
+}
+
+/**
+ * A coin of `coinType` holding `amount`, taken from `owner`: `preparedCoin` as given, else split
+ * from `owner`'s coins. A native SUI input whose owner also pays the gas is split from the gas
+ * coin, since a coin object taken as an input is left out of the gas payment and a wallet holding
+ * its SUI in one coin could not pay gas. When somebody else sponsors the gas, set the gas owner
+ * on `tx` before calling so the input comes from `owner`'s own coins.
+ */
 export async function resolveInputCoin(
 	amount: bigint,
 	owner: string,
@@ -182,6 +206,13 @@ export async function resolveInputCoin(
 		inputCoin = preparedCoin.result;
 	} else if (preparedCoin?.objectId) {
 		inputCoin = tx.object(preparedCoin.objectId);
+	} else if (
+		isSuiCoinType(coinType) &&
+		paysGas(tx, owner) &&
+		(await suiCoinObjectsCover(amount, owner, suiClient))
+	) {
+		const [spitedCoin] = tx.splitCoins(tx.gas, [amount]);
+		inputCoin = spitedCoin;
 	} else {
 		const { coins, sum } = await fetchAllCoins(
 			{
@@ -192,14 +223,7 @@ export async function resolveInputCoin(
 			suiClient
 		);
 		if (sum >= amount) {
-			if (coins.length > 1) {
-				tx.mergeCoins(
-					coins[0].objectId,
-					coins.slice(1).map((c) => c.objectId)
-				);
-			}
-			const [spitedCoin] = tx.splitCoins(coins[0].objectId, [amount]);
-			inputCoin = spitedCoin;
+			inputCoin = splitFromCoinObjects(tx, amount, coins);
 		} else {
 			const { balance } = await suiClient.core.getBalance({
 				owner,
@@ -229,4 +253,75 @@ export async function resolveInputCoin(
 		}
 	}
 	return inputCoin;
+}
+
+/**
+ * The coin that funds `owner`'s address balance of `coinType` for `amount`, or `null` when nothing
+ * needs to move. A token is topped up with what the address balance lacks, split from `owner`'s
+ * coin objects and never withdrawn from the address balance, which a sponsored Blink source swap
+ * may not draw on. Native SUI whose gas `owner` pays is sent in full from the gas coin: Sui builds
+ * that coin from the address balance and the coin objects together and credits what remains to
+ * the address balance, so it ends at the wallet's SUI less the gas whatever it held before,
+ * instead of one gas fee short when it already held the amount and the gas was charged to it.
+ */
+export async function resolveAddressBalanceTopUp(
+	amount: bigint,
+	owner: string,
+	coinType: string,
+	suiClient: ClientWithCoreApi,
+	tx: Transaction
+): Promise<TransactionObjectArgument | null> {
+	const { balance } = await suiClient.core.getBalance({ owner, coinType });
+	if (isSuiCoinType(coinType) && paysGas(tx, owner)) {
+		if (BigInt(balance.coinBalance) + BigInt(balance.addressBalance) < amount) {
+			throw new Error(
+				`Insufficient funds for ${amount} of ${coinType}: the address balance holds ${balance.addressBalance} and the coin objects ${balance.coinBalance}`
+			);
+		}
+		const [splitCoin] = tx.splitCoins(tx.gas, [amount]);
+		return splitCoin;
+	}
+	const shortfall = amount - BigInt(balance.addressBalance);
+	if (shortfall <= BigInt(0)) {
+		return null;
+	}
+	const { coins, sum } = await fetchAllCoins(
+		{ walletAddress: owner, coinType, coinAmount: shortfall },
+		suiClient
+	);
+	if (sum < shortfall) {
+		throw new Error(
+			`Insufficient funds for ${amount} of ${coinType}: the address balance holds ${balance.addressBalance} and the coin objects ${sum}`
+		);
+	}
+	return splitFromCoinObjects(tx, shortfall, coins);
+}
+
+/** `amount` split from `coins`, merged into the first one when there are several */
+function splitFromCoinObjects(
+	tx: Transaction,
+	amount: bigint,
+	coins: SuiCoinRef[]
+) {
+	if (coins.length > 1) {
+		tx.mergeCoins(
+			coins[0].objectId,
+			coins.slice(1).map((c) => c.objectId)
+		);
+	}
+	const [splitCoin] = tx.splitCoins(coins[0].objectId, [amount]);
+	return splitCoin;
+}
+
+/** Whether `owner`'s SUI coin objects (not the address balance) hold at least `amount` */
+async function suiCoinObjectsCover(
+	amount: bigint,
+	owner: string,
+	suiClient: ClientWithCoreApi
+): Promise<boolean> {
+	const { balance } = await suiClient.core.getBalance({
+		owner,
+		coinType: SUI_TYPE_ARG,
+	});
+	return BigInt(balance.coinBalance) >= amount;
 }

@@ -30,7 +30,7 @@ export function nativeAddressToHexString(
 		wChainId === chains.avalanche  || wChainId === chains.arbitrum || wChainId === chains.optimism ||
 		wChainId === chains.base || wChainId === chains.unichain || wChainId === chains.linea ||
 		wChainId === chains.sonic || wChainId === chains.hyperevm || wChainId === chains.monad ||
-		wChainId === chains.hypercore
+		wChainId === chains.elysium || wChainId === chains.hypercore
 	) {
 		return zeroPadValue(address, 32);
 	} else if (wChainId === chains.aptos && isValidAptosType(address)) {
@@ -137,6 +137,7 @@ const chains: { [index in ChainName]: number }  = {
 	hyperevm: 47,
 	fogo: 51,
 	monad: 48,
+	elysium: 74,
 };
 
 export function getWormholeChainIdByName(chain: ChainName) : number {
@@ -160,6 +161,7 @@ const evmChainIdMap: { [index: string]: number }  = {
 	[146]: 52,
 	[999]: 47,
 	[143]: 48,
+	[99901]: 74,
 	[65000]: 65000, // HyperCore
 };
 
@@ -180,7 +182,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [15, 3, 0];
+const sdkVersion = [16, 0, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -320,11 +322,64 @@ function getVerifiedMixedReferrerAddressEvm(quote: Quote, referrers: Referrer[])
 	return calculated;
 }
 
-function isChainReferrers(
+export function isChainReferrers(
 	referrers: ReferrerAddresses | ChainReferrers,
 ): referrers is ChainReferrers {
 	return Array.isArray(referrers.solana || referrers.evm || referrers.sui);
 }
+function isSameAddress(a: string, b: string): boolean {
+	// hex addresses (EVM, Sui) compare case-insensitively, base58 ones exactly
+	return a.startsWith('0x') && b.startsWith('0x') ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+/**
+ * The refund address to hand to the order builder. SWIFT and BLINK let the integrator choose
+ * one, so `refundAddress` is returned as is. Every other protocol refunds to a fixed wallet
+ * (the swapper for WH and MONO_CHAIN, the destination for MCTP and FAST_MCTP): a
+ * `refundAddress` that names any other wallet throws, and a matching one returns undefined
+ * since the builder has nothing to set. `swiftRefundAddress` is the older Swift-only spelling.
+ */
+export function getQuoteRefundAddress(
+	quote: Quote,
+	swapperAddress: string,
+	destinationAddress: string,
+	options?: { refundAddress?: string | null; swiftRefundAddress?: string | null }
+): string | undefined {
+	const refundAddress = options?.refundAddress || undefined;
+	const swiftRefundAddress = options?.swiftRefundAddress || undefined;
+	for (const address of [refundAddress, swiftRefundAddress]) {
+		if (address && (address === ZeroAddress || address === SystemProgram.programId.toString())) {
+			throw new Error(`Invalid refund address: ${address}`);
+		}
+	}
+	if (refundAddress && swiftRefundAddress && !isSameAddress(refundAddress, swiftRefundAddress)) {
+		throw new Error(`refundAddress ${refundAddress} and swiftRefundAddress ${swiftRefundAddress} do not match`);
+	}
+	if (!refundAddress) {
+		return quote.type === 'SWIFT' ? swiftRefundAddress : undefined;
+	}
+	switch (quote.type) {
+		case 'SWIFT':
+		case 'BLINK':
+			return refundAddress;
+		case 'MCTP':
+		case 'FAST_MCTP':
+			if (!isSameAddress(refundAddress, destinationAddress)) {
+				throw new Error(
+					`${quote.type} quotes can only refund to the destination address ${destinationAddress}, not to ${refundAddress}`
+				);
+			}
+			return undefined;
+		default:
+			if (!isSameAddress(refundAddress, swapperAddress)) {
+				throw new Error(
+					`${quote.type} quotes can only refund to the swapper address ${swapperAddress}, not to ${refundAddress}`
+				);
+			}
+			return undefined;
+	}
+}
+
 export function getQuoteSuitableReferrerAddress(
 	quote: Quote,
 	referrerAddresses?: ReferrerAddresses | ChainReferrers | null,
@@ -423,7 +478,41 @@ export function getQuoteSuitableReferrerAddress(
 		}
 		return referrerAddresses.evm || null;
 	}
+	if (quote.type === 'BLINK') {
+		if (quote.fromChain === 'solana') {
+			return referrerAddresses.solana || null;
+		} else if (quote.fromChain === 'sui') {
+			return referrerAddresses.sui || null;
+		}
+		return referrerAddresses.evm || null;
+	}
 	return null;
+}
+
+export function getBlinkReferrers(
+	quote: Quote,
+	referrerAddresses?: ReferrerAddresses | ChainReferrers | null,
+): Referrer[] {
+	if (!quote || !referrerAddresses) {
+		return [];
+	}
+	if (isChainReferrers(referrerAddresses)) {
+		const list =
+			quote.fromChain === 'solana' ? referrerAddresses.solana
+			: quote.fromChain === 'sui' ? referrerAddresses.sui
+			: referrerAddresses.evm;
+		const referrers = (list || []).map((r) => ({ address: r.address, bps: r.bps }));
+		const totalBps = referrers.reduce((sum, r) => sum + r.bps, 0);
+		if (totalBps !== (quote.referrerBps || 0)) {
+			throw new Error(
+				`Referrer bps mismatch: quote has ${quote.referrerBps || 0} but referrers total ${totalBps}. ` +
+				'Make sure the same referrers were passed when fetching the quote.'
+			);
+		}
+		return referrers;
+	}
+	const address = getQuoteSuitableReferrerAddress(quote, referrerAddresses);
+	return address && quote.referrerBps ? [{ address, bps: quote.referrerBps }] : [];
 }
 
 export const MCTP_PAYLOAD_TYPE_DEFAULT = 1;
@@ -592,7 +681,14 @@ export async function getPermitParams(
 		throw new Error('Token does not support permit');
 	}
 	const contract = new ethers.Contract(token.contract, ERC20Artifact.abi, provider);
-	const [domain, nonce] = await Promise.all([getPermitDomain(token, provider), contract.nonces(walletAddress)]);
+	// A token without nonces() cannot sign a permit either; report it like an unrecognised domain
+	const nonces = contract.nonces(walletAddress).catch((err) => {
+		if (err?.code === 'BAD_DATA' || err?.code === 'CALL_EXCEPTION') {
+			throw { mayanError: { permitIssue: true } };
+		}
+		throw err;
+	});
+	const [domain, nonce] = await Promise.all([getPermitDomain(token, provider), nonces]);
 	return {
 		domain,
 		types: PermitTypes,
