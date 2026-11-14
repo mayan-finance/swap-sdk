@@ -88,6 +88,8 @@ export async function submitTransactionWithRetry(
 			}
 		}
 		const sendRequests = connections.map((c) => c.sendRawTransaction(trx, options));
+		// Observe every send; resends after obtaining a signature are best effort.
+		void Promise.allSettled(sendRequests);
 		console.log('Submitting transaction, attempt', i + 1);
 		if (!signature) {
 			try {
