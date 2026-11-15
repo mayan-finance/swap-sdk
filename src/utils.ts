@@ -322,6 +322,10 @@ function getVerifiedMixedReferrerAddressEvm(quote: Quote, referrers: Referrer[])
 	return calculated;
 }
 
+function getFirstReferrerAddress(referrers: Referrer[] | null | undefined): string | null {
+	return referrers?.[0]?.address || null;
+}
+
 export function isChainReferrers(
 	referrers: ReferrerAddresses | ChainReferrers,
 ): referrers is ChainReferrers {
@@ -388,14 +392,19 @@ export function getQuoteSuitableReferrerAddress(
 		return null;
 	}
 	if (isChainReferrers(referrerAddresses)) {
+		// protocols without mixed referrer support take the first referrer of the chain;
+		// the backend quotes that referrer's bps in quote.referrerBps
 		if (quote.type === 'WH') {
-			return null;
+			return getFirstReferrerAddress(referrerAddresses.solana);
 		}
-		if (quote.type === 'MCTP') {
-			if (quote.toChain === 'solana' && referrerAddresses.solana?.length) {
-				return getVerifiedMixedReferrerAddressSolana(quote, referrerAddresses.solana);
+		if (quote.type === 'MCTP' || quote.type === 'FAST_MCTP') {
+			if (quote.toChain === 'solana') {
+				return referrerAddresses.solana?.length ? getVerifiedMixedReferrerAddressSolana(quote, referrerAddresses.solana) : null;
 			}
-			return null;
+			if (quote.toChain === 'sui') {
+				return getFirstReferrerAddress(referrerAddresses.sui);
+			}
+			return getFirstReferrerAddress(referrerAddresses.evm);
 		}
 		if (quote.type === 'SWIFT') {
 			if (quote.swiftVersion === 'V2') {
@@ -409,12 +418,6 @@ export function getQuoteSuitableReferrerAddress(
 			} else {
 				return null;
 			}
-		}
-		if (quote.type === 'FAST_MCTP') {
-			if (quote.toChain === 'solana' && referrerAddresses.solana?.length) {
-				return getVerifiedMixedReferrerAddressSolana(quote, referrerAddresses.solana);
-			}
-			return null;
 		}
 		if (quote.type === 'MONO_CHAIN') {
 			if (quote.fromChain === 'solana' && referrerAddresses.solana?.length) {
