@@ -182,7 +182,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [16, 0, 0];
+const sdkVersion = [16, 1, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -300,7 +300,17 @@ function calculateMixedReferrerAddressSolana(referrers: Referrer[]): string {
 	return mixedReferrer.toBase58();
 }
 
+// the backend hashes only a split of two or more referrers into a mixed address;
+// a single referrer is quoted as is, so the quote carries no mixedRefAddress
+function getSingleReferrerAddress(quote: Quote, referrers: Referrer[] | null | undefined): string | null {
+	return referrers?.length === 1 && !quote.mixedRefAddress ? referrers[0].address : null;
+}
+
 function getVerifiedMixedReferrerAddressSolana(quote: Quote, referrers: Referrer[]): string {
+	const single = getSingleReferrerAddress(quote, referrers);
+	if (single) {
+		return single;
+	}
 	const calculated = calculateMixedReferrerAddressSolana(referrers);
 	if (!quote.mixedRefAddress || quote.mixedRefAddress !== calculated) {
 		throw new Error(
@@ -312,6 +322,10 @@ function getVerifiedMixedReferrerAddressSolana(quote: Quote, referrers: Referrer
 }
 
 function getVerifiedMixedReferrerAddressEvm(quote: Quote, referrers: Referrer[]): string {
+	const single = getSingleReferrerAddress(quote, referrers);
+	if (single) {
+		return single;
+	}
 	const calculated = calculateMixedReferrerAddressEvm(referrers);
 	if (!quote.mixedRefAddress || quote.mixedRefAddress.toLowerCase() !== calculated.toLowerCase()) {
 		throw new Error(
@@ -320,10 +334,6 @@ function getVerifiedMixedReferrerAddressEvm(quote: Quote, referrers: Referrer[])
 		);
 	}
 	return calculated;
-}
-
-function getFirstReferrerAddress(referrers: Referrer[] | null | undefined): string | null {
-	return referrers?.[0]?.address || null;
 }
 
 export function isChainReferrers(
@@ -392,19 +402,18 @@ export function getQuoteSuitableReferrerAddress(
 		return null;
 	}
 	if (isChainReferrers(referrerAddresses)) {
-		// protocols without mixed referrer support take the first referrer of the chain;
-		// the backend quotes that referrer's bps in quote.referrerBps
+		// WH pays no referrer fee; MCTP and FAST_MCTP to EVM or Sui pay a single referrer only
 		if (quote.type === 'WH') {
-			return getFirstReferrerAddress(referrerAddresses.solana);
+			return getSingleReferrerAddress(quote, referrerAddresses.solana);
 		}
 		if (quote.type === 'MCTP' || quote.type === 'FAST_MCTP') {
 			if (quote.toChain === 'solana') {
 				return referrerAddresses.solana?.length ? getVerifiedMixedReferrerAddressSolana(quote, referrerAddresses.solana) : null;
 			}
 			if (quote.toChain === 'sui') {
-				return getFirstReferrerAddress(referrerAddresses.sui);
+				return getSingleReferrerAddress(quote, referrerAddresses.sui);
 			}
-			return getFirstReferrerAddress(referrerAddresses.evm);
+			return getSingleReferrerAddress(quote, referrerAddresses.evm);
 		}
 		if (quote.type === 'SWIFT') {
 			if (quote.swiftVersion === 'V2') {

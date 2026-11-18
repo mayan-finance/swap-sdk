@@ -18,6 +18,34 @@ TypeScript client for Mayan, an intent-based cross-chain swap protocol. Fetch a 
 ## ⚠️ Breaking changes
 
 <details open>
+<summary><b>v16.1.0: pass <code>referrers</code> to be offered every route</b></summary>
+
+<br />
+
+Not breaking: existing integrations keep working. To be offered every route Mayan has, and to earn your fee on it, pass your fee wallets as `referrers` when fetching the quote and the same object to the swap function.
+
+```typescript
+const referrers = {
+  evm: [{ address: 'YOUR EVM WALLET', bps: 5 }],
+  solana: [{ address: 'YOUR SOLANA WALLET', bps: 5 }],
+  sui: [{ address: 'YOUR SUI WALLET', bps: 5 }],
+};
+
+const quotes = await fetchQuote(params, { referrers });
+const tx = await swapFromEvm(
+  quotes[0], swapperAddress, destinationAddress, referrers,
+  signer, permit, null, null, { evmProvider },
+);
+```
+
+- `referrer` and `referrerBps` in the quote params still work, but they do not get every route. Move to `referrers`.
+- A chain with one wallet is now paid at that wallet directly.
+
+See [Earning fees](#earning-fees).
+
+</details>
+
+<details>
 <summary><b>v16.0.0: EVM swaps take a provider, and Blink quotes are offered by default</b></summary>
 
 <br />
@@ -38,7 +66,7 @@ import { swapFromEvm } from '@mayanfinance/swap-sdk';
 
 const evmProvider = new ethers.JsonRpcProvider('https://<your-arbitrum-rpc>');
 const tx = await swapFromEvm(
-  quote, swapperAddress, destinationAddress, referrerAddresses,
+  quote, swapperAddress, destinationAddress, referrers,
   signer, permit, null, null,
   { evmProvider },
 );
@@ -70,7 +98,7 @@ const suiClient = new SuiGrpcClient({
 
 const tx = await createSwapFromSuiMoveCalls(
   quote, swapperWalletAddress, destinationWalletAddress,
-  referrerAddresses, customPayload, suiClient, options,
+  referrers, customPayload, suiClient, options,
 );
 ```
 
@@ -202,11 +230,10 @@ const quotes = await fetchQuote(
     toChain: 'solana',
     slippageBps: 'auto',
     gasDrop: 0.04,                      // optional
-    referrer: 'YOUR SOLANA WALLET',     // optional
-    referrerBps: 5,                     // optional
   },
   {
     apiKey: 'YOUR API KEY',             // optional
+    referrers,                          // optional, see Earning fees
   },
 );
 ```
@@ -227,7 +254,7 @@ Pick one and pass it to the swap function.
 
 A `BLINK` quote can only be swapped when `fetchQuote` was called with both `destinationAddress` and `refundAddress` (the swapper's address, or the `refundAddress` you pass in the swap options). The returned quote then carries the Blink order bound to those addresses in `blinkQuote`, and the swap functions use it as is; `hasBlinkQuoteHash(quote)` tells you whether a quote has one. Without them the quote is a price preview and the swap functions throw instead of fetching an order themselves. The SDK verifies the order hash, the amounts, the recipient, the refund address and the referrers against the quote and the swap inputs, and checks every contract it touches against the guardian-signed Blink contract manifest before building the deposit. Quotes expire 30 minutes after issuance; past that the SDK refuses to build the deposit, so request a new quote.
 
-Referrer splits work the same way as for Swift V2: pass `referrers` when fetching the quote and the same object as `referrerAddresses` at swap time. Blink pays every listed wallet on the source chain.
+To earn fees on Blink, pass `referrers` in `QuoteOptions` and the same object at swap time; see [Earning fees](#earning-fees).
 
 EVM deposits do not go through the Mayan forwarder. The [ERC20 allowance](#erc20-allowance) helpers know which contract to approve, so the rest of this paragraph only matters if you approve by hand. Blink has two deposit contracts per chain: the escrow the quote calls `routerAddress` (plain transfers, `depositToken`, `depositNative`) and the router of the signed manifest, `order.contracts.router` (the permit and source-swap variants). Use `includeAllowanceTx` to bundle the approval, or call `resolveBlinkOrder` first and approve `getBlinkEvmDepositSpender(order, false)` for the amount. A `permit` is honored only if it was signed for `getBlinkEvmDepositSpender(order, true)` as spender; without a source swap that is the manifest router, not `order.quote.routerAddress`, and a permit for the escrow makes the deposit revert with `TransferFailed()`. When the order allows a direct transfer, `allowBlinkEvmDirectTransfer: true` in the swap options lets the SDK send a plain ERC20 transfer to the escrow instead, which needs no approval and the least gas. Blink attributes that transfer by the transaction's own calldata, which a contract account wraps (a Safe, an ERC-4337 account, an EIP-7702 delegated EOA), so the SDK only does it for a swapper without code on `options.evmProvider`; a contract account, and every swapper without the opt-in, deposits through the escrow's `depositToken` with the allowance the helpers ask for. Pass the same option to the allowance helpers so their answer matches the deposit, and leave it out for a smart account that is not deployed yet, since it has no code to detect.
 
@@ -274,7 +301,7 @@ const { signature } = await swapFromSolana(
   quote,
   originWalletAddress,
   destinationWalletAddress,
-  referrerAddresses,
+  referrers,   // the QuoteOptions.referrers the quote was fetched with, or null
   signSolanaTransaction,
   solanaConnection,
 );
@@ -289,7 +316,7 @@ const tx = await swapFromEvm(
   quote,
   swapperAddress,
   destinationWalletAddress,
-  referrerAddresses,
+  referrers,   // the QuoteOptions.referrers the quote was fetched with, or null
   signer,
   permit,      // optional, EIP-2612
   overrides,   // optional
@@ -322,7 +349,7 @@ if (!(await isEvmSwapAllowanceEnough(quote, swapperAddress, provider))) {
     }
   }
 }
-await swapFromEvm(quote, swapperAddress, destination, referrerAddresses, signer, permit, null, null, { evmProvider: provider });
+await swapFromEvm(quote, swapperAddress, destination, referrers, signer, permit, null, null, { evmProvider: provider });
 ```
 
 - `isEvmSwapAllowanceEnough(quote, owner, provider, permit?, options?)` is `true` when the swap spends no allowance (a native input, a Blink direct transfer with `allowBlinkEvmDirectTransfer: true`), when the current allowance covers it, or when `permit` is still good for this quote. Keep the permit across quote refreshes and pass it here to know whether to ask again. Every helper takes the same trailing `options` as `swapFromEvm` for `allowBlinkEvmDirectTransfer`; pass the same value to both.
@@ -360,7 +387,7 @@ const bridgeFromSuiMoveCalls = await createSwapFromSuiMoveCalls(
   quote,                     // Quote
   originWalletAddress,       // string
   destinationWalletAddress,  // string
-  referrerAddresses,         // optional ReferrerAddresses
+  referrers,                 // optional, the QuoteOptions.referrers the quote was fetched with
   customPayload,             // optional Uint8Array | Buffer
   suiClient,                 // ClientWithCoreApi
   options,                   // optional ComposableSuiMoveCallsOptions
@@ -383,46 +410,39 @@ The full option set is `ComposableSuiMoveCallsOptions` in [`src/types.ts`](./src
 
 ## Earning fees
 
-Set `referrer` to your fee wallet and `referrerBps` to your rate.
-
-```typescript
-const quotes = await fetchQuote({
-  amountIn64: '250000000',
-  fromToken: fromToken.contract,
-  toToken: toToken.contract,
-  fromChain: 'avalanche',
-  toChain: 'solana',
-  slippageBps: 'auto',
-  referrer: 'YOUR SOLANA WALLET',
-  referrerBps: 5,
-});
-```
-
-At swap time pass `referrerAddresses` with an address for every network you route across. A route with no matching address earns no fee, and no error.
-
-```typescript
-{
-  evm: 'YOUR EVM WALLET',
-  solana: 'YOUR SOLANA WALLET',
-  sui: 'YOUR SUI WALLET',
-}
-```
-
-To split across wallets, pass `referrers` in `QuoteOptions` instead of `referrer` / `referrerBps`, and the same object as `referrerAddresses` at swap time:
+Pass `referrers` in `QuoteOptions` with your fee wallet on each chain and its rate in basis points, then pass the same object to the swap function. This is how you are offered every route and earn your fee on it.
 
 ```typescript
 const referrers = {
-  evm: [
-    { address: 'FIRST EVM WALLET', bps: 10 },
-    { address: 'SECOND EVM WALLET', bps: 5 },
-  ],
-  solana: [
-    { address: 'FIRST SOLANA WALLET', bps: 10 },
-  ],
+  evm: [{ address: 'YOUR EVM WALLET', bps: 5 }],
+  solana: [{ address: 'YOUR SOLANA WALLET', bps: 5 }],
+  sui: [{ address: 'YOUR SUI WALLET', bps: 5 }],
 };
+
+const quotes = await fetchQuote(
+  {
+    amountIn64: '250000000',
+    fromToken: fromToken.contract,
+    toToken: toToken.contract,
+    fromChain: 'avalanche',
+    toChain: 'solana',
+    slippageBps: 'auto',
+  },
+  { referrers },
+);
+
+const tx = await swapFromEvm(
+  quotes[0], swapperAddress, destinationWalletAddress, referrers,
+  signer, permit, overrides, payload, { evmProvider },
+);
 ```
 
-Each `bps` must be an integer from 0 to 255. Pass the same object at swap time that you fetched the quote with, or the SDK throws. Never mix the two shapes in one object. Split referrers earn nothing on `WH`, or on `MCTP` and `FAST_MCTP` to a non-Solana destination.
+- List a wallet for every chain you support. A chain you leave out earns nothing on the routes that pay there.
+- Always pass the swap function the same object you fetched the quote with.
+- Each `bps` must be an integer from 0 to 255.
+- To split a chain's fee, list several wallets on that chain. A split is offered on fewer routes than a single wallet, so use one wallet per chain unless you need it.
+
+`referrer` and `referrerBps` in the quote params, with one address per chain (`{ evm, solana, sui }`) at swap time, still work but do not get every route. Do not combine them with `referrers`.
 
 Rates per route, payout chains and collection: [fees earning](https://docs.mayan.finance/build/fees-earning?utm_source=npm&utm_medium=readme&utm_campaign=swap-sdk).
 
@@ -492,21 +512,21 @@ An order that cannot be completed is refunded on the source chain. Pass `refundA
 ```typescript
 // EVM: via the options argument
 const tx = await swapFromEvm(
-  quote, swapperAddress, destinationWalletAddress, referrerAddresses,
+  quote, swapperAddress, destinationWalletAddress, referrers,
   signer, permit, overrides, payload,
   { evmProvider, refundAddress: 'REFUND WALLET ON SOURCE CHAIN' },
 );
 
 // Solana: via the instructionOptions argument
 const swapTrx = await swapFromSolana(
-  quote, originWalletAddress, destinationWalletAddress, referrerAddresses,
+  quote, originWalletAddress, destinationWalletAddress, referrers,
   signSolanaTransaction, solanaConnection, extraRpcs, sendOptions, jitoOptions,
   { refundAddress: 'REFUND WALLET ON SOURCE CHAIN' },
 );
 
 // Sui: via the options argument
 const tx = await createSwapFromSuiMoveCalls(
-  quote, originWalletAddress, destinationWalletAddress, referrerAddresses,
+  quote, originWalletAddress, destinationWalletAddress, referrers,
   payload, suiClient,
   { refundAddress: 'REFUND WALLET ON SOURCE CHAIN' },
 );
