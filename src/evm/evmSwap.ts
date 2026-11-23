@@ -9,7 +9,14 @@ import {
 	ZeroAddress
 } from 'ethers';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
-import type { ChainReferrers, Erc20Permit, EvmForwarderParams, Quote, ReferrerAddresses } from '../types';
+import type {
+	ChainName,
+	ChainReferrers,
+	Erc20Permit,
+	EvmForwarderParams,
+	Quote,
+	ReferrerAddresses,
+} from '../types';
 import {
 	getAmountOfFractionalAmount,
 	getAssociatedTokenAddress,
@@ -215,7 +222,7 @@ export async function getSwapFromEvmTxPayload(
 			)}) and quote from chain are not same! ${fromChainId} !== ${signerWormholeChainId}`
 		);
 	}
-	const provider = await requireEvmProvider(options, signerChainId);
+	const provider = await requireEvmProvider(options, signerChainId, quote.fromChain);
 
 	if (destinationAddress === ZeroAddress || destinationAddress === SystemProgram.programId.toString()) {
 		throw new Error(`Invalid destination address: ${destinationAddress}`);
@@ -421,7 +428,7 @@ export async function swapFromEvm(
 		throw new Error('Signer address does not match swapper address');
 	}
 	const signerChainId = Number((await signer.provider.getNetwork()).chainId);
-	const provider = await requireEvmProvider(options, signerChainId);
+	const provider = await requireEvmProvider(options, signerChainId, quote.fromChain);
 
 	if (quote.fromChain === 'hypercore' && (!quote.gasless || quote.type !== 'SWIFT')) {
 		throw new Error('Only SWIFT gasless quotes are supported from hypercore withdraw');
@@ -538,7 +545,7 @@ export async function swapFromEvm(
 
 	if (overrides?.gasLimit) {
 		transactionRequest.gasLimit = overrides.gasLimit;
-	} else {
+	} else if (provider && quote.fromChain !== 'hypercore') {
 		const estimatedGas = await provider.estimateGas({ ...transactionRequest, from: signerAddress });
 		// convert gasLimit to string for support ethers.js v5
 		transactionRequest.gasLimit = String(
@@ -702,8 +709,12 @@ export async function estimateQuoteRequiredGasAprox2(
 /** The provider the caller passed, checked to be on the signer's chain */
 async function requireEvmProvider(
 	options: { evmProvider?: ethers.JsonRpcProvider } | null | undefined,
-	signerChainId: number | string
-): Promise<ethers.JsonRpcProvider> {
+	signerChainId: number | string,
+	fromChain: ChainName,
+): Promise<ethers.JsonRpcProvider | null> {
+	if (fromChain === 'hypercore') {
+		return null;
+	}
 	const provider = options?.evmProvider;
 	if (!provider) {
 		throw new Error('No evmProvider found in options: pass a JSON-RPC provider on the source chain');

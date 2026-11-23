@@ -97,7 +97,7 @@ export async function isContractAccount(address: string, provider: Provider): Pr
 export async function allowsBlinkDirectTransfer(
 	quote: Quote,
 	owner: string,
-	provider: Provider,
+	provider: Provider | null,
 	allow = false
 ): Promise<boolean> {
 	if (!allow) {
@@ -105,6 +105,12 @@ export async function allowsBlinkDirectTransfer(
 	}
 	if (quote.type !== 'BLINK' || quote.gasless || !quote.blinkQuote?.crossChain?.directTransfer) {
 		return true;
+	}
+	if (quote.fromChain === 'hypercore' && !provider) {
+		return true;
+	}
+	if (!provider) {
+		return false;
 	}
 	return !(await isContractAccount(owner, provider));
 }
