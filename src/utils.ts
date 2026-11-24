@@ -30,7 +30,7 @@ export function nativeAddressToHexString(
 		wChainId === chains.avalanche  || wChainId === chains.arbitrum || wChainId === chains.optimism ||
 		wChainId === chains.base || wChainId === chains.unichain || wChainId === chains.linea ||
 		wChainId === chains.sonic || wChainId === chains.hyperevm || wChainId === chains.monad ||
-		wChainId === chains.elysium || wChainId === chains.hypercore
+		wChainId === chains.elysium || wChainId === chains.robinhood || wChainId === chains.hypercore
 	) {
 		return zeroPadValue(address, 32);
 	} else if (wChainId === chains.aptos && isValidAptosType(address)) {
@@ -138,6 +138,7 @@ const chains: { [index in ChainName]: number }  = {
 	fogo: 51,
 	monad: 48,
 	elysium: 74,
+	robinhood: 72,
 };
 
 export function getWormholeChainIdByName(chain: ChainName) : number {
@@ -162,6 +163,7 @@ const evmChainIdMap: { [index: string]: number }  = {
 	[999]: 47,
 	[143]: 48,
 	[99901]: 74,
+	[4663]: 72,
 	[65000]: 65000, // HyperCore
 };
 
@@ -182,7 +184,7 @@ export function getWormholeChainIdById(chainId: number) : number | null {
 	return evmChainIdMap[chainId];
 }
 
-const sdkVersion = [16, 0, 0];
+const sdkVersion = [16, 1, 0];
 
 export function getSdkVersion(): string {
 	return sdkVersion.join('_');
@@ -300,7 +302,17 @@ function calculateMixedReferrerAddressSolana(referrers: Referrer[]): string {
 	return mixedReferrer.toBase58();
 }
 
+// the backend hashes only a split of two or more referrers into a mixed address;
+// a single referrer is quoted as is, so the quote carries no mixedRefAddress
+function getSingleReferrerAddress(quote: Quote, referrers: Referrer[] | null | undefined): string | null {
+	return referrers?.length === 1 && !quote.mixedRefAddress ? referrers[0].address : null;
+}
+
 function getVerifiedMixedReferrerAddressSolana(quote: Quote, referrers: Referrer[]): string {
+	const single = getSingleReferrerAddress(quote, referrers);
+	if (single) {
+		return single;
+	}
 	const calculated = calculateMixedReferrerAddressSolana(referrers);
 	if (!quote.mixedRefAddress || quote.mixedRefAddress !== calculated) {
 		throw new Error(
@@ -312,6 +324,10 @@ function getVerifiedMixedReferrerAddressSolana(quote: Quote, referrers: Referrer
 }
 
 function getVerifiedMixedReferrerAddressEvm(quote: Quote, referrers: Referrer[]): string {
+	const single = getSingleReferrerAddress(quote, referrers);
+	if (single) {
+		return single;
+	}
 	const calculated = calculateMixedReferrerAddressEvm(referrers);
 	if (!quote.mixedRefAddress || quote.mixedRefAddress.toLowerCase() !== calculated.toLowerCase()) {
 		throw new Error(
@@ -388,14 +404,18 @@ export function getQuoteSuitableReferrerAddress(
 		return null;
 	}
 	if (isChainReferrers(referrerAddresses)) {
+		// WH pays no referrer fee; MCTP and FAST_MCTP to EVM or Sui pay a single referrer only
 		if (quote.type === 'WH') {
-			return null;
+			return getSingleReferrerAddress(quote, referrerAddresses.solana);
 		}
-		if (quote.type === 'MCTP') {
-			if (quote.toChain === 'solana' && referrerAddresses.solana?.length) {
-				return getVerifiedMixedReferrerAddressSolana(quote, referrerAddresses.solana);
+		if (quote.type === 'MCTP' || quote.type === 'FAST_MCTP') {
+			if (quote.toChain === 'solana') {
+				return referrerAddresses.solana?.length ? getVerifiedMixedReferrerAddressSolana(quote, referrerAddresses.solana) : null;
 			}
-			return null;
+			if (quote.toChain === 'sui') {
+				return getSingleReferrerAddress(quote, referrerAddresses.sui);
+			}
+			return getSingleReferrerAddress(quote, referrerAddresses.evm);
 		}
 		if (quote.type === 'SWIFT') {
 			if (quote.swiftVersion === 'V2') {
@@ -409,12 +429,6 @@ export function getQuoteSuitableReferrerAddress(
 			} else {
 				return null;
 			}
-		}
-		if (quote.type === 'FAST_MCTP') {
-			if (quote.toChain === 'solana' && referrerAddresses.solana?.length) {
-				return getVerifiedMixedReferrerAddressSolana(quote, referrerAddresses.solana);
-			}
-			return null;
 		}
 		if (quote.type === 'MONO_CHAIN') {
 			if (quote.fromChain === 'solana' && referrerAddresses.solana?.length) {
