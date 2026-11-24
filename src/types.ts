@@ -91,7 +91,9 @@ export type Quote = {
 	expectedAmountOut: number;
 	priceImpact?: number | null;
 	minAmountOut: number;
+	minAmountOutBaseUnits: string;
 	minReceived: number;
+	minReceivedBaseUnits: string;
 	gasDrop: number;
 	price: number;
 	swapRelayerFee: number;
