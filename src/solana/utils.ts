@@ -88,6 +88,10 @@ export async function submitTransactionWithRetry(
 			}
 		}
 		const sendRequests = connections.map((c) => c.sendRawTransaction(trx, options));
+		// Once we have a signature nobody awaits these resends, so a rejected one
+		// (e.g. preflight refusing an already landed transaction) would otherwise
+		// surface as an unhandled rejection and kill a Node process.
+		sendRequests.forEach((request) => request.catch(() => {}));
 		console.log('Submitting transaction, attempt', i + 1);
 		if (!signature) {
 			try {
@@ -103,7 +107,7 @@ export async function submitTransactionWithRetry(
 					console.error('Simulation individual connections failed', err);
 					console.error('Transaction not submitted, remaining attempts:', rate - i - 1);
 					console.error(err);
-					if (err && typeof err === 'object' && 'transactionMessage' in err && typeof err.transactionMessage === 'string' && err.transactionMessage.indexOf('transaction has already been processed')) {
+					if (err && typeof err === 'object' && 'transactionMessage' in err && typeof err.transactionMessage === 'string' && err.transactionMessage.includes('transaction has already been processed')) {
 						if (signature) {
 							return {
 								signature,
