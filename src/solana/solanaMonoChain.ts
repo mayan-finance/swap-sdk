@@ -34,6 +34,7 @@ export async function createMonoChainFromSolanaInstructions(
 		allowSwapperOffCurve?: boolean;
 		separateSwapTx?: boolean;
 		skipProxyMayanInstructions?: boolean,
+		apiKey?: string,
 	} = {}
 ): Promise<{
 	instructions: TransactionInstruction[];
@@ -99,6 +100,7 @@ export async function createMonoChainFromSolanaInstructions(
 		referrerAddress: referrerAddress,
 		referrerBps: quote.referrerBps || 0,
 		chainName: quote.fromChain,
+		apiKey: options.apiKey,
 	});
 	const clientSwap = decentralizeClientSwapInstructions(
 		clientSwapRaw,

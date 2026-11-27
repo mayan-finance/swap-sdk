@@ -143,8 +143,8 @@ let cachedManifest: BlinkContractManifest | undefined;
 let cachedAt = 0;
 let inflightRefresh: Promise<BlinkContractManifest> | undefined;
 
-async function fetchVerifiedManifest(): Promise<BlinkContractManifest> {
-	const manifest = verifyBlinkContracts(await getBlinkContracts());
+async function fetchVerifiedManifest(apiKey?: string): Promise<BlinkContractManifest> {
+	const manifest = verifyBlinkContracts(await getBlinkContracts(apiKey));
 	if (cachedManifest && manifest.guardianSetIndex < cachedManifest.guardianSetIndex) {
 		throw new Error(`Blink contract manifest rolled back to guardian set ${manifest.guardianSetIndex}`);
 	}
@@ -153,10 +153,10 @@ async function fetchVerifiedManifest(): Promise<BlinkContractManifest> {
 	return manifest;
 }
 
-function refreshBlinkManifest(): Promise<BlinkContractManifest> {
+function refreshBlinkManifest(apiKey?: string): Promise<BlinkContractManifest> {
 	// concurrent callers share one request
 	if (!inflightRefresh) {
-		inflightRefresh = fetchVerifiedManifest().finally(() => {
+		inflightRefresh = fetchVerifiedManifest(apiKey).finally(() => {
 			inflightRefresh = undefined;
 		});
 	}
@@ -168,13 +168,13 @@ function refreshBlinkManifest(): Promise<BlinkContractManifest> {
  * guardian set than the cached manifest triggers a refresh; one issued under an older set is
  * refused.
  */
-export async function getBlinkManifest(guardianSetIndex?: number): Promise<BlinkContractManifest> {
+export async function getBlinkManifest(guardianSetIndex?: number, apiKey?: string): Promise<BlinkContractManifest> {
 	let manifest = cachedManifest;
 	if (!manifest || Date.now() - cachedAt > CONTRACTS_REFRESH_MS) {
-		manifest = await refreshBlinkManifest();
+		manifest = await refreshBlinkManifest(apiKey);
 	}
 	if (guardianSetIndex !== undefined && guardianSetIndex > manifest.guardianSetIndex) {
-		manifest = await refreshBlinkManifest();
+		manifest = await refreshBlinkManifest(apiKey);
 	}
 	if (guardianSetIndex !== undefined && guardianSetIndex !== manifest.guardianSetIndex) {
 		throw new Error(
@@ -184,12 +184,12 @@ export async function getBlinkManifest(guardianSetIndex?: number): Promise<Blink
 	return manifest;
 }
 
-export async function getBlinkChainContracts(chain: string, guardianSetIndex?: number): Promise<BlinkChainContracts> {
-	let contracts = (await getBlinkManifest(guardianSetIndex)).chains[chain];
+export async function getBlinkChainContracts(chain: string, guardianSetIndex?: number, apiKey?: string): Promise<BlinkChainContracts> {
+	let contracts = (await getBlinkManifest(guardianSetIndex, apiKey)).chains[chain];
 	if (!contracts) {
 		// the chain may have been added since the manifest was cached
-		await refreshBlinkManifest();
-		contracts = (await getBlinkManifest(guardianSetIndex)).chains[chain];
+		await refreshBlinkManifest(apiKey);
+		contracts = (await getBlinkManifest(guardianSetIndex, apiKey)).chains[chain];
 	}
 	if (!contracts) {
 		throw new BlinkUnregisteredAddressError(chain, 'every contract');
@@ -210,15 +210,16 @@ function isRegistered(contracts: BlinkChainContracts | undefined, address: strin
 export async function assertBlinkContractRegistered(
 	chain: string,
 	address: string,
-	guardianSetIndex?: number
+	guardianSetIndex?: number,
+	apiKey?: string
 ): Promise<void> {
-	let manifest = await getBlinkManifest(guardianSetIndex);
+	let manifest = await getBlinkManifest(guardianSetIndex, apiKey);
 	if (isRegistered(manifest.chains[chain], address)) {
 		return;
 	}
 	// the address may have been registered since the manifest was cached
-	await refreshBlinkManifest();
-	manifest = await getBlinkManifest(guardianSetIndex);
+	await refreshBlinkManifest(apiKey);
+	manifest = await getBlinkManifest(guardianSetIndex, apiKey);
 	if (isRegistered(manifest.chains[chain], address)) {
 		return;
 	}

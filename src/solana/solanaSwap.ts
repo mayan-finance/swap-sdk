@@ -127,7 +127,7 @@ export async function createSwapFromSolanaInstructions(
 		if (options.customPayload) {
 			throw new Error('Custom payload is not supported for BLINK');
 		}
-		return createBlinkFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddresses, connection, refundAddress);
+		return createBlinkFromSolanaInstructions(quote, swapperWalletAddress, destinationAddress, referrerAddresses, connection, refundAddress, options.apiKey);
 	}
 
 	if (options.customPayload) {

@@ -431,12 +431,13 @@ export async function submitSwiftSolanaSwap(signedTx: string, chainName: ChainNa
 }
 
 export async function getEstimateGasEvm(
-	params: EstimateGasEvmParams
+	params: EstimateGasEvmParams,
+	apiKey?: string
 ): Promise<{
 	estimatedGas: bigint;
 	gasPrice: bigint;
 }> {
-	const res = await fetch(`${addresses.GAS_ESTIMATE_URL}/evm`, {
+	const res = await fetch(`${addresses.GAS_ESTIMATE_URL}/evm${apiKey ? '?apiKey=' + apiKey : ''}`, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
@@ -509,8 +510,8 @@ export async function submitHyperCoreWithdraw(value: HyperCoreWithdrawCircleType
 	return result.orderId;
 }
 
-export async function getBlinkSwapInstructions(quoteHash: string): Promise<BlinkSwapInstructions> {
-	const res = await fetch(`${addresses.BLINK_API_URL}/v1/quotes/${quoteHash}/instructions`, {
+export async function getBlinkSwapInstructions(quoteHash: string, apiKey?: string): Promise<BlinkSwapInstructions> {
+	const res = await fetch(`${addresses.BLINK_API_URL}/v1/quotes/${quoteHash}/instructions${apiKey ? '?apiKey=' + apiKey : ''}`, {
 		method: 'GET',
 		redirect: 'follow',
 	});
@@ -522,8 +523,8 @@ export async function getBlinkSwapInstructions(quoteHash: string): Promise<Blink
 	return decodeBlinkSwapInstructions(result);
 }
 
-export async function getBlinkContracts(): Promise<BlinkContractsResponse> {
-	const res = await fetch(`${addresses.BLINK_API_URL}/v1/contracts`, {
+export async function getBlinkContracts(apiKey?: string): Promise<BlinkContractsResponse> {
+	const res = await fetch(`${addresses.BLINK_API_URL}/v1/contracts${apiKey ? '?apiKey=' + apiKey : ''}`, {
 		method: 'GET',
 		redirect: 'follow',
 	});
@@ -535,8 +536,8 @@ export async function getBlinkContracts(): Promise<BlinkContractsResponse> {
 	return decodeBlinkContractsResponse(result);
 }
 
-export async function getBlinkChains(): Promise<BlinkChain[]> {
-	const res = await fetch(`${addresses.BLINK_API_URL}/v1/chains`, {
+export async function getBlinkChains(apiKey?: string): Promise<BlinkChain[]> {
+	const res = await fetch(`${addresses.BLINK_API_URL}/v1/chains${apiKey ? '?apiKey=' + apiKey : ''}`, {
 		method: 'GET',
 		redirect: 'follow',
 	});
@@ -548,8 +549,8 @@ export async function getBlinkChains(): Promise<BlinkChain[]> {
 	return decodeBlinkChains(result);
 }
 
-export async function getBlinkPriorityFee(chain: ChainName): Promise<bigint> {
-	const res = await fetch(`${addresses.BLINK_API_URL}/v1/chains/${chain}/priority-fee`, {
+export async function getBlinkPriorityFee(chain: ChainName, apiKey?: string): Promise<bigint> {
+	const res = await fetch(`${addresses.BLINK_API_URL}/v1/chains/${chain}/priority-fee${apiKey ? '?apiKey=' + apiKey : ''}`, {
 		method: 'GET',
 		redirect: 'follow',
 	});

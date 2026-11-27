@@ -38,7 +38,7 @@ async function orderFor(
 	const refundAddress = getQuoteRefundAddress(quote, swapperAddress, destinationAddress, options);
 	const order = options?.blinkOrder;
 	if (!order) {
-		return resolveBlinkOrder(quote, refundAddress ?? swapperAddress, destinationAddress, referrerAddresses);
+		return resolveBlinkOrder(quote, refundAddress ?? swapperAddress, destinationAddress, referrerAddresses, options?.apiKey);
 	}
 	const bound = order.quote.orderParams.refundAddress;
 	if (refundAddress && !sameBlinkAddress(bound, refundAddress)) {
@@ -82,8 +82,8 @@ async function addDepositCall(
 	});
 }
 
-async function sourceSwapExpiryMs(): Promise<bigint> {
-	const chainTimeSecs = await getCurrentChainTime('sui');
+async function sourceSwapExpiryMs(apiKey?: string): Promise<bigint> {
+	const chainTimeSecs = await getCurrentChainTime('sui', apiKey);
 	return BigInt(chainTimeSecs) * BigInt(1000) + SOURCE_SWAP_WINDOW_MS;
 }
 
@@ -96,7 +96,7 @@ async function addSourceSwapOpenCall(
 ): Promise<void> {
 	const params = order.quote.orderParams;
 	const amountIn = BigInt(params.expectedAmountIn);
-	const [chains, expiresAtMs] = await Promise.all([getBlinkChains(), sourceSwapExpiryMs()]);
+	const [chains, expiresAtMs] = await Promise.all([getBlinkChains(options?.apiKey), sourceSwapExpiryMs(options?.apiKey)]);
 	const swapExecutor = chains.find((c) => c.chain === params.srcChain)?.swapExecutor;
 	if (!swapExecutor) {
 		throw new Error('Blink source swaps are unavailable on sui');

@@ -101,7 +101,7 @@ export async function getEvmSwapApproval(
 		};
 	}
 	if (quote.type === 'BLINK') {
-		const order = await loadBlinkOrder(quote);
+		const order = await loadBlinkOrder(quote, options?.apiKey);
 		const directTransfer = await allowsBlinkDirectTransfer(
 			quote,
 			owner,

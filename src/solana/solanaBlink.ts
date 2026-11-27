@@ -681,7 +681,8 @@ export async function createBlinkFromSolanaInstructions(
 	destinationAddress: string,
 	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	connection: Connection,
-	refundAddress?: string
+	refundAddress?: string,
+	apiKey?: string
 ): Promise<{
 	instructions: TransactionInstruction[];
 	signers: Keypair[];
@@ -693,8 +694,8 @@ export async function createBlinkFromSolanaInstructions(
 		throw new Error('Gasless Blink quotes are submitted through swapFromSolana');
 	}
 	const [order, computeUnitPrice] = await Promise.all([
-		resolveBlinkOrder(quote, refundAddress ?? swapperAddress, destinationAddress, referrerAddresses),
-		getBlinkPriorityFee(quote.fromChain),
+		resolveBlinkOrder(quote, refundAddress ?? swapperAddress, destinationAddress, referrerAddresses, apiKey),
+		getBlinkPriorityFee(quote.fromChain, apiKey),
 	]);
 	const owner = new PublicKey(swapperAddress);
 	if (!needsBlinkSourceSwap(order.quote.orderParams)) {
@@ -720,13 +721,14 @@ export async function getBlinkGaslessFromSolanaTransaction(
 	destinationAddress: string,
 	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
 	connection: Connection,
-	refundAddress?: string
+	refundAddress?: string,
+	apiKey?: string
 ): Promise<{ quoteHash: string; orderParams: BlinkOrderParamsJson; transaction: Transaction }> {
 	assertBlinkSolanaQuote(quote);
 	if (!quote.gasless) {
 		throw new Error('Quote is not a gasless BLINK quote');
 	}
-	const order = await resolveBlinkOrder(quote, refundAddress ?? swapperAddress, destinationAddress, referrerAddresses);
+	const order = await resolveBlinkOrder(quote, refundAddress ?? swapperAddress, destinationAddress, referrerAddresses, apiKey);
 	if (needsBlinkSourceSwap(order.quote.orderParams)) {
 		throw new Error('Gasless Blink swap deposits are unavailable on solana');
 	}
@@ -761,7 +763,8 @@ export async function swapBlinkGaslessFromSolana(
 		destinationAddress,
 		referrerAddresses,
 		connection,
-		refundAddress
+		refundAddress,
+		apiKey
 	);
 	const signed = await signTransaction(transaction);
 	const txBase64 = Buffer.from(

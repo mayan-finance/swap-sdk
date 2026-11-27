@@ -40,6 +40,7 @@ export type BlinkDirectTransferOption = {
 	 * permit), which Blink attributes for any wallet.
 	 */
 	allowBlinkEvmDirectTransfer?: boolean;
+	apiKey?: string;
 };
 
 const blinkRouterInterface = new Interface([
@@ -266,7 +267,8 @@ export async function getBlinkFromEvmTxPayload(
 	signerChainId: number | string,
 	permit: Erc20Permit | null | undefined,
 	refundAddress?: string,
-	directTransfer = false
+	directTransfer = false,
+	apiKey?: string
 ): Promise<TransactionRequest & { _forwarder: EvmForwarderParams }> {
 	if (quote.type !== 'BLINK') {
 		throw new Error('Quote type is not BLINK');
@@ -275,7 +277,7 @@ export async function getBlinkFromEvmTxPayload(
 		throw new Error('Gasless Blink quotes are submitted through swapFromEvm');
 	}
 	const chainId = assertSignerChain(quote, signerChainId);
-	const order = await resolveBlinkOrder(quote, refundAddress ?? swapperAddress, destinationAddress, referrerAddresses);
+	const order = await resolveBlinkOrder(quote, refundAddress ?? swapperAddress, destinationAddress, referrerAddresses, apiKey);
 	const params = order.quote.orderParams;
 	const permitCoversAmount =
 		!!permit && !isNativeBlinkEvmToken(params.srcToken) && permit.value >= BigInt(params.expectedAmountIn);
@@ -391,13 +393,14 @@ export async function getBlinkGaslessFromEvmParams(
 	signerChainId: number | string,
 	permit: Erc20Permit | null | undefined,
 	provider: Provider,
-	refundAddress?: string
+	refundAddress?: string,
+	apiKey?: string
 ): Promise<BlinkGaslessEvmParams> {
 	if (quote.type !== 'BLINK' || !quote.gasless) {
 		throw new Error('Quote is not a gasless BLINK quote');
 	}
 	const chainId = assertSignerChain(quote, signerChainId);
-	const order = await resolveBlinkOrder(quote, refundAddress ?? swapperAddress, destinationAddress, referrerAddresses);
+	const order = await resolveBlinkOrder(quote, refundAddress ?? swapperAddress, destinationAddress, referrerAddresses, apiKey);
 	const params = order.quote.orderParams;
 	if (isNativeBlinkEvmToken(params.srcToken)) {
 		throw new Error('Gasless Blink deposits require an ERC20 input token');
@@ -462,7 +465,8 @@ export async function swapBlinkGaslessFromEvm(
 		signerChainId,
 		permit,
 		signer.provider,
-		refundAddress
+		refundAddress,
+		apiKey
 	);
 	const signature = await signer.signTypedData(typedData.domain, typedData.types, typedData.value);
 	await submitBlinkGaslessOrder({ quoteHash, orderParams, evm: { ...order, signature } }, apiKey);

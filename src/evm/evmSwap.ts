@@ -308,7 +308,8 @@ export async function getSwapFromEvmTxPayload(
 			signerChainId,
 			permit,
 			refundAddress,
-			await allowsBlinkDirectTransfer(quote, swapperAddress, provider, options.allowBlinkEvmDirectTransfer)
+			await allowsBlinkDirectTransfer(quote, swapperAddress, provider, options.allowBlinkEvmDirectTransfer),
+			options.apiKey
 		);
 	}
 
@@ -698,7 +699,7 @@ export async function estimateQuoteRequiredGasAprox2(
 		value: '0x' + BigInt(String(transactionRequest.value)).toString(16),
 		data: transactionRequest.data as string,
 		to: transactionRequest.to as string,
-	});
+	}, apiKey);
 	return {
 		estimateGas: (estimatedGas * BigInt(110)) / BigInt(100),
 		gasPrice: gasPrice,

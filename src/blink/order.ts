@@ -115,7 +115,8 @@ export async function resolveBlinkOrder(
 	quote: Quote,
 	refundAddress: string,
 	destinationAddress: string,
-	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined
+	referrerAddresses: ChainReferrers | ReferrerAddresses | null | undefined,
+	apiKey?: string
 ): Promise<BlinkOrder> {
 	const order = decodeBlinkOrder(quote);
 	if (isZeroAddress(destinationAddress)) {
@@ -126,13 +127,13 @@ export async function resolveBlinkOrder(
 	}
 	const referrers = getBlinkReferrers(quote, referrerAddresses);
 	assertOrderMatchesQuote(order, quote, refundAddress, destinationAddress, referrers);
-	const resolved = await loadBlinkOrderContracts(order);
+	const resolved = await loadBlinkOrderContracts(order, apiKey);
 	const params = order.orderParams;
 	if (!needsBlinkSourceSwap(params) || quote.fromChain === 'sui') {
 		return resolved;
 	}
-	const swap = await getBlinkSwapInstructions(order.quoteHash);
-	await assertBlinkContractRegistered(params.srcChain, swap.routerAddress, order.guardianSetIndex);
+	const swap = await getBlinkSwapInstructions(order.quoteHash, apiKey);
+	await assertBlinkContractRegistered(params.srcChain, swap.routerAddress, order.guardianSetIndex, apiKey);
 	return { ...resolved, swap };
 }
 
@@ -142,8 +143,8 @@ export async function resolveBlinkOrder(
  * which contract a deposit approves, and it calls no Blink endpoint but the cached contract
  * manifest; use `resolveBlinkOrder` to build the deposit itself.
  */
-export async function loadBlinkOrder(quote: Quote): Promise<BlinkOrder> {
-	return loadBlinkOrderContracts(decodeBlinkOrder(quote));
+export async function loadBlinkOrder(quote: Quote, apiKey?: string): Promise<BlinkOrder> {
+	return loadBlinkOrderContracts(decodeBlinkOrder(quote), apiKey);
 }
 
 function decodeBlinkOrder(quote: Quote): BlinkQuote {
@@ -158,13 +159,13 @@ function decodeBlinkOrder(quote: Quote): BlinkQuote {
 	return decodeBlinkQuote(quote.blinkQuote);
 }
 
-async function loadBlinkOrderContracts(order: BlinkQuote): Promise<BlinkOrder> {
+async function loadBlinkOrderContracts(order: BlinkQuote, apiKey?: string): Promise<BlinkOrder> {
 	assertBlinkQuoteHash(order);
 	if (isBlinkQuoteExpired(order)) {
 		throw new Error('Blink quote expired, request a new quote');
 	}
 	const params = order.orderParams;
-	await assertBlinkContractRegistered(params.srcChain, params.routerAddress, order.guardianSetIndex);
-	const contracts = await getBlinkChainContracts(params.srcChain, order.guardianSetIndex);
+	await assertBlinkContractRegistered(params.srcChain, params.routerAddress, order.guardianSetIndex, apiKey);
+	const contracts = await getBlinkChainContracts(params.srcChain, order.guardianSetIndex, apiKey);
 	return { quote: order, contracts };
 }
